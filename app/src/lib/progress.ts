@@ -5,18 +5,29 @@ import type {
   SemesterCourse,
 } from "../types";
 
+export interface EarnedCourse {
+  source: "official" | "manual";
+  id: number | null;
+  courseCode: string | null;
+  courseName: string;
+  credits: number;
+  score: number | null;
+  categoryCode: CategoryCode;
+  courseNature: "必修" | "选修" | "跨专业";
+}
+
 /**
  * 一个具体的"要求条目"，例如「通识教育 · 必修 · 32 学分」
  * earnedCredits 表示已修学分；earnedCourses 列出对应的课程
  */
 export interface RequirementRow {
-  categoryCode: CategoryCode | "major_platform"; // major_platform 也是 CategoryCode
+  categoryCode: CategoryCode;
   categoryName: string;
   requirementType: "required" | "elective" | "interdisciplinary";
   requirementName: string;
   requiredCredits: number;
   earnedCredits: number;
-  earnedCourses: CourseWithCategory[];
+  earnedCourses: EarnedCourse[];
 }
 
 /**
@@ -27,18 +38,46 @@ export function computeRequirementRows(
   courses: CourseWithCategory[],
   semesterCourses: SemesterCourse[]
 ): RequirementRow[] {
-  // 仅官方课走"按 course_code 命中要求行"的逻辑；
-  // 手动课没有 course_code，会在 Phase H 里以另一条路径计入板块学分。
-  const completed = new Set(
+  const officialByCode = new Map(
     semesterCourses
       .filter((s) => s.source === "official" && s.course_code)
-      .map((s) => s.course_code as string)
+      .map((s) => [s.course_code as string, s])
+  );
+  const manualCourses = semesterCourses.filter(
+    (s) => s.source === "manual" && s.category_code && s.course_nature
   );
 
   return requirements.map((req) => {
-    const matched = matchCourses(req, courses).filter((c) =>
-      completed.has(c.course_code)
-    );
+    const officialMatched = matchCourses(req, courses)
+      .filter((c) => officialByCode.has(c.course_code))
+      .map((c): EarnedCourse => {
+        const record = officialByCode.get(c.course_code);
+        return {
+          source: "official",
+          id: null,
+          courseCode: c.course_code,
+          courseName: c.course_name,
+          credits: c.credits,
+          score: record?.score ?? null,
+          categoryCode: c.category_code,
+          courseNature: c.course_nature,
+        };
+      });
+
+    const manualMatched = manualCourses
+      .filter((c) => matchManualCourse(req, c))
+      .map((c): EarnedCourse => ({
+        source: "manual",
+        id: c.id,
+        courseCode: null,
+        courseName: c.course_name,
+        credits: c.credits,
+        score: c.score,
+        categoryCode: c.category_code as CategoryCode,
+        courseNature: c.course_nature as "必修" | "选修",
+      }));
+
+    const matched = [...officialMatched, ...manualMatched];
     const earnedCredits = round1(
       matched.reduce((s, c) => s + (c.credits ?? 0), 0)
     );
@@ -81,6 +120,15 @@ function matchCourses(
       (c.course_nature === "选修" || c.course_nature === "跨专业") &&
       !isInterdisciplinary(c)
   );
+}
+
+function matchManualCourse(req: ProgramRequirement, c: SemesterCourse): boolean {
+  if (!c.category_code || !c.course_nature) return false;
+  if (req.requirement_type === "interdisciplinary") return false;
+  if (req.requirement_type === "required") {
+    return c.category_code === req.category_code && c.course_nature === "必修";
+  }
+  return c.category_code === req.category_code && c.course_nature === "选修";
 }
 
 function isInterdisciplinary(c: CourseWithCategory): boolean {

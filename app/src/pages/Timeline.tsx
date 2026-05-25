@@ -8,6 +8,8 @@ import type {
   SemesterCourse,
 } from "../types";
 import { CourseCard } from "../components/CourseCard";
+import { ManualCourseCard } from "../components/ManualCourseCard";
+import { ManualCourseDialog } from "../components/ManualCourseDialog";
 
 const TERMS = [1, 2, 3, 4, 5, 6, 7, 8];
 
@@ -17,6 +19,7 @@ export default function Timeline() {
   const [done, setDone] = useState<SemesterCourse[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
+  const [addTerm, setAddTerm] = useState<number | null>(null);
 
   useEffect(() => {
     Promise.all([
@@ -32,6 +35,11 @@ export default function Timeline() {
       .catch((e) => setErr(String(e)))
       .finally(() => setLoading(false));
   }, []);
+
+  const refetchDone = async () => {
+    const d = await api.semesterCourses();
+    setDone(d);
+  };
 
   // 学期分桶
   const buckets = useMemo(() => {
@@ -65,6 +73,20 @@ export default function Timeline() {
     for (const d of done) {
       if (d.source !== "official" || !d.course_code) continue;
       m[d.term_number]?.set(d.course_code, d.score);
+    }
+    return m;
+  }, [done]);
+
+  // 手动课按学期映射
+  const manualByTerm = useMemo(() => {
+    const m: Record<number, SemesterCourse[]> = {};
+    for (const t of TERMS) m[t] = [];
+    for (const d of done) {
+      if (d.source !== "manual") continue;
+      m[d.term_number]?.push(d);
+    }
+    for (const t of TERMS) {
+      m[t].sort((a, b) => a.course_name.localeCompare(b.course_name, "zh"));
     }
     return m;
   }, [done]);
@@ -103,7 +125,7 @@ export default function Timeline() {
         <div>
           <h1 className="text-lg text-ink">时间轴</h1>
           <div className="text-[11px] text-sub mt-0.5">
-            官方计划 · 按 offered_term 字段排布（只读）
+            官方计划 · 可在每学期补充培养方案外课程
           </div>
         </div>
         <div className="flex items-center gap-6 text-xs">
@@ -141,7 +163,10 @@ export default function Timeline() {
       <div className="flex gap-3 overflow-x-auto pb-4">
         {TERMS.map((t) => {
           const list = buckets.byTerm[t];
-          const termCredits = list.reduce((s, c) => s + c.credits, 0);
+          const manualList = manualByTerm[t];
+          const termCredits =
+            list.reduce((s, c) => s + c.credits, 0) +
+            manualList.reduce((s, c) => s + c.credits, 0);
           const doneMap = doneByTerm[t];
           return (
             <div
@@ -164,14 +189,45 @@ export default function Timeline() {
                   <CourseCard
                     key={`${t}-${c.course_code}`}
                     course={c}
-                    completedScore={doneMap.has(c.course_code) ? doneMap.get(c.course_code) : undefined}
+                    completedScore={
+                      doneMap.has(c.course_code)
+                        ? doneMap.get(c.course_code)
+                        : undefined
+                    }
                   />
                 ))}
-                {list.length === 0 && (
+
+                {manualList.length > 0 && (
+                  <div className="pt-1 mt-1 border-t border-dashed border-sub/20 flex flex-col gap-1.5">
+                    {manualList.map((c) => (
+                      <ManualCourseCard
+                        key={`manual-${c.id}`}
+                        course={c}
+                        onDelete={async (id) => {
+                          if (!window.confirm(`删除手动课「${c.course_name}」？`)) {
+                            return;
+                          }
+                          await api.deleteManual(id);
+                          await refetchDone();
+                        }}
+                      />
+                    ))}
+                  </div>
+                )}
+
+                {list.length === 0 && manualList.length === 0 && (
                   <div className="text-[10px] text-sub/60 italic px-1 py-2">
                     暂无安排
                   </div>
                 )}
+
+                <button
+                  type="button"
+                  onClick={() => setAddTerm(t)}
+                  className="mt-1 h-8 rounded-md border border-dashed border-sub/25 text-[11px] text-sub hover:text-ink hover:border-sub/45 hover:bg-sub/5 transition-colors"
+                >
+                  + 添加课程
+                </button>
               </div>
             </div>
           );
@@ -195,6 +251,17 @@ export default function Timeline() {
           </div>
         </div>
       </div>
+
+      {addTerm != null && (
+        <ManualCourseDialog
+          termNumber={addTerm}
+          onClose={() => setAddTerm(null)}
+          onSubmit={async (input) => {
+            await api.createManual(input);
+            await refetchDone();
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -6,6 +6,7 @@ import {
   bundleByCategory,
   computeRequirementRows,
   type CategoryBundle,
+  type EarnedCourse,
   type RequirementRow,
 } from "../lib/progress";
 import { ProgressBar } from "../components/ProgressBar";
@@ -42,15 +43,6 @@ export default function Trail() {
     const d = await api.semesterCourses();
     setDone(d);
   }, []);
-
-  // 官方课的成绩按 course_code 索引
-  const scoresByCode = useMemo(() => {
-    const m = new Map<string, SemesterCourse>();
-    for (const s of done) {
-      if (s.source === "official" && s.course_code) m.set(s.course_code, s);
-    }
-    return m;
-  }, [done]);
 
   const bundles = useMemo(
     () => bundleByCategory(computeRequirementRows(reqs, courses, done)),
@@ -131,7 +123,6 @@ export default function Trail() {
             bundle={b}
             expandedKeys={expanded}
             onToggle={toggle}
-            scoresByCode={scoresByCode}
             onRefetch={refetchDone}
           />
         ))}
@@ -144,13 +135,11 @@ function CategoryCard({
   bundle,
   expandedKeys,
   onToggle,
-  scoresByCode,
   onRefetch,
 }: {
   bundle: CategoryBundle;
   expandedKeys: Set<string>;
   onToggle: (key: string) => void;
-  scoresByCode: Map<string, SemesterCourse>;
   onRefetch: () => Promise<void>;
 }) {
   const style = CATEGORY_STYLE[bundle.code];
@@ -219,7 +208,6 @@ function CategoryCard({
                 <EarnedList
                   row={row}
                   color={style.text}
-                  scoresByCode={scoresByCode}
                   onRefetch={onRefetch}
                 />
               )}
@@ -234,12 +222,10 @@ function CategoryCard({
 function EarnedList({
   row,
   color,
-  scoresByCode,
   onRefetch,
 }: {
   row: RequirementRow;
   color: string;
-  scoresByCode: Map<string, SemesterCourse>;
   onRefetch: () => Promise<void>;
 }) {
   if (row.earnedCourses.length === 0) {
@@ -253,9 +239,8 @@ function EarnedList({
     <div className="mt-2 flex flex-wrap gap-1.5">
       {row.earnedCourses.map((c) => (
         <ScorePill
-          key={c.course_code}
+          key={`${c.source}-${c.courseCode ?? c.id}`}
           course={c}
-          record={scoresByCode.get(c.course_code)}
           color={color}
           onRefetch={onRefetch}
         />
@@ -267,19 +252,17 @@ function EarnedList({
 // ── 可点击的"成绩药丸" + popover 输入框 ─────────────────
 function ScorePill({
   course,
-  record,
   color,
   onRefetch,
 }: {
-  course: CourseWithCategory;
-  record: SemesterCourse | undefined;
+  course: EarnedCourse;
   color: string;
   onRefetch: () => Promise<void>;
 }) {
   const btnRef = useRef<HTMLButtonElement>(null);
   const [anchor, setAnchor] = useState<DOMRect | null>(null);
 
-  const score = record?.score;
+  const score = course.score;
   const hasScore = score != null;
 
   const open = () => {
@@ -296,9 +279,12 @@ function ScorePill({
         onClick={open}
         className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] bg-sub/10 hover:bg-sub/20 transition-colors cursor-pointer"
         style={{ color }}
-        title={course.course_code}
+        title={course.source === "official" ? course.courseCode ?? "" : "手动添加"}
       >
-        <span>{course.course_name}</span>
+        {course.source === "manual" && (
+          <span className="px-1 rounded-sm bg-sub/10 text-[9px] text-sub">自</span>
+        )}
+        <span>{course.courseName}</span>
         <span className="text-sub/70 tabular-nums">{course.credits}</span>
         <span
           className="ml-1 pl-1.5 border-l border-sub/25 tabular-nums text-[10px]"
@@ -333,7 +319,7 @@ function ScorePopover({
   onSaved,
 }: {
   anchor: DOMRect;
-  course: CourseWithCategory;
+  course: EarnedCourse;
   initialScore: number | null;
   onClose: () => void;
   onSaved: () => Promise<void>;
@@ -366,7 +352,13 @@ function ScorePopover({
     setBusy(true);
     setErr(null);
     try {
-      await api.patchOfficial(course.course_code, { score: newScore });
+      if (course.source === "manual") {
+        if (course.id == null) throw new Error("手动课缺少 id");
+        await api.patchManual(course.id, { score: newScore });
+      } else {
+        if (!course.courseCode) throw new Error("官方课缺少课程号");
+        await api.patchOfficial(course.courseCode, { score: newScore });
+      }
       await onSaved();
     } catch (e: any) {
       setErr(String(e?.message ?? e));
@@ -408,8 +400,8 @@ function ScorePopover({
       }}
     >
       <div className="flex items-baseline justify-between mb-2 gap-2">
-        <div className="text-[12px] text-ink truncate" title={course.course_name}>
-          {course.course_name}
+        <div className="text-[12px] text-ink truncate" title={course.courseName}>
+          {course.courseName}
         </div>
         <div className="text-[10px] text-sub tabular-nums shrink-0">
           {course.credits} 学分
