@@ -1,13 +1,27 @@
-import type { SemesterCourse } from "../types";
+import type { PersonalPlanItem, SemesterCourse } from "../types";
 import { CATEGORY_STYLE } from "../lib/categoryStyle";
 import { TERM_LABEL } from "../lib/offeredTerm";
 
+type ManualLike = SemesterCourse | PersonalPlanItem;
+
 interface Props {
-  course: SemesterCourse;
+  course: ManualLike;
   onDelete?: (id: number) => void;
+  draggable?: boolean;
+  onDragStart?: (event: React.DragEvent<HTMLDivElement>) => void;
+  onDragEnd?: () => void;
 }
 
-export function ManualCourseCard({ course, onDelete }: Props) {
+export function ManualCourseCard({
+  course,
+  onDelete,
+  draggable = false,
+  onDragStart,
+  onDragEnd,
+}: Props) {
+  const termNumber =
+    "planned_term" in course ? course.planned_term : course.term_number;
+  const label = "planned_term" in course ? "计划" : "手动";
   const style = course.category_code
     ? CATEGORY_STYLE[course.category_code]
     : CATEGORY_STYLE.general_education;
@@ -15,7 +29,13 @@ export function ManualCourseCard({ course, onDelete }: Props) {
 
   return (
     <div
-      className="relative rounded-md px-2.5 py-2 text-[11px] leading-tight transition-all hover:-translate-y-0.5 hover:shadow-sm"
+      draggable={draggable}
+      onDragStart={onDragStart}
+      onDragEnd={onDragEnd}
+      className={
+        "relative rounded-md px-2.5 py-2 text-[11px] leading-tight transition-all hover:-translate-y-0.5 hover:shadow-sm " +
+        (draggable ? "cursor-grab active:cursor-grabbing" : "")
+      }
       style={{
         backgroundColor: isRequired ? style.bgSoft : style.bgGhost,
         border: `1px dashed ${style.border}`,
@@ -23,7 +43,7 @@ export function ManualCourseCard({ course, onDelete }: Props) {
     >
       <div className="flex items-center justify-between gap-2">
         <div className="text-[9px] text-sub/80 tabular-nums">
-          手动 · {TERM_LABEL[course.term_number]}
+          {label} · {TERM_LABEL[termNumber]}
         </div>
         <div
           className="px-1 rounded-sm text-[9px] text-white"
@@ -44,14 +64,14 @@ export function ManualCourseCard({ course, onDelete }: Props) {
         <span className="text-sub">{course.course_nature}</span>
       </div>
 
-      {(course.score != null || course.note) && (
+      {("score" in course ? course.score != null : false) || course.note ? (
         <div className="mt-1 flex items-center justify-between gap-2 text-[10px]">
           <span className="text-sub/70 truncate">{course.note}</span>
-          {course.score != null && (
+          {"score" in course && course.score != null && (
             <span className="text-brand tabular-nums">✓ {course.score}</span>
           )}
         </div>
-      )}
+      ) : null}
 
       {course.id != null && onDelete && (
         <button

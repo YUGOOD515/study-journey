@@ -16,7 +16,6 @@ interface ManualCourseForm {
   credits: string;
   category_code: CategoryCode;
   course_nature: "必修" | "选修";
-  score: string;
   note: string;
 }
 
@@ -29,7 +28,6 @@ interface Props {
     credits: number;
     category_code: CategoryCode;
     course_nature: "必修" | "选修";
-    score?: number | null;
     note?: string | null;
   }) => Promise<void>;
 }
@@ -44,8 +42,7 @@ export function ManualCourseDialog({
     credits: "2",
     category_code: "general_education",
     course_nature: "选修",
-    score: "",
-    note: "手动添加",
+    note: "我的计划",
   });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -68,7 +65,6 @@ export function ManualCourseDialog({
     setErr(null);
 
     const credits = Number(form.credits);
-    const score = form.score.trim() === "" ? null : Number(form.score);
 
     if (!form.course_name.trim()) {
       setErr("课程名不能为空");
@@ -76,10 +72,6 @@ export function ManualCourseDialog({
     }
     if (!Number.isFinite(credits) || credits < 0) {
       setErr("学分必须为非负数");
-      return;
-    }
-    if (score != null && (!Number.isFinite(score) || score < 0 || score > 100)) {
-      setErr("分数需在 0–100 之间");
       return;
     }
 
@@ -91,7 +83,6 @@ export function ManualCourseDialog({
         credits,
         category_code: form.category_code,
         course_nature: form.course_nature,
-        score,
         note: form.note.trim() || null,
       });
       onClose();
@@ -112,9 +103,9 @@ export function ManualCourseDialog({
       >
         <div className="flex items-baseline justify-between mb-4">
           <div>
-            <h2 className="text-base text-ink">添加手动课程</h2>
+            <h2 className="text-base text-ink">添加计划课程</h2>
             <div className="text-[11px] text-sub mt-0.5">
-              计入第 {termNumber} 学期，可用于公选课、培养方案外课程
+              放入第 {termNumber} 学期，用于公选课、培养方案外课程
             </div>
           </div>
           <button
@@ -151,19 +142,10 @@ export function ManualCourseDialog({
                 className="w-full px-3 py-2 rounded-md bg-bg border border-sub/25 text-sm text-ink tabular-nums focus:outline-none focus:border-brand"
               />
             </label>
-            <label className="block">
-              <div className="text-[11px] text-sub mb-1">成绩（可选）</div>
-              <input
-                type="number"
-                min={0}
-                max={100}
-                step="0.1"
-                value={form.score}
-                onChange={(e) => set("score", e.target.value)}
-                placeholder="—"
-                className="w-full px-3 py-2 rounded-md bg-bg border border-sub/25 text-sm text-ink tabular-nums focus:outline-none focus:border-brand"
-              />
-            </label>
+            <div className="rounded-md border border-sub/15 bg-sub/5 px-3 py-2">
+              <div className="text-[11px] text-sub mb-1">状态</div>
+              <div className="text-sm text-ink">计划中</div>
+            </div>
           </div>
 
           <div>

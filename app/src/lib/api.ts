@@ -1,6 +1,7 @@
 import type {
   CategoryCode,
   CourseWithCategory,
+  PersonalPlanItem,
   ProgramRequirement,
   SemesterCourse,
 } from "../types";
@@ -35,6 +36,8 @@ export const api = {
     getJSON<ProgramRequirement[]>("/api/program-requirements"),
   semesterCourses: () =>
     getJSON<SemesterCourse[]>("/api/semester-courses"),
+  personalPlan: () =>
+    getJSON<PersonalPlanItem[]>("/api/personal-plan"),
 
   // ── 官方课（培养方案内）────────────
   upsertOfficial: (input: {
@@ -91,4 +94,51 @@ export const api = {
 
   deleteManual: (id: number) =>
     send<{ ok: true }>(`/api/semester-courses/manual/${id}`, "DELETE"),
+
+  // ── 我的计划（不等于已修记录）────────────
+  upsertPersonalOfficial: (input: {
+    course_code: string;
+    planned_term: number;
+    note?: string | null;
+  }) =>
+    send<{ ok: true; id: number | null; course_code: string; planned_term: number }>(
+      "/api/personal-plan/official",
+      "POST",
+      input
+    ),
+
+  resetPersonalOfficial: (course_code: string) =>
+    send<{ ok: true; changes: number }>(
+      `/api/personal-plan/official/${encodeURIComponent(course_code)}`,
+      "DELETE"
+    ),
+
+  createPersonalManual: (input: {
+    planned_term: number;
+    course_name: string;
+    credits: number;
+    category_code: CategoryCode;
+    course_nature: "必修" | "选修";
+    note?: string | null;
+  }) =>
+    send<{ ok: true; id: number }>(
+      "/api/personal-plan/manual",
+      "POST",
+      input
+    ),
+
+  patchPersonalPlan: (
+    id: number,
+    patch: Partial<{
+      planned_term: number;
+      course_name: string;
+      credits: number;
+      category_code: CategoryCode;
+      course_nature: "必修" | "选修";
+      note: string | null;
+    }>
+  ) => send<{ ok: true; id: number }>(`/api/personal-plan/${id}`, "PATCH", patch),
+
+  deletePersonalPlan: (id: number) =>
+    send<{ ok: true }>(`/api/personal-plan/${id}`, "DELETE"),
 };

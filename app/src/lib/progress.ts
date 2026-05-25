@@ -1,6 +1,7 @@
 import type {
   CategoryCode,
   CourseWithCategory,
+  PersonalPlanItem,
   ProgramRequirement,
   SemesterCourse,
 } from "../types";
@@ -12,6 +13,16 @@ export interface EarnedCourse {
   courseName: string;
   credits: number;
   score: number | null;
+  categoryCode: CategoryCode;
+  courseNature: "必修" | "选修" | "跨专业";
+}
+
+export interface PlannedCourse {
+  source: "official" | "manual";
+  id: number | null;
+  courseCode: string | null;
+  courseName: string;
+  credits: number;
   categoryCode: CategoryCode;
   courseNature: "必修" | "选修" | "跨专业";
 }
@@ -28,6 +39,8 @@ export interface RequirementRow {
   requiredCredits: number;
   earnedCredits: number;
   earnedCourses: EarnedCourse[];
+  plannedCredits: number;
+  plannedCourses: PlannedCourse[];
 }
 
 /**
@@ -36,15 +49,20 @@ export interface RequirementRow {
 export function computeRequirementRows(
   requirements: ProgramRequirement[],
   courses: CourseWithCategory[],
-  semesterCourses: SemesterCourse[]
+  semesterCourses: SemesterCourse[],
+  personalPlan: PersonalPlanItem[] = []
 ): RequirementRow[] {
   const officialByCode = new Map(
     semesterCourses
       .filter((s) => s.source === "official" && s.course_code)
       .map((s) => [s.course_code as string, s])
   );
+  const completedOfficialCodes = new Set(officialByCode.keys());
   const manualCourses = semesterCourses.filter(
     (s) => s.source === "manual" && s.category_code && s.course_nature
+  );
+  const plannedManualCourses = personalPlan.filter(
+    (p) => p.item_type === "manual"
   );
 
   return requirements.map((req) => {
@@ -81,6 +99,38 @@ export function computeRequirementRows(
     const earnedCredits = round1(
       matched.reduce((s, c) => s + (c.credits ?? 0), 0)
     );
+
+    const plannedOfficial = matchCourses(req, courses)
+      .filter((c) => !completedOfficialCodes.has(c.course_code))
+      .map(
+        (c): PlannedCourse => ({
+          source: "official",
+          id: null,
+          courseCode: c.course_code,
+          courseName: c.course_name,
+          credits: c.credits,
+          categoryCode: c.category_code,
+          courseNature: c.course_nature,
+        })
+      );
+    const plannedManual = plannedManualCourses
+      .filter((c) => matchPersonalPlanManual(req, c))
+      .map(
+        (c): PlannedCourse => ({
+          source: "manual",
+          id: c.id,
+          courseCode: null,
+          courseName: c.course_name,
+          credits: c.credits,
+          categoryCode: c.category_code,
+          courseNature: c.course_nature as "必修" | "选修",
+        })
+      );
+    const plannedCourses = [...plannedOfficial, ...plannedManual];
+    const plannedCredits = round1(
+      plannedCourses.reduce((s, c) => s + c.credits, 0)
+    );
+
     return {
       categoryCode: req.category_code as CategoryCode,
       categoryName: req.category_name,
@@ -89,6 +139,8 @@ export function computeRequirementRows(
       requiredCredits: req.required_credits,
       earnedCredits,
       earnedCourses: matched,
+      plannedCredits,
+      plannedCourses,
     };
   });
 }
@@ -131,6 +183,17 @@ function matchManualCourse(req: ProgramRequirement, c: SemesterCourse): boolean 
   return c.category_code === req.category_code && c.course_nature === "选修";
 }
 
+function matchPersonalPlanManual(
+  req: ProgramRequirement,
+  c: PersonalPlanItem
+): boolean {
+  if (req.requirement_type === "interdisciplinary") return false;
+  if (req.requirement_type === "required") {
+    return c.category_code === req.category_code && c.course_nature === "必修";
+  }
+  return c.category_code === req.category_code && c.course_nature === "选修";
+}
+
 function isInterdisciplinary(c: CourseWithCategory): boolean {
   return !!(c.course_category && c.course_category.includes("经法管融通"));
 }
@@ -148,6 +211,7 @@ export interface CategoryBundle {
   rows: RequirementRow[];
   totalRequired: number;
   totalEarned: number;
+  totalPlanned: number;
 }
 
 const CATEGORY_ORDER: CategoryCode[] = [
@@ -184,6 +248,7 @@ export function bundleByCategory(rows: RequirementRow[]): CategoryBundle[] {
       rows: list,
       totalRequired: round1(list.reduce((s, r) => s + r.requiredCredits, 0)),
       totalEarned: round1(list.reduce((s, r) => s + r.earnedCredits, 0)),
+      totalPlanned: round1(list.reduce((s, r) => s + r.plannedCredits, 0)),
     };
   });
 }

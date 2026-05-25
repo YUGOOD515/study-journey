@@ -3,15 +3,19 @@ interface Props {
   required: number;
   color: string;
   trackColor?: string;
+  planned?: number;
 }
 
-export function ProgressBar({ earned, required, color, trackColor }: Props) {
+export function ProgressBar({ earned, required, color, trackColor, planned = 0 }: Props) {
   const pct =
     required <= 0
       ? earned > 0
         ? 100
         : 0
       : Math.min(100, (earned / required) * 100);
+  const previewPct =
+    required <= 0 ? pct : Math.min(100, ((earned + planned) / required) * 100);
+  const previewWidth = Math.max(0, previewPct - pct);
   const overflow = required > 0 && earned > required;
 
   return (
@@ -28,6 +32,17 @@ export function ProgressBar({ earned, required, color, trackColor }: Props) {
           backgroundColor: color,
         }}
       />
+      {previewWidth > 0 && (
+        <div
+          className="absolute inset-y-0 transition-all duration-700 ease-out"
+          style={{
+            left: `${pct}%`,
+            width: `${previewWidth}%`,
+            backgroundColor: color,
+            opacity: 0.28,
+          }}
+        />
+      )}
       {overflow && (
         <div
           className="absolute inset-y-0 right-0 w-1"

@@ -195,6 +195,10 @@ const VALID_CATEGORIES = new Set([
   "practice_education",
 ]);
 
+function categoryNameOf(code: string): string {
+  return CATEGORY_TABLES[code as CategoryCode]?.name ?? code;
+}
+
 app.post("/api/semester-courses/manual", (req: Request, res: Response) => {
   const {
     term_number,
@@ -308,6 +312,247 @@ app.delete(
     res.json({ ok: true });
   }
 );
+
+// ─────────────────────────────────────────────
+// 我的计划：只保存用户规划层，不污染已修记录
+// ─────────────────────────────────────────────
+app.get("/api/personal-plan", (_req, res) => {
+  const official = db
+    .prepare(
+      `
+      SELECT
+        pp.id,
+        pp.item_type,
+        pp.course_code,
+        pp.planned_term,
+        c.course_name,
+        c.credits,
+        c.lecture_hours,
+        c.experiment_hours,
+        c.extra_hours,
+        c.prerequisite_course_code,
+        pre.course_name AS prerequisite_course_name,
+        cw.category_code,
+        cw.category_name,
+        cw.course_nature,
+        cw.offered_term,
+        cw.course_category,
+        pp.note
+      FROM personal_plan pp
+      JOIN courses c ON c.course_code = pp.course_code
+      LEFT JOIN courses pre ON pre.course_code = c.prerequisite_course_code
+      JOIN (
+        ${Object.entries(CATEGORY_TABLES)
+          .map(([code, meta]) => {
+            const subCol =
+              meta.extra === "course_category"
+                ? "t.course_category"
+                : "NULL AS course_category";
+            return `
+              SELECT
+                t.course_code,
+                '${code}' AS category_code,
+                '${meta.name}' AS category_name,
+                t.course_nature,
+                t.offered_term,
+                ${subCol}
+              FROM ${meta.table} t
+            `;
+          })
+          .join(" UNION ALL ")}
+      ) cw ON cw.course_code = pp.course_code
+      WHERE pp.item_type = 'official'
+      `
+    )
+    .all();
+
+  const manual = db
+    .prepare(
+      `
+      SELECT
+        id,
+        item_type,
+        NULL AS course_code,
+        planned_term,
+        manual_course_name AS course_name,
+        manual_credits AS credits,
+        0 AS lecture_hours,
+        0 AS experiment_hours,
+        0 AS extra_hours,
+        NULL AS prerequisite_course_code,
+        NULL AS prerequisite_course_name,
+        manual_category_code AS category_code,
+        manual_course_nature AS course_nature,
+        NULL AS offered_term,
+        NULL AS course_category,
+        note
+      FROM personal_plan
+      WHERE item_type = 'manual'
+      `
+    )
+    .all()
+    .map((row: any) => ({
+      ...row,
+      category_name: categoryNameOf(row.category_code),
+    }));
+
+  const rows = [...official, ...manual].sort(
+    (a: any, b: any) =>
+      a.planned_term - b.planned_term ||
+      String(a.course_name).localeCompare(String(b.course_name), "zh-Hans-CN")
+  );
+  res.json(rows);
+});
+
+app.post("/api/personal-plan/official", (req: Request, res: Response) => {
+  const { course_code, planned_term, note } = req.body ?? {};
+  if (typeof course_code !== "string" || !course_code.trim()) {
+    res.status(400).json({ error: "course_code 必填" });
+    return;
+  }
+  if (!Number.isInteger(planned_term) || planned_term < 1 || planned_term > 8) {
+    res.status(400).json({ error: "planned_term 必须为 1-8 整数" });
+    return;
+  }
+  try {
+    const updated = db
+      .prepare(
+        `UPDATE personal_plan
+         SET planned_term = ?, note = ?, updated_at = datetime('now')
+         WHERE item_type = 'official' AND course_code = ?`
+      )
+      .run([planned_term, note ?? null, course_code.trim()]);
+
+    if (updated.changes > 0) {
+      res.json({ ok: true, id: null, course_code, planned_term });
+      return;
+    }
+
+    const inserted = db
+      .prepare(
+        `INSERT INTO personal_plan (item_type, course_code, planned_term, note)
+         VALUES ('official', ?, ?, ?)`
+      )
+      .run([course_code.trim(), planned_term, note ?? null]);
+    res.json({ ok: true, id: inserted.lastInsertRowid, course_code, planned_term });
+  } catch (e: any) {
+    res.status(400).json({ error: String(e?.message ?? e) });
+  }
+});
+
+app.delete("/api/personal-plan/official/:code", (req: Request, res: Response) => {
+  const info = db
+    .prepare(
+      "DELETE FROM personal_plan WHERE item_type = 'official' AND course_code = ?"
+    )
+    .run([String(req.params.code)]);
+  res.json({ ok: true, changes: info.changes });
+});
+
+app.post("/api/personal-plan/manual", (req: Request, res: Response) => {
+  const {
+    planned_term,
+    course_name,
+    credits,
+    category_code,
+    course_nature,
+    note,
+  } = req.body ?? {};
+
+  if (!Number.isInteger(planned_term) || planned_term < 1 || planned_term > 8) {
+    res.status(400).json({ error: "planned_term 必须为 1-8 整数" });
+    return;
+  }
+  if (typeof course_name !== "string" || !course_name.trim()) {
+    res.status(400).json({ error: "course_name 必填" });
+    return;
+  }
+  if (typeof credits !== "number" || credits < 0) {
+    res.status(400).json({ error: "credits 必须为非负数" });
+    return;
+  }
+  if (!VALID_CATEGORIES.has(category_code)) {
+    res.status(400).json({ error: `category_code 无效: ${category_code}` });
+    return;
+  }
+  if (course_nature !== "必修" && course_nature !== "选修") {
+    res.status(400).json({ error: "course_nature 仅支持 必修/选修" });
+    return;
+  }
+
+  try {
+    const info = db
+      .prepare(
+        `INSERT INTO personal_plan
+          (item_type, planned_term, manual_course_name, manual_credits, manual_category_code, manual_course_nature, note)
+         VALUES ('manual', ?, ?, ?, ?, ?, ?)`
+      )
+      .run([
+        planned_term,
+        course_name.trim(),
+        credits,
+        category_code,
+        course_nature,
+        note ?? null,
+      ]);
+    res.json({ ok: true, id: info.lastInsertRowid });
+  } catch (e: any) {
+    res.status(400).json({ error: String(e?.message ?? e) });
+  }
+});
+
+app.patch("/api/personal-plan/:id", (req: Request, res: Response) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) {
+    res.status(400).json({ error: "id 必须为整数" });
+    return;
+  }
+
+  const fieldMap: Record<string, string> = {
+    planned_term: "planned_term",
+    course_name: "manual_course_name",
+    credits: "manual_credits",
+    category_code: "manual_category_code",
+    course_nature: "manual_course_nature",
+    note: "note",
+  };
+  const sets: string[] = [];
+  const params: any[] = [];
+  for (const [inputKey, column] of Object.entries(fieldMap)) {
+    if (req.body?.[inputKey] !== undefined) {
+      sets.push(`${column} = ?`);
+      params.push(req.body[inputKey]);
+    }
+  }
+  if (sets.length === 0) {
+    res.status(400).json({ error: "没有可更新字段" });
+    return;
+  }
+  sets.push("updated_at = datetime('now')");
+  params.push(id);
+  try {
+    const info = db
+      .prepare(`UPDATE personal_plan SET ${sets.join(", ")} WHERE id = ?`)
+      .run(params);
+    if (info.changes === 0) {
+      res.status(404).json({ error: "未找到该计划记录" });
+      return;
+    }
+    res.json({ ok: true, id, changes: info.changes });
+  } catch (e: any) {
+    res.status(400).json({ error: String(e?.message ?? e) });
+  }
+});
+
+app.delete("/api/personal-plan/:id", (req: Request, res: Response) => {
+  const id = Number(req.params.id);
+  const info = db.prepare("DELETE FROM personal_plan WHERE id = ?").run([id]);
+  if (info.changes === 0) {
+    res.status(404).json({ error: "未找到该计划记录" });
+    return;
+  }
+  res.json({ ok: true });
+});
 
 // ─────────────────────────────────────────────
 // 5 大板块列表

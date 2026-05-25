@@ -12,6 +12,7 @@ import {
 import { ProgressBar } from "../components/ProgressBar";
 import type {
   CourseWithCategory,
+  PersonalPlanItem,
   ProgramRequirement,
   SemesterCourse,
 } from "../types";
@@ -20,6 +21,7 @@ export default function Trail() {
   const [courses, setCourses] = useState<CourseWithCategory[]>([]);
   const [reqs, setReqs] = useState<ProgramRequirement[]>([]);
   const [done, setDone] = useState<SemesterCourse[]>([]);
+  const [personalPlan, setPersonalPlan] = useState<PersonalPlanItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -29,11 +31,13 @@ export default function Trail() {
       api.coursesWithCategory(),
       api.programRequirements(),
       api.semesterCourses(),
+      api.personalPlan(),
     ])
-      .then(([c, r, d]) => {
+      .then(([c, r, d, p]) => {
         setCourses(c);
         setReqs(r);
         setDone(d);
+        setPersonalPlan(p);
       })
       .catch((e) => setErr(String(e)))
       .finally(() => setLoading(false));
@@ -45,14 +49,15 @@ export default function Trail() {
   }, []);
 
   const bundles = useMemo(
-    () => bundleByCategory(computeRequirementRows(reqs, courses, done)),
-    [reqs, courses, done]
+    () => bundleByCategory(computeRequirementRows(reqs, courses, done, personalPlan)),
+    [reqs, courses, done, personalPlan]
   );
 
   const overall = useMemo(() => {
     const required = bundles.reduce((s, b) => s + b.totalRequired, 0);
     const earned = bundles.reduce((s, b) => s + b.totalEarned, 0);
-    return { required: round1(required), earned: round1(earned) };
+    const planned = bundles.reduce((s, b) => s + b.totalPlanned, 0);
+    return { required: round1(required), earned: round1(earned), planned: round1(planned) };
   }, [bundles]);
 
   const toggle = (key: string) => {
@@ -87,7 +92,7 @@ export default function Trail() {
       <header className="mb-6">
         <h1 className="text-lg text-ink">旅迹</h1>
         <div className="text-[11px] text-sub mt-0.5">
-          按培养方案对账 · 5 大板块进度 · 点药丸快填成绩
+          深色为已修 · 浅色为我的计划预览 · 点药丸快填成绩
         </div>
       </header>
 
@@ -107,11 +112,18 @@ export default function Trail() {
             </span>
           </div>
         </div>
+        <div className="flex items-center justify-between mb-2 text-[11px] text-sub">
+          <span>我的计划预览</span>
+          <span className="tabular-nums">
+            + {overall.planned} 学分，预计 {round1(overall.earned + overall.planned)}
+          </span>
+        </div>
         <ProgressBar
           earned={overall.earned}
           required={overall.required}
           color="#c96442"
           trackColor="rgba(201,100,66,0.10)"
+          planned={overall.planned}
         />
       </section>
 
@@ -163,6 +175,9 @@ function CategoryCard({
           / {bundle.totalRequired} 学分 · {pct.toFixed(1)}%
         </div>
       </div>
+      <div className="mb-3 text-[11px] text-sub tabular-nums">
+        我的计划预览 + {bundle.totalPlanned} 学分
+      </div>
 
       <div className="space-y-3">
         {bundle.rows.map((row) => {
@@ -184,11 +199,16 @@ function CategoryCard({
                       {row.requirementName}
                     </span>
                     <span className="text-sub/60 tabular-nums">
-                      ({row.earnedCourses.length} 门)
+                      ({row.earnedCourses.length} 门已修 · {row.plannedCourses.length} 门计划)
                     </span>
                   </div>
                   <div className="tabular-nums" style={{ color: style.text }}>
                     {row.earnedCredits}
+                    {row.plannedCredits > 0 && (
+                      <span className="text-sub/70 ml-1">
+                        +{row.plannedCredits}
+                      </span>
+                    )}
                     <span className="text-sub mx-0.5">/</span>
                     {row.requiredCredits}
                     <span className="text-sub/60 ml-1.5 text-[10px]">
@@ -201,6 +221,7 @@ function CategoryCard({
                   required={row.requiredCredits}
                   color={style.color}
                   trackColor={style.bgGhost}
+                  planned={row.plannedCredits}
                 />
               </button>
 

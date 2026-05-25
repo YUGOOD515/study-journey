@@ -7,9 +7,24 @@ import { parseOfferedTerm } from "../lib/offeredTerm";
 interface Props {
   course: CourseWithCategory;
   completedScore?: number | null;
+  draggable?: boolean;
+  movedToTerm?: number;
+  actualTag?: string;
+  warning?: string;
+  onDragStart?: (event: React.DragEvent<HTMLDivElement>) => void;
+  onDragEnd?: () => void;
 }
 
-export function CourseCard({ course, completedScore }: Props) {
+export function CourseCard({
+  course,
+  completedScore,
+  draggable = false,
+  movedToTerm,
+  actualTag,
+  warning,
+  onDragStart,
+  onDragEnd,
+}: Props) {
   const style = CATEGORY_STYLE[course.category_code];
   const isRequired = course.course_nature === "必修";
   const parsed = parseOfferedTerm(course.offered_term);
@@ -31,9 +46,18 @@ export function CourseCard({ course, completedScore }: Props) {
     <>
       <div
         ref={cardRef}
+        draggable={draggable}
+        onDragStart={(event) => {
+          setTip(null);
+          onDragStart?.(event);
+        }}
+        onDragEnd={onDragEnd}
         onMouseEnter={showTip}
         onMouseLeave={() => setTip(null)}
-        className="rounded-md px-2.5 py-2 text-[11px] leading-tight transition-all hover:-translate-y-0.5 hover:shadow-sm cursor-default"
+        className={
+          "rounded-md px-2.5 py-2 text-[11px] leading-tight transition-all hover:-translate-y-0.5 hover:shadow-sm " +
+          (draggable ? "cursor-grab active:cursor-grabbing" : "cursor-default")
+        }
         style={{
           backgroundColor: bg,
           border: `1px ${borderStyle} ${style.border}`,
@@ -66,6 +90,21 @@ export function CourseCard({ course, completedScore }: Props) {
         {completedScore != null && (
           <div className="mt-1 text-[10px] text-brand tabular-nums">
             ✓ {completedScore}
+          </div>
+        )}
+        {movedToTerm != null && (
+          <div className="mt-1 text-[10px] text-sub tabular-nums">
+            实际 → 学期 {movedToTerm}
+          </div>
+        )}
+        {actualTag && (
+          <div className="mt-1 inline-flex px-1.5 py-0.5 rounded-sm bg-sub/10 text-[10px] text-sub">
+            {actualTag}
+          </div>
+        )}
+        {warning && (
+          <div className="mt-1 text-[10px] text-brand leading-snug">
+            {warning}
           </div>
         )}
       </div>

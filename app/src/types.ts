@@ -47,3 +47,23 @@ export interface SemesterCourse {
   course_nature: "必修" | "选修" | null;
   note: string | null;
 }
+
+export interface PersonalPlanItem {
+  id: number;
+  item_type: "official" | "manual";
+  course_code: string | null;
+  planned_term: number;
+  course_name: string;
+  credits: number;
+  lecture_hours: number;
+  experiment_hours: number;
+  extra_hours: number;
+  prerequisite_course_code: string | null;
+  prerequisite_course_name: string | null;
+  category_code: CategoryCode;
+  category_name: string;
+  course_nature: "必修" | "选修" | "跨专业";
+  offered_term: string | null;
+  course_category: string | null;
+  note: string | null;
+}
