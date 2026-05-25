@@ -1,8 +1,14 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../lib/api";
 import { parseOfferedTerm, TERM_LABEL } from "../lib/offeredTerm";
 import { CATEGORY_STYLE } from "../lib/categoryStyle";
+import {
+  COURSE_CARD_DISPLAY_ITEMS,
+  loadCourseCardDisplayOptions,
+  saveCourseCardDisplayOptions,
+} from "../lib/courseCardDisplay";
 import type {
+  CourseCardDisplayOptions,
   CourseWithCategory,
   PersonalPlanItem,
   ProgramRequirement,
@@ -42,6 +48,9 @@ export default function Timeline() {
   const [done, setDone] = useState<SemesterCourse[]>([]);
   const [personalPlan, setPersonalPlan] = useState<PersonalPlanItem[]>([]);
   const [viewMode, setViewMode] = useState<ViewMode>("official");
+  const [displayOptions, setDisplayOptions] = useState<CourseCardDisplayOptions>(
+    loadCourseCardDisplayOptions
+  );
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [addTerm, setAddTerm] = useState<number | null>(null);
@@ -64,6 +73,10 @@ export default function Timeline() {
       .catch((e) => setErr(String(e)))
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    saveCourseCardDisplayOptions(displayOptions);
+  }, [displayOptions]);
 
   const refetchPlan = async () => {
     const p = await api.personalPlan();
@@ -145,7 +158,10 @@ export default function Timeline() {
     const manualPlanTotal = personalPlan
       .filter((p) => p.item_type === "manual")
       .reduce((s, p) => s + p.credits, 0);
-    const completedTotal = done.reduce((s, d) => s + (d.credits ?? 0), 0);
+    const completedTotal = done.reduce(
+      (s, d) => s + (d.score != null ? d.credits ?? 0 : 0),
+      0
+    );
     return {
       requiredTotal,
       officialPlanTotal,
@@ -245,13 +261,19 @@ export default function Timeline() {
           <div className="text-[11px] text-sub mt-0.5">
             官方计划只读 · 我的计划可拖拽，违规只提示不阻止
           </div>
-          <div className="mt-3 inline-flex rounded-lg border border-sub/15 bg-card p-0.5">
-            <ModeButton active={viewMode === "official"} onClick={() => setViewMode("official")}>
-              官方计划
-            </ModeButton>
-            <ModeButton active={viewMode === "personal"} onClick={() => setViewMode("personal")}>
-              我的计划
-            </ModeButton>
+          <div className="mt-3 flex items-center gap-2">
+            <div className="inline-flex rounded-lg border border-sub/15 bg-card p-0.5">
+              <ModeButton active={viewMode === "official"} onClick={() => setViewMode("official")}>
+                官方计划
+              </ModeButton>
+              <ModeButton active={viewMode === "personal"} onClick={() => setViewMode("personal")}>
+                我的计划
+              </ModeButton>
+            </div>
+            <DisplayOptionsMenu
+              value={displayOptions}
+              onChange={setDisplayOptions}
+            />
           </div>
         </div>
         <div className="flex items-center gap-6 text-xs pt-1">
@@ -280,6 +302,7 @@ export default function Timeline() {
               term={term}
               courses={officialBuckets.byTerm[term]}
               completedByCode={completedByCode}
+              displayOptions={displayOptions}
             />
           ) : (
             <PersonalTermColumn
@@ -288,6 +311,7 @@ export default function Timeline() {
               officialItems={personalBuckets.byTerm[term]}
               manualItems={manualPlanByTerm[term]}
               completedByCode={completedByCode}
+              displayOptions={displayOptions}
               dragging={dragging}
               onDrop={dropOnTerm}
               onStartOfficialDrag={startOfficialDrag}
@@ -303,10 +327,14 @@ export default function Timeline() {
         )}
 
         {viewMode === "official" ? (
-          <OfficialFlexibleColumn courses={officialBuckets.flexible} />
+          <OfficialFlexibleColumn
+            courses={officialBuckets.flexible}
+            displayOptions={displayOptions}
+          />
         ) : (
           <PersonalFlexibleColumn
             items={personalBuckets.flexible}
+            displayOptions={displayOptions}
             dragging={dragging}
             onDrop={resetOfficialToFlexible}
             onStartOfficialDrag={startOfficialDrag}
@@ -340,10 +368,12 @@ function OfficialTermColumn({
   term,
   courses,
   completedByCode,
+  displayOptions,
 }: {
   term: number;
   courses: CourseWithCategory[];
   completedByCode: Map<string, number | null>;
+  displayOptions: CourseCardDisplayOptions;
 }) {
   const credits = courses.reduce((s, c) => s + c.credits, 0);
   return (
@@ -353,6 +383,7 @@ function OfficialTermColumn({
           key={`${term}-${course.course_code}`}
           course={course}
           completedScore={completedByCode.get(course.course_code)}
+          displayOptions={displayOptions}
         />
       ))}
       {courses.length === 0 && <EmptyTerm />}
@@ -365,6 +396,7 @@ function PersonalTermColumn({
   officialItems,
   manualItems,
   completedByCode,
+  displayOptions,
   dragging,
   onDrop,
   onStartOfficialDrag,
@@ -377,6 +409,7 @@ function PersonalTermColumn({
   officialItems: PlannedOfficial[];
   manualItems: PersonalPlanItem[];
   completedByCode: Map<string, number | null>;
+  displayOptions: CourseCardDisplayOptions;
   dragging: DragPayload | null;
   onDrop: (term: number) => void;
   onStartOfficialDrag: (
@@ -400,6 +433,7 @@ function PersonalTermColumn({
     <TermFrame
       term={term}
       credits={credits}
+      variant="personal"
       dropActive={isDropTarget}
       onDragOver={(event) => {
         if (!dragging) return;
@@ -417,8 +451,8 @@ function PersonalTermColumn({
           course={item.course}
           completedScore={completedByCode.get(item.course.course_code)}
           draggable
-          actualTag="计划"
           warning={item.warning ?? undefined}
+          displayOptions={displayOptions}
           onDragStart={(event) => onStartOfficialDrag(event, item)}
           onDragEnd={onDragEnd}
         />
@@ -431,6 +465,7 @@ function PersonalTermColumn({
               key={`plan-manual-${item.id}`}
               course={item}
               draggable
+              displayOptions={displayOptions}
               onDragStart={(event) => onStartManualDrag(event, item)}
               onDragEnd={onDragEnd}
               onDelete={async (id) => {
@@ -455,11 +490,21 @@ function PersonalTermColumn({
   );
 }
 
-function OfficialFlexibleColumn({ courses }: { courses: CourseWithCategory[] }) {
+function OfficialFlexibleColumn({
+  courses,
+  displayOptions,
+}: {
+  courses: CourseWithCategory[];
+  displayOptions: CourseCardDisplayOptions;
+}) {
   return (
     <SideColumn title="灵活" subtitle="任意学期" count={`${courses.length} 门`}>
       {courses.map((course) => (
-        <CourseCard key={`official-flex-${course.course_code}`} course={course} />
+        <CourseCard
+          key={`official-flex-${course.course_code}`}
+          course={course}
+          displayOptions={displayOptions}
+        />
       ))}
     </SideColumn>
   );
@@ -467,12 +512,14 @@ function OfficialFlexibleColumn({ courses }: { courses: CourseWithCategory[] }) 
 
 function PersonalFlexibleColumn({
   items,
+  displayOptions,
   dragging,
   onDrop,
   onStartOfficialDrag,
   onDragEnd,
 }: {
   items: PlannedOfficial[];
+  displayOptions: CourseCardDisplayOptions;
   dragging: DragPayload | null;
   onDrop: () => void;
   onStartOfficialDrag: (
@@ -503,7 +550,7 @@ function PersonalFlexibleColumn({
           key={`personal-flex-${item.course.course_code}`}
           course={item.course}
           draggable
-          actualTag="待安排"
+          displayOptions={displayOptions}
           onDragStart={(event) => onStartOfficialDrag(event, item)}
           onDragEnd={onDragEnd}
         />
@@ -516,6 +563,7 @@ function TermFrame({
   term,
   credits,
   children,
+  variant = "official",
   dropActive = false,
   onDragOver,
   onDrop,
@@ -523,22 +571,33 @@ function TermFrame({
   term: number;
   credits: number;
   children: React.ReactNode;
+  variant?: ViewMode;
   dropActive?: boolean;
   onDragOver?: (event: React.DragEvent<HTMLDivElement>) => void;
   onDrop?: (event: React.DragEvent<HTMLDivElement>) => void;
 }) {
+  const isPersonal = variant === "personal";
   return (
     <div
       onDragOver={onDragOver}
       onDrop={onDrop}
       className={
         "flex-shrink-0 w-[180px] bg-card border rounded-lg p-2.5 flex flex-col transition-colors " +
-        (dropActive ? "border-brand bg-brand/5" : "border-sub/20")
+        (dropActive
+          ? "border-brand bg-brand/5"
+          : isPersonal
+          ? "border-brand/25"
+          : "border-sub/20")
       }
     >
       <div className="flex items-baseline justify-between mb-2 px-0.5">
         <div>
-          <div className="text-[11px] text-sub tabular-nums">学期 {term}</div>
+          <div className="flex items-center gap-1.5 text-[11px] text-sub tabular-nums">
+            {isPersonal && (
+              <span className="inline-block h-1.5 w-1.5 rounded-full bg-brand" />
+            )}
+            学期 {term}
+          </div>
           <div className="text-sm text-ink">{TERM_LABEL[term]}</div>
         </div>
         <div className="text-[11px] text-sub tabular-nums">{round1(credits)} 学分</div>
@@ -606,6 +665,84 @@ function Legend() {
         <span className="inline-block w-4 h-2.5 rounded-sm border border-dashed border-sub/50" />
         选修（虚线）
       </div>
+    </div>
+  );
+}
+
+function DisplayOptionsMenu({
+  value,
+  onChange,
+}: {
+  value: CourseCardDisplayOptions;
+  onChange: (next: CourseCardDisplayOptions) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const selectedCount = COURSE_CARD_DISPLAY_ITEMS.filter((item) => value[item.key]).length;
+
+  useEffect(() => {
+    if (!open) return;
+
+    const closeOnOutsideClick = (event: MouseEvent) => {
+      if (!menuRef.current?.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+
+    document.addEventListener("mousedown", closeOnOutsideClick);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("mousedown", closeOnOutsideClick);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [open]);
+
+  const setOption = (
+    key: (typeof COURSE_CARD_DISPLAY_ITEMS)[number]["key"],
+    checked: boolean
+  ) => {
+    onChange({ ...value, [key]: checked });
+  };
+
+  return (
+    <div ref={menuRef} className="relative">
+      <button
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+        className="h-7 rounded-lg border border-sub/15 bg-card px-3 text-xs text-sub hover:text-ink hover:border-sub/30 hover:bg-sub/5 transition-colors"
+      >
+        显示内容 · {selectedCount}/{COURSE_CARD_DISPLAY_ITEMS.length}
+      </button>
+
+      {open && (
+        <div
+          role="menu"
+          className="absolute left-0 top-full z-40 mt-1 w-36 rounded-lg border border-sub/15 bg-card p-1"
+          style={{
+            boxShadow: "0 14px 34px rgb(var(--shadow-rgb) / var(--shadow-soft))",
+          }}
+        >
+          {COURSE_CARD_DISPLAY_ITEMS.map((item) => (
+            <label
+              key={item.key}
+              className="flex h-8 cursor-pointer items-center gap-2 rounded-md px-2 text-xs text-ink hover:bg-sub/5"
+            >
+              <input
+                type="checkbox"
+                checked={value[item.key]}
+                onChange={(event) => setOption(item.key, event.currentTarget.checked)}
+                className="h-3.5 w-3.5 accent-[rgb(var(--brand)/1)]"
+              />
+              <span>{item.label}</span>
+            </label>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

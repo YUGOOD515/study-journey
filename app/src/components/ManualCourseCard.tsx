@@ -1,5 +1,10 @@
-import type { PersonalPlanItem, SemesterCourse } from "../types";
+import type {
+  CourseCardDisplayOptions,
+  PersonalPlanItem,
+  SemesterCourse,
+} from "../types";
 import { CATEGORY_STYLE } from "../lib/categoryStyle";
+import { DEFAULT_COURSE_CARD_DISPLAY_OPTIONS } from "../lib/courseCardDisplay";
 import { TERM_LABEL } from "../lib/offeredTerm";
 
 type ManualLike = SemesterCourse | PersonalPlanItem;
@@ -8,6 +13,7 @@ interface Props {
   course: ManualLike;
   onDelete?: (id: number) => void;
   draggable?: boolean;
+  displayOptions?: CourseCardDisplayOptions;
   onDragStart?: (event: React.DragEvent<HTMLDivElement>) => void;
   onDragEnd?: () => void;
 }
@@ -16,6 +22,7 @@ export function ManualCourseCard({
   course,
   onDelete,
   draggable = false,
+  displayOptions = DEFAULT_COURSE_CARD_DISPLAY_OPTIONS,
   onDragStart,
   onDragEnd,
 }: Props) {
@@ -26,6 +33,7 @@ export function ManualCourseCard({
     ? CATEGORY_STYLE[course.category_code]
     : CATEGORY_STYLE.general_education;
   const isRequired = course.course_nature === "必修";
+  const score = "score" in course ? course.score : null;
 
   return (
     <div
@@ -41,37 +49,36 @@ export function ManualCourseCard({
         border: `1px dashed ${style.border}`,
       }}
     >
-      <div className="flex items-center justify-between gap-2">
+      {displayOptions.showCourseCode && (
         <div className="text-[9px] text-sub/80 tabular-nums">
           {label} · {TERM_LABEL[termNumber]}
         </div>
-        <div
-          className="px-1 rounded-sm text-[9px] text-white"
-          style={{ backgroundColor: style.color }}
-        >
-          自
-        </div>
-      </div>
+      )}
 
       <div className="font-medium mt-0.5" style={{ color: style.text }}>
         {course.course_name}
       </div>
 
-      <div className="flex items-center justify-between mt-1 text-[10px]">
-        <span className="tabular-nums" style={{ color: style.text }}>
-          {course.credits} 学分
-        </span>
-        <span className="text-sub">{course.course_nature}</span>
-      </div>
-
-      {("score" in course ? course.score != null : false) || course.note ? (
-        <div className="mt-1 flex items-center justify-between gap-2 text-[10px]">
-          <span className="text-sub/70 truncate">{course.note}</span>
-          {"score" in course && course.score != null && (
-            <span className="text-brand tabular-nums">✓ {course.score}</span>
+      {(displayOptions.showCredits || displayOptions.showNature) && (
+        <div className="flex items-center justify-between mt-1 text-[10px]">
+          {displayOptions.showCredits ? (
+            <span className="tabular-nums" style={{ color: style.text }}>
+              {course.credits} 学分
+            </span>
+          ) : (
+            <span />
+          )}
+          {displayOptions.showNature && course.course_nature && (
+            <span className="text-sub">{course.course_nature}</span>
           )}
         </div>
-      ) : null}
+      )}
+
+      {displayOptions.showScore && score != null && (
+        <div className="mt-1 text-[10px] text-brand tabular-nums">
+          ✓ {score}
+        </div>
+      )}
 
       {course.id != null && onDelete && (
         <button

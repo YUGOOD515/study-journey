@@ -67,3 +67,10 @@ export interface PersonalPlanItem {
   course_category: string | null;
   note: string | null;
 }
+
+export interface CourseCardDisplayOptions {
+  showNature: boolean;
+  showScore: boolean;
+  showCredits: boolean;
+  showCourseCode: boolean;
+}

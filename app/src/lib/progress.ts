@@ -5,6 +5,7 @@ import type {
   ProgramRequirement,
   SemesterCourse,
 } from "../types";
+import { parseOfferedTerm } from "./offeredTerm";
 
 export interface EarnedCourse {
   source: "official" | "manual";
@@ -19,10 +20,12 @@ export interface EarnedCourse {
 
 export interface PlannedCourse {
   source: "official" | "manual";
+  origin: "plan" | "record";
   id: number | null;
   courseCode: string | null;
   courseName: string;
   credits: number;
+  plannedTerm: number;
   categoryCode: CategoryCode;
   courseNature: "必修" | "选修" | "跨专业";
 }
@@ -52,24 +55,36 @@ export function computeRequirementRows(
   semesterCourses: SemesterCourse[],
   personalPlan: PersonalPlanItem[] = []
 ): RequirementRow[] {
-  const officialByCode = new Map(
+  const officialRecordsByCode = new Map(
     semesterCourses
       .filter((s) => s.source === "official" && s.course_code)
       .map((s) => [s.course_code as string, s])
   );
-  const completedOfficialCodes = new Set(officialByCode.keys());
+  const earnedOfficialByCode = new Map(
+    semesterCourses
+      .filter((s) => s.source === "official" && s.course_code && s.score != null)
+      .map((s) => [s.course_code as string, s])
+  );
+  const completedOfficialCodes = new Set(earnedOfficialByCode.keys());
+  const plannedOfficialOverrides = new Map(
+    personalPlan
+      .filter((p) => p.item_type === "official" && p.course_code)
+      .map((p) => [p.course_code as string, p])
+  );
   const manualCourses = semesterCourses.filter(
     (s) => s.source === "manual" && s.category_code && s.course_nature
   );
+  const earnedManualCourses = manualCourses.filter((s) => s.score != null);
+  const plannedManualRecords = manualCourses.filter((s) => s.score == null);
   const plannedManualCourses = personalPlan.filter(
     (p) => p.item_type === "manual"
   );
 
   return requirements.map((req) => {
     const officialMatched = matchCourses(req, courses)
-      .filter((c) => officialByCode.has(c.course_code))
+      .filter((c) => earnedOfficialByCode.has(c.course_code))
       .map((c): EarnedCourse => {
-        const record = officialByCode.get(c.course_code);
+        const record = earnedOfficialByCode.get(c.course_code);
         return {
           source: "official",
           id: null,
@@ -82,7 +97,7 @@ export function computeRequirementRows(
         };
       });
 
-    const manualMatched = manualCourses
+    const manualMatched = earnedManualCourses
       .filter((c) => matchManualCourse(req, c))
       .map((c): EarnedCourse => ({
         source: "manual",
@@ -105,12 +120,32 @@ export function computeRequirementRows(
       .map(
         (c): PlannedCourse => ({
           source: "official",
+          origin: officialRecordsByCode.has(c.course_code) ? "record" : "plan",
           id: null,
           courseCode: c.course_code,
           courseName: c.course_name,
           credits: c.credits,
+          plannedTerm:
+            officialRecordsByCode.get(c.course_code)?.term_number ??
+            plannedOfficialOverrides.get(c.course_code)?.planned_term ??
+            defaultPlannedTerm(c),
           categoryCode: c.category_code,
           courseNature: c.course_nature,
+        })
+      );
+    const plannedManualFromRecords = plannedManualRecords
+      .filter((c) => matchManualCourse(req, c))
+      .map(
+        (c): PlannedCourse => ({
+          source: "manual",
+          origin: "record",
+          id: c.id,
+          courseCode: null,
+          courseName: c.course_name,
+          credits: c.credits,
+          plannedTerm: c.term_number,
+          categoryCode: c.category_code as CategoryCode,
+          courseNature: c.course_nature as "必修" | "选修",
         })
       );
     const plannedManual = plannedManualCourses
@@ -118,15 +153,21 @@ export function computeRequirementRows(
       .map(
         (c): PlannedCourse => ({
           source: "manual",
+          origin: "plan",
           id: c.id,
           courseCode: null,
           courseName: c.course_name,
           credits: c.credits,
+          plannedTerm: c.planned_term,
           categoryCode: c.category_code,
           courseNature: c.course_nature as "必修" | "选修",
         })
       );
-    const plannedCourses = [...plannedOfficial, ...plannedManual];
+    const plannedCourses = [
+      ...plannedOfficial,
+      ...plannedManualFromRecords,
+      ...plannedManual,
+    ];
     const plannedCredits = round1(
       plannedCourses.reduce((s, c) => s + c.credits, 0)
     );
@@ -196,6 +237,11 @@ function matchPersonalPlanManual(
 
 function isInterdisciplinary(c: CourseWithCategory): boolean {
   return !!(c.course_category && c.course_category.includes("经法管融通"));
+}
+
+function defaultPlannedTerm(c: CourseWithCategory): number {
+  const parsed = parseOfferedTerm(c.offered_term);
+  return parsed.primary ?? 8;
 }
 
 function round1(n: number) {

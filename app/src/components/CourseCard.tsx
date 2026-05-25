@@ -1,16 +1,17 @@
 import { useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import type { CourseWithCategory } from "../types";
+import type { CourseCardDisplayOptions, CourseWithCategory } from "../types";
 import { CATEGORY_STYLE } from "../lib/categoryStyle";
 import { parseOfferedTerm } from "../lib/offeredTerm";
+import { DEFAULT_COURSE_CARD_DISPLAY_OPTIONS } from "../lib/courseCardDisplay";
 
 interface Props {
   course: CourseWithCategory;
   completedScore?: number | null;
   draggable?: boolean;
   movedToTerm?: number;
-  actualTag?: string;
   warning?: string;
+  displayOptions?: CourseCardDisplayOptions;
   onDragStart?: (event: React.DragEvent<HTMLDivElement>) => void;
   onDragEnd?: () => void;
 }
@@ -20,14 +21,13 @@ export function CourseCard({
   completedScore,
   draggable = false,
   movedToTerm,
-  actualTag,
   warning,
+  displayOptions = DEFAULT_COURSE_CARD_DISPLAY_OPTIONS,
   onDragStart,
   onDragEnd,
 }: Props) {
   const style = CATEGORY_STYLE[course.category_code];
   const isRequired = course.course_nature === "必修";
-  const parsed = parseOfferedTerm(course.offered_term);
 
   const bg = isRequired ? style.bgSoft : style.bgGhost;
   const borderStyle = isRequired ? "solid" : "dashed";
@@ -63,31 +63,34 @@ export function CourseCard({
           border: `1px ${borderStyle} ${style.border}`,
         }}
       >
-        <div className="text-[9px] text-sub/80 tabular-nums">
-          {course.course_code}
-        </div>
+        {displayOptions.showCourseCode && (
+          <div className="text-[9px] text-sub/80 tabular-nums">
+            {course.course_code}
+          </div>
+        )}
         <div className="font-medium mt-0.5" style={{ color: style.text }}>
           {course.course_name}
         </div>
-        <div className="flex items-center justify-between mt-1 text-[10px]">
-          <span className="tabular-nums" style={{ color: style.text }}>
-            {course.credits} 学分
-          </span>
-          <div className="flex items-center gap-1">
-            {parsed.rangeEnd != null && (
-              <span className="text-sub/70 tabular-nums">
-                [{parsed.primary}-{parsed.rangeEnd}]
+        {(displayOptions.showCredits || displayOptions.showNature) && (
+          <div className="flex items-center justify-between mt-1 text-[10px]">
+            {displayOptions.showCredits ? (
+              <span className="tabular-nums" style={{ color: style.text }}>
+                {course.credits} 学分
+              </span>
+            ) : (
+              <span />
+            )}
+            {displayOptions.showNature && (
+              <span
+                className={isRequired ? "px-1 rounded-sm text-white" : "text-sub"}
+                style={isRequired ? { backgroundColor: style.color } : undefined}
+              >
+                {course.course_nature}
               </span>
             )}
-            <span
-              className={isRequired ? "px-1 rounded-sm text-white" : "text-sub"}
-              style={isRequired ? { backgroundColor: style.color } : undefined}
-            >
-              {course.course_nature}
-            </span>
           </div>
-        </div>
-        {completedScore != null && (
+        )}
+        {displayOptions.showScore && completedScore != null && (
           <div className="mt-1 text-[10px] text-brand tabular-nums">
             ✓ {completedScore}
           </div>
@@ -95,11 +98,6 @@ export function CourseCard({
         {movedToTerm != null && (
           <div className="mt-1 text-[10px] text-sub tabular-nums">
             实际 → 学期 {movedToTerm}
-          </div>
-        )}
-        {actualTag && (
-          <div className="mt-1 inline-flex px-1.5 py-0.5 rounded-sm bg-sub/10 text-[10px] text-sub">
-            {actualTag}
           </div>
         )}
         {warning && (

@@ -7,8 +7,10 @@ import {
   computeRequirementRows,
   type CategoryBundle,
   type EarnedCourse,
+  type PlannedCourse,
   type RequirementRow,
 } from "../lib/progress";
+import { TERM_LABEL } from "../lib/offeredTerm";
 import { ProgressBar } from "../components/ProgressBar";
 import type {
   CourseWithCategory,
@@ -43,9 +45,10 @@ export default function Trail() {
       .finally(() => setLoading(false));
   }, []);
 
-  const refetchDone = useCallback(async () => {
-    const d = await api.semesterCourses();
+  const refetchTrailData = useCallback(async () => {
+    const [d, p] = await Promise.all([api.semesterCourses(), api.personalPlan()]);
     setDone(d);
+    setPersonalPlan(p);
   }, []);
 
   const bundles = useMemo(
@@ -92,7 +95,7 @@ export default function Trail() {
       <header className="mb-6">
         <h1 className="text-lg text-ink">旅迹</h1>
         <div className="text-[11px] text-sub mt-0.5">
-          深色为已修 · 浅色为我的计划预览 · 点药丸快填成绩
+          已修在前 · 计划修读在后 · 点课程填成绩
         </div>
       </header>
 
@@ -135,7 +138,7 @@ export default function Trail() {
             bundle={b}
             expandedKeys={expanded}
             onToggle={toggle}
-            onRefetch={refetchDone}
+            onRefetch={refetchTrailData}
           />
         ))}
       </div>
@@ -226,7 +229,7 @@ function CategoryCard({
               </button>
 
               {isOpen && (
-                <EarnedList
+                <CourseStatusList
                   row={row}
                   color={style.text}
                   onRefetch={onRefetch}
@@ -240,7 +243,7 @@ function CategoryCard({
   );
 }
 
-function EarnedList({
+function CourseStatusList({
   row,
   color,
   onRefetch,
@@ -249,23 +252,55 @@ function EarnedList({
   color: string;
   onRefetch: () => Promise<void>;
 }) {
-  if (row.earnedCourses.length === 0) {
+  if (row.earnedCourses.length === 0 && row.plannedCourses.length === 0) {
     return (
       <div className="mt-2 text-[11px] text-sub/60 italic px-1">
-        暂无已修课程
+        暂无已修或计划课程
       </div>
     );
   }
   return (
-    <div className="mt-2 flex flex-wrap gap-1.5">
-      {row.earnedCourses.map((c) => (
-        <ScorePill
-          key={`${c.source}-${c.courseCode ?? c.id}`}
-          course={c}
-          color={color}
-          onRefetch={onRefetch}
-        />
-      ))}
+    <div className="mt-2 space-y-2">
+      {row.earnedCourses.length > 0 && (
+        <CourseGroup label="已修">
+          {row.earnedCourses.map((c) => (
+            <ScorePill
+              key={`earned-${c.source}-${c.courseCode ?? c.id}`}
+              course={c}
+              color={color}
+              onRefetch={onRefetch}
+            />
+          ))}
+        </CourseGroup>
+      )}
+
+      {row.plannedCourses.length > 0 && (
+        <CourseGroup label="计划修读">
+          {row.plannedCourses.map((c) => (
+            <PlannedCoursePill
+              key={`planned-${c.source}-${c.courseCode ?? c.id}-${c.courseName}`}
+              course={c}
+              color={color}
+              onRefetch={onRefetch}
+            />
+          ))}
+        </CourseGroup>
+      )}
+    </div>
+  );
+}
+
+function CourseGroup({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-start gap-2">
+      <div className="w-14 shrink-0 pt-1 text-[10px] text-sub/65">{label}</div>
+      <div className="flex flex-wrap gap-1.5">{children}</div>
     </div>
   );
 }
@@ -332,6 +367,63 @@ function ScorePill({
   );
 }
 
+function PlannedCoursePill({
+  course,
+  color,
+  onRefetch,
+}: {
+  course: PlannedCourse;
+  color: string;
+  onRefetch: () => Promise<void>;
+}) {
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const [anchor, setAnchor] = useState<DOMRect | null>(null);
+
+  const open = () => {
+    const r = btnRef.current?.getBoundingClientRect();
+    if (r) setAnchor(r);
+  };
+  const close = () => setAnchor(null);
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        type="button"
+        onClick={open}
+        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border border-dashed text-[11px] bg-sub/5 hover:bg-sub/10 transition-colors cursor-pointer"
+        style={{ color, borderColor: "rgb(var(--sub) / 0.25)" }}
+        title={course.source === "official" ? course.courseCode ?? "" : "计划课程"}
+      >
+        <span>{course.courseName}</span>
+        <span className="text-sub/70 tabular-nums">{course.credits}</span>
+        <span className="text-sub/55 tabular-nums">
+          {TERM_LABEL[course.plannedTerm]}
+        </span>
+        <span className="ml-1 pl-1.5 border-l border-sub/25 tabular-nums text-[10px] text-sub/70">
+          填成绩
+        </span>
+      </button>
+      {anchor &&
+        createPortal(
+          <ScorePopover
+            anchor={anchor}
+            course={course}
+            initialScore={null}
+            onClose={close}
+            onSaved={async () => {
+              await onRefetch();
+              close();
+            }}
+          />,
+          document.body
+        )}
+    </>
+  );
+}
+
+type ScoreEditableCourse = EarnedCourse | PlannedCourse;
+
 function ScorePopover({
   anchor,
   course,
@@ -340,7 +432,7 @@ function ScorePopover({
   onSaved,
 }: {
   anchor: DOMRect;
-  course: EarnedCourse;
+  course: ScoreEditableCourse;
   initialScore: number | null;
   onClose: () => void;
   onSaved: () => Promise<void>;
@@ -370,10 +462,46 @@ function ScorePopover({
   }, [onClose]);
 
   const persist = async (newScore: number | null) => {
+    const isPlanned = isPlannedCourse(course);
+    if (isPlanned && newScore == null) {
+      setErr("计划课程需要填写成绩后才会计入已修");
+      return;
+    }
+
     setBusy(true);
     setErr(null);
     try {
-      if (course.source === "manual") {
+      if (isPlanned) {
+        if (course.source === "manual") {
+          const courseNature =
+            course.courseNature === "跨专业" ? "选修" : course.courseNature;
+          if (course.origin === "record") {
+            if (course.id == null) throw new Error("手动课缺少 id");
+            await api.patchManual(course.id, { score: newScore });
+          } else {
+            const created = await api.createManual({
+              term_number: course.plannedTerm,
+              course_name: course.courseName,
+              credits: course.credits,
+              category_code: course.categoryCode,
+              course_nature: courseNature,
+              score: newScore,
+              note: "由计划转为已修",
+            });
+            if (!created.ok) throw new Error("手动课写入失败");
+            if (course.id != null) {
+              await api.deletePersonalPlan(course.id);
+            }
+          }
+        } else {
+          if (!course.courseCode) throw new Error("官方课缺少课程号");
+          await api.upsertOfficial({
+            term_number: course.plannedTerm,
+            course_code: course.courseCode,
+            score: newScore,
+          });
+        }
+      } else if (course.source === "manual") {
         if (course.id == null) throw new Error("手动课缺少 id");
         await api.patchManual(course.id, { score: newScore });
       } else {
@@ -454,18 +582,28 @@ function ScorePopover({
       </form>
 
       <div className="flex items-center justify-between mt-2 min-h-[14px]">
-        <button
-          type="button"
-          onClick={() => void persist(null)}
-          disabled={busy}
-          className="text-[10px] text-sub hover:text-ink transition-colors disabled:opacity-50"
-        >
-          清空分数
-        </button>
+        {isPlannedCourse(course) ? (
+          <div className="text-[10px] text-sub/70">
+            保存后进入已修进度
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => void persist(null)}
+            disabled={busy}
+            className="text-[10px] text-sub hover:text-ink transition-colors disabled:opacity-50"
+          >
+            清空分数
+          </button>
+        )}
         {err && <div className="text-[10px] text-red-500">{err}</div>}
       </div>
     </div>
   );
+}
+
+function isPlannedCourse(course: ScoreEditableCourse): course is PlannedCourse {
+  return !("score" in course);
 }
 
 function round1(n: number) {
