@@ -63,6 +63,7 @@ export default function Timeline() {
     const m: Record<number, Map<string, number | null>> = {};
     for (const t of TERMS) m[t] = new Map();
     for (const d of done) {
+      if (d.source !== "official" || !d.course_code) continue;
       m[d.term_number]?.set(d.course_code, d.score);
     }
     return m;
@@ -73,6 +74,7 @@ export default function Timeline() {
     const requiredTotal = reqs.reduce((s, r) => s + r.required_credits, 0);
     const planTotal = courses.reduce((s, c) => s + c.credits, 0);
     const completedTotal = done.reduce((s, d) => {
+      if (d.source === "manual") return s + (d.credits ?? 0);
       const c = courses.find((x) => x.course_code === d.course_code);
       return s + (c?.credits ?? 0);
     }, 0);

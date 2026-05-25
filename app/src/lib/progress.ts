@@ -27,7 +27,13 @@ export function computeRequirementRows(
   courses: CourseWithCategory[],
   semesterCourses: SemesterCourse[]
 ): RequirementRow[] {
-  const completed = new Set(semesterCourses.map((s) => s.course_code));
+  // 仅官方课走"按 course_code 命中要求行"的逻辑；
+  // 手动课没有 course_code，会在 Phase H 里以另一条路径计入板块学分。
+  const completed = new Set(
+    semesterCourses
+      .filter((s) => s.source === "official" && s.course_code)
+      .map((s) => s.course_code as string)
+  );
 
   return requirements.map((req) => {
     const matched = matchCourses(req, courses).filter((c) =>
