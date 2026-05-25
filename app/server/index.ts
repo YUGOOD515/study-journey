@@ -32,7 +32,7 @@ app.get("/api/courses", (_req, res) => {
 app.get("/api/courses/:code", (req: Request, res: Response) => {
   const row = db
     .prepare("SELECT * FROM courses WHERE course_code = ?")
-    .get(req.params.code);
+    .get(String(req.params.code));
   if (!row) {
     res.status(404).json({ error: "未找到该课程" });
     return;
@@ -123,7 +123,7 @@ app.post("/api/semester-courses/official", (req: Request, res: Response) => {
       `INSERT INTO semester_courses (term_number, course_code, score)
        VALUES (?, ?, ?)
        ON CONFLICT(term_number, course_code) DO UPDATE SET score = excluded.score`
-    ).run([term_number, course_code, score ?? null]);
+    ).run(term_number, course_code, score ?? null);
     res.json({ ok: true, term_number, course_code, score: score ?? null });
   } catch (e: any) {
     res.status(400).json({ error: String(e?.message ?? e) });
@@ -157,7 +157,7 @@ app.patch(
     try {
       const info = db
         .prepare(`UPDATE semester_courses SET ${sets.join(", ")} WHERE course_code = ?`)
-        .run(params);
+        .run(...params);
       if (info.changes === 0) {
         res.status(404).json({ error: "未找到该已修记录" });
         return;
@@ -174,7 +174,7 @@ app.delete(
   (req: Request, res: Response) => {
     const info = db
       .prepare("DELETE FROM semester_courses WHERE course_code = ?")
-      .run([String(req.params.code)]);
+      .run(String(req.params.code));
     if (info.changes === 0) {
       res.status(404).json({ error: "未找到该已修记录" });
       return;
@@ -238,15 +238,15 @@ app.post("/api/semester-courses/manual", (req: Request, res: Response) => {
           (term_number, course_name, credits, category_code, course_nature, score, note)
          VALUES (?, ?, ?, ?, ?, ?, ?)`
       )
-      .run([
+      .run(
         term_number,
         course_name.trim(),
         credits,
         category_code,
         course_nature,
         score ?? null,
-        note ?? null,
-      ]);
+        note ?? null
+      );
     res.json({ ok: true, id: info.lastInsertRowid });
   } catch (e: any) {
     res.status(400).json({ error: String(e?.message ?? e) });
@@ -286,7 +286,7 @@ app.patch(
     try {
       const info = db
         .prepare(`UPDATE manual_courses SET ${sets.join(", ")} WHERE id = ?`)
-        .run(params);
+        .run(...params);
       if (info.changes === 0) {
         res.status(404).json({ error: "未找到该手动课" });
         return;
@@ -304,7 +304,7 @@ app.delete(
     const id = Number(req.params.id);
     const info = db
       .prepare("DELETE FROM manual_courses WHERE id = ?")
-      .run([id]);
+      .run(id);
     if (info.changes === 0) {
       res.status(404).json({ error: "未找到该手动课" });
       return;
@@ -421,7 +421,7 @@ app.post("/api/personal-plan/official", (req: Request, res: Response) => {
          SET planned_term = ?, note = ?, updated_at = datetime('now')
          WHERE item_type = 'official' AND course_code = ?`
       )
-      .run([planned_term, note ?? null, course_code.trim()]);
+      .run(planned_term, note ?? null, course_code.trim());
 
     if (updated.changes > 0) {
       res.json({ ok: true, id: null, course_code, planned_term });
@@ -433,7 +433,7 @@ app.post("/api/personal-plan/official", (req: Request, res: Response) => {
         `INSERT INTO personal_plan (item_type, course_code, planned_term, note)
          VALUES ('official', ?, ?, ?)`
       )
-      .run([course_code.trim(), planned_term, note ?? null]);
+      .run(course_code.trim(), planned_term, note ?? null);
     res.json({ ok: true, id: inserted.lastInsertRowid, course_code, planned_term });
   } catch (e: any) {
     res.status(400).json({ error: String(e?.message ?? e) });
@@ -445,7 +445,7 @@ app.delete("/api/personal-plan/official/:code", (req: Request, res: Response) =>
     .prepare(
       "DELETE FROM personal_plan WHERE item_type = 'official' AND course_code = ?"
     )
-    .run([String(req.params.code)]);
+    .run(String(req.params.code));
   res.json({ ok: true, changes: info.changes });
 });
 
@@ -487,14 +487,14 @@ app.post("/api/personal-plan/manual", (req: Request, res: Response) => {
           (item_type, planned_term, manual_course_name, manual_credits, manual_category_code, manual_course_nature, note)
          VALUES ('manual', ?, ?, ?, ?, ?, ?)`
       )
-      .run([
+      .run(
         planned_term,
         course_name.trim(),
         credits,
         category_code,
         course_nature,
-        note ?? null,
-      ]);
+        note ?? null
+      );
     res.json({ ok: true, id: info.lastInsertRowid });
   } catch (e: any) {
     res.status(400).json({ error: String(e?.message ?? e) });
@@ -533,7 +533,7 @@ app.patch("/api/personal-plan/:id", (req: Request, res: Response) => {
   try {
     const info = db
       .prepare(`UPDATE personal_plan SET ${sets.join(", ")} WHERE id = ?`)
-      .run(params);
+      .run(...params);
     if (info.changes === 0) {
       res.status(404).json({ error: "未找到该计划记录" });
       return;
@@ -546,7 +546,7 @@ app.patch("/api/personal-plan/:id", (req: Request, res: Response) => {
 
 app.delete("/api/personal-plan/:id", (req: Request, res: Response) => {
   const id = Number(req.params.id);
-  const info = db.prepare("DELETE FROM personal_plan WHERE id = ?").run([id]);
+  const info = db.prepare("DELETE FROM personal_plan WHERE id = ?").run(id);
   if (info.changes === 0) {
     res.status(404).json({ error: "未找到该计划记录" });
     return;

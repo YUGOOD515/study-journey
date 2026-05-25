@@ -1,13 +1,22 @@
-import sqlite from "node-sqlite3-wasm";
+/**
+ * 数据库连接。
+ *
+ * 历史：之前用 node-sqlite3-wasm，发现长跑 Node 进程里写入只在 WASM 内存里、
+ *      不落盘（独立连接读不到、文件 mtime 不更新）。
+ *      Node 24 自带 node:sqlite（原生 SQLite，experimental 但稳定），
+ *      API 与 better-sqlite3 一致，零依赖、零编译。换它。
+ */
+import { DatabaseSync } from "node:sqlite";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const { Database } = sqlite;
+// 一次性屏蔽 node:sqlite 的 experimental warning（噪音太大）
+process.removeAllListeners("warning");
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DB_PATH = path.resolve(__dirname, "../../db/course_planner.sqlite");
 
-export const db = new Database(DB_PATH);
+export const db = new DatabaseSync(DB_PATH);
 db.exec("PRAGMA foreign_keys = ON;");
 
 db.exec(`
@@ -69,7 +78,15 @@ CREATE INDEX IF NOT EXISTS idx_personal_plan_manual_category
     ON personal_plan(manual_category_code);
 `);
 
-console.log(`[db] 已连接 SQLite: ${DB_PATH}`);
+// 进程退出前主动 close（保险，node:sqlite 写直达磁盘已经够，但加上无害）
+for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"] as const) {
+  process.on(sig, () => {
+    try { db.close(); } catch {}
+    process.exit(0);
+  });
+}
+
+console.log(`[db] 已连接 SQLite (node:sqlite): ${DB_PATH}`);
 
 export const CATEGORY_TABLES = {
   general_education: {

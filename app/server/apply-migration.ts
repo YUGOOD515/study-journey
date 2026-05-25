@@ -2,15 +2,14 @@
  * 用法：npx tsx server/apply-migration.ts <migration-file-relative-to-project-root>
  * 例：  npx tsx server/apply-migration.ts migrations/009_create_manual_courses.sql
  *
- * 用于把单个 SQL 迁移应用到 db/course_planner.sqlite。
- * 仓库里没有专门的 migrate runner（之前都是手动跑），所以补一个最简的。
+ * 用 node:sqlite 把单个 SQL 迁移应用到 db/course_planner.sqlite。
  */
-import sqlite from "node-sqlite3-wasm";
+import { DatabaseSync } from "node:sqlite";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const { Database } = sqlite;
+process.removeAllListeners("warning");
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.resolve(__dirname, "../..");
@@ -31,11 +30,8 @@ if (!fs.existsSync(sqlPath)) {
 const sql = fs.readFileSync(sqlPath, "utf8");
 console.log(`[migrate] DB:  ${DB_PATH}`);
 console.log(`[migrate] SQL: ${sqlPath}`);
-console.log("---- 内容 ----");
-console.log(sql);
-console.log("--------------");
 
-const db = new Database(DB_PATH);
+const db = new DatabaseSync(DB_PATH);
 try {
   db.exec(sql);
   console.log("[migrate] ✅ 应用成功");
