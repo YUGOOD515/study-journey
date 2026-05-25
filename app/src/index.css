@@ -1,0 +1,101 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * 颜色用 CSS 变量驱动，rgb 三通道空格分隔，
+ * 配合 tailwind.config.js 里 "rgb(var(--xxx) / <alpha-value>)" 写法，
+ * 可以让 bg-card / text-sub/30 等类自动适配深浅色。
+ */
+/* ---------- 浅色配色 ---------- */
+:root {
+  /* 中性色 */
+  --bg: 250 249 245;     /* #faf9f5 暖米白 */
+  --card: 255 255 255;
+  --ink: 26 26 26;       /* 主文字 */
+  --sub: 90 90 90;       /* 次要文字（比原来略深，可读性↑） */
+  --brand: 201 100 66;   /* Claude 暖橘 */
+  --hairline: 0 0 0;     /* 描边颜色基底 */
+
+  /* 阴影颜色基底（恒为黑，深色模式也是黑） */
+  --shadow-rgb: 0 0 0;
+  --shadow-strong: 0.12;
+  --shadow-soft: 0.06;
+
+  /* 5 大板块：base 用于色点/边/进度条，text 用于课程名文字 */
+  --cat-ge: 107 141 184;       /* 通识教育 */
+  --cat-ge-text: 74 104 137;
+  --cat-mp: 184 122 155;       /* 大类平台 */
+  --cat-mp-text: 138 86 115;
+  --cat-pe: 201 100 66;        /* 专业教育（同主橘） */
+  --cat-pe-text: 157 74 48;
+  --cat-qe: 139 166 115;       /* 素质教育 */
+  --cat-qe-text: 99 122 79;
+  --cat-pr: 168 149 128;       /* 实践教育 */
+  --cat-pr-text: 122 106 88;
+
+  /* 课程卡背景的不同强度 */
+  --cat-bg-soft: 0.12;   /* 必修 */
+  --cat-bg-ghost: 0.05;  /* 选修 */
+  --cat-border: 0.45;
+}
+
+/* ---------- 深色配色（独立调过，非简单反转） ---------- */
+html.dark {
+  --bg: 24 24 24;        /* #181818 比纯黑略暖 */
+  --card: 36 36 36;      /* #242424 */
+  --ink: 240 240 240;    /* #f0f0f0 主文字，对比 14:1 */
+  --sub: 175 175 175;    /* #afafaf 次要文字（比 a3a3 略亮以求清晰） */
+  --brand: 232 130 90;
+  --hairline: 255 255 255;
+
+  /* 深色下需要更强的阴影才能感知到层级（卡片和背景差异小） */
+  --shadow-strong: 0.55;
+  --shadow-soft: 0.30;
+
+  /* 类别色：亮度↑、饱和度略↓，避免在深色背景上过于刺眼；
+     text 在深色下要明显比 base 更亮才好读 */
+  --cat-ge: 145 178 218;
+  --cat-ge-text: 188 213 235;
+  --cat-mp: 215 164 190;
+  --cat-mp-text: 232 196 215;
+  --cat-pe: 232 130 90;
+  --cat-pe-text: 245 175 144;
+  --cat-qe: 178 202 148;
+  --cat-qe-text: 205 223 184;
+  --cat-pr: 200 181 153;
+  --cat-pr-text: 222 207 184;
+
+  /* 深色下半透明背景层：alpha 不能太高，否则卡片整体过亮 */
+  --cat-bg-soft: 0.13;
+  --cat-bg-ghost: 0.06;
+  --cat-border: 0.50;
+}
+
+html, body {
+  font-family: "SF Mono", "SFMono-Regular", "PingFang SC", "Microsoft YaHei", ui-monospace, monospace;
+  font-weight: 500;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  @apply bg-bg text-ink;
+  transition: background-color 200ms ease, color 200ms ease;
+}
+
+/* 滚动条柔化 */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgb(var(--sub) / 0.25);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgb(var(--sub) / 0.45);
+}
