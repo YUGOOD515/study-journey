@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { api } from "../lib/api";
 import { CATEGORY_STYLE } from "../lib/categoryStyle";
 import {
@@ -36,6 +37,20 @@ export default function Trail() {
       .catch((e) => setErr(String(e)))
       .finally(() => setLoading(false));
   }, []);
+
+  const refetchDone = useCallback(async () => {
+    const d = await api.semesterCourses();
+    setDone(d);
+  }, []);
+
+  // 官方课的成绩按 course_code 索引
+  const scoresByCode = useMemo(() => {
+    const m = new Map<string, SemesterCourse>();
+    for (const s of done) {
+      if (s.source === "official" && s.course_code) m.set(s.course_code, s);
+    }
+    return m;
+  }, [done]);
 
   const bundles = useMemo(
     () => bundleByCategory(computeRequirementRows(reqs, courses, done)),
@@ -80,7 +95,7 @@ export default function Trail() {
       <header className="mb-6">
         <h1 className="text-lg text-ink">旅迹</h1>
         <div className="text-[11px] text-sub mt-0.5">
-          按培养方案对账 · 5 大板块进度
+          按培养方案对账 · 5 大板块进度 · 点药丸快填成绩
         </div>
       </header>
 
@@ -116,6 +131,8 @@ export default function Trail() {
             bundle={b}
             expandedKeys={expanded}
             onToggle={toggle}
+            scoresByCode={scoresByCode}
+            onRefetch={refetchDone}
           />
         ))}
       </div>
@@ -127,10 +144,14 @@ function CategoryCard({
   bundle,
   expandedKeys,
   onToggle,
+  scoresByCode,
+  onRefetch,
 }: {
   bundle: CategoryBundle;
   expandedKeys: Set<string>;
   onToggle: (key: string) => void;
+  scoresByCode: Map<string, SemesterCourse>;
+  onRefetch: () => Promise<void>;
 }) {
   const style = CATEGORY_STYLE[bundle.code];
   const pct =
@@ -194,7 +215,14 @@ function CategoryCard({
                 />
               </button>
 
-              {isOpen && <EarnedList row={row} color={style.text} />}
+              {isOpen && (
+                <EarnedList
+                  row={row}
+                  color={style.text}
+                  scoresByCode={scoresByCode}
+                  onRefetch={onRefetch}
+                />
+              )}
             </div>
           );
         })}
@@ -206,9 +234,13 @@ function CategoryCard({
 function EarnedList({
   row,
   color,
+  scoresByCode,
+  onRefetch,
 }: {
   row: RequirementRow;
   color: string;
+  scoresByCode: Map<string, SemesterCourse>;
+  onRefetch: () => Promise<void>;
 }) {
   if (row.earnedCourses.length === 0) {
     return (
@@ -220,16 +252,205 @@ function EarnedList({
   return (
     <div className="mt-2 flex flex-wrap gap-1.5">
       {row.earnedCourses.map((c) => (
-        <span
+        <ScorePill
           key={c.course_code}
-          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] bg-sub/10"
-          style={{ color }}
-          title={c.course_code}
-        >
-          {c.course_name}
-          <span className="text-sub/70 tabular-nums">{c.credits}</span>
-        </span>
+          course={c}
+          record={scoresByCode.get(c.course_code)}
+          color={color}
+          onRefetch={onRefetch}
+        />
       ))}
+    </div>
+  );
+}
+
+// ── 可点击的"成绩药丸" + popover 输入框 ─────────────────
+function ScorePill({
+  course,
+  record,
+  color,
+  onRefetch,
+}: {
+  course: CourseWithCategory;
+  record: SemesterCourse | undefined;
+  color: string;
+  onRefetch: () => Promise<void>;
+}) {
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const [anchor, setAnchor] = useState<DOMRect | null>(null);
+
+  const score = record?.score;
+  const hasScore = score != null;
+
+  const open = () => {
+    const r = btnRef.current?.getBoundingClientRect();
+    if (r) setAnchor(r);
+  };
+  const close = () => setAnchor(null);
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        type="button"
+        onClick={open}
+        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] bg-sub/10 hover:bg-sub/20 transition-colors cursor-pointer"
+        style={{ color }}
+        title={course.course_code}
+      >
+        <span>{course.course_name}</span>
+        <span className="text-sub/70 tabular-nums">{course.credits}</span>
+        <span
+          className="ml-1 pl-1.5 border-l border-sub/25 tabular-nums text-[10px]"
+          style={{ color: hasScore ? color : "rgb(var(--sub) / 0.55)" }}
+        >
+          {hasScore ? score : "—"}
+        </span>
+      </button>
+      {anchor &&
+        createPortal(
+          <ScorePopover
+            anchor={anchor}
+            course={course}
+            initialScore={score ?? null}
+            onClose={close}
+            onSaved={async () => {
+              await onRefetch();
+              close();
+            }}
+          />,
+          document.body
+        )}
+    </>
+  );
+}
+
+function ScorePopover({
+  anchor,
+  course,
+  initialScore,
+  onClose,
+  onSaved,
+}: {
+  anchor: DOMRect;
+  course: CourseWithCategory;
+  initialScore: number | null;
+  onClose: () => void;
+  onSaved: () => Promise<void>;
+}) {
+  const [val, setVal] = useState<string>(
+    initialScore != null ? String(initialScore) : ""
+  );
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  // 点击外部 / Esc 关闭
+  useEffect(() => {
+    const onDocClick = (e: MouseEvent) => {
+      if (!rootRef.current) return;
+      if (!rootRef.current.contains(e.target as Node)) onClose();
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("mousedown", onDocClick);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDocClick);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [onClose]);
+
+  const persist = async (newScore: number | null) => {
+    setBusy(true);
+    setErr(null);
+    try {
+      await api.patchOfficial(course.course_code, { score: newScore });
+      await onSaved();
+    } catch (e: any) {
+      setErr(String(e?.message ?? e));
+      setBusy(false);
+    }
+  };
+
+  const onSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const t = val.trim();
+    if (t === "") {
+      void persist(null);
+      return;
+    }
+    const n = Number(t);
+    if (!Number.isFinite(n) || n < 0 || n > 100) {
+      setErr("分数需在 0–100 之间");
+      return;
+    }
+    void persist(n);
+  };
+
+  // 默认放在按钮下方；右侧超出屏幕则左对齐到屏右边距
+  const W = 240;
+  const top = anchor.bottom + 6;
+  const screenW = typeof window !== "undefined" ? window.innerWidth : 1920;
+  const left = Math.min(anchor.left, screenW - W - 12);
+
+  return (
+    <div
+      ref={rootRef}
+      className="fixed z-50 bg-card border border-sub/20 rounded-lg p-3"
+      style={{
+        top,
+        left,
+        width: W,
+        boxShadow:
+          "0 14px 36px rgb(var(--shadow-rgb) / var(--shadow-strong)), 0 2px 8px rgb(var(--shadow-rgb) / var(--shadow-soft))",
+      }}
+    >
+      <div className="flex items-baseline justify-between mb-2 gap-2">
+        <div className="text-[12px] text-ink truncate" title={course.course_name}>
+          {course.course_name}
+        </div>
+        <div className="text-[10px] text-sub tabular-nums shrink-0">
+          {course.credits} 学分
+        </div>
+      </div>
+
+      <form onSubmit={onSubmit} className="flex items-center gap-1.5">
+        <input
+          type="number"
+          inputMode="decimal"
+          min={0}
+          max={100}
+          step="0.1"
+          value={val}
+          autoFocus
+          disabled={busy}
+          onChange={(e) => setVal(e.target.value)}
+          placeholder="0–100"
+          className="flex-1 px-2 py-1 rounded-md bg-bg border border-sub/30 text-ink text-[12px] tabular-nums focus:outline-none focus:border-brand"
+        />
+        <button
+          type="submit"
+          disabled={busy}
+          className="px-2.5 py-1 rounded-md text-[11px] text-white disabled:opacity-50"
+          style={{ backgroundColor: "rgb(var(--brand) / 1)" }}
+        >
+          {busy ? "…" : "保存"}
+        </button>
+      </form>
+
+      <div className="flex items-center justify-between mt-2 min-h-[14px]">
+        <button
+          type="button"
+          onClick={() => void persist(null)}
+          disabled={busy}
+          className="text-[10px] text-sub hover:text-ink transition-colors disabled:opacity-50"
+        >
+          清空分数
+        </button>
+        {err && <div className="text-[10px] text-red-500">{err}</div>}
+      </div>
     </div>
   );
 }
