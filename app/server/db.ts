@@ -1,119 +1,97 @@
 /**
- * 数据库连接。
+ * SQLite 连接层。
  *
- * 历史：之前用 node-sqlite3-wasm，发现长跑 Node 进程里写入只在 WASM 内存里、
- *      不落盘（独立连接读不到、文件 mtime 不更新）。
- *      Node 24 自带 node:sqlite（原生 SQLite，experimental 但稳定），
- *      API 与 better-sqlite3 一致，零依赖、零编译。换它。
+ * 默认读取项目同级 db 目录中的 v2 数据库：../db/course_planner_v2.sqlite
+ * 也可以通过环境变量覆盖：DB_PATH=/absolute/or/relative/path.sqlite npm run dev
  */
 import { DatabaseSync } from "node:sqlite";
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-// 一次性屏蔽 node:sqlite 的 experimental warning（噪音太大）
+// 屏蔽 node:sqlite 的 experimental warning，避免开发终端刷屏。
 process.removeAllListeners("warning");
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DB_PATH = path.resolve(__dirname, "../../db/course_planner.sqlite");
+
+function resolveDbPath(): string {
+  if (process.env.DB_PATH?.trim()) {
+    return path.resolve(process.cwd(), process.env.DB_PATH.trim());
+  }
+
+  const candidates = [
+    // 用户当前本地结构：app/ 与 db/ 同级，npm run dev 在 app 根目录执行。
+    path.resolve(process.cwd(), "../db/course_planner_v2.sqlite"),
+    // 兼容从 server/ 文件位置推导的同级结构。
+    path.resolve(__dirname, "../../db/course_planner_v2.sqlite"),
+    // 兼容把 db/ 放进 app/ 内部的结构。
+    path.resolve(process.cwd(), "db/course_planner_v2.sqlite"),
+    path.resolve(__dirname, "../db/course_planner_v2.sqlite"),
+  ];
+
+  return candidates.find((p) => fs.existsSync(p)) ?? candidates[0];
+}
+
+export const DB_PATH = resolveDbPath();
+
+if (!fs.existsSync(DB_PATH)) {
+  throw new Error(
+    `[db] 未找到数据库文件：${DB_PATH}\n` +
+      "请确认 course_planner_v2.sqlite 位于 ../db/，或使用 DB_PATH 环境变量指定路径。"
+  );
+}
 
 export const db = new DatabaseSync(DB_PATH);
 db.exec("PRAGMA foreign_keys = ON;");
+db.exec("PRAGMA busy_timeout = 5000;");
 
-db.exec(`
-CREATE TABLE IF NOT EXISTS personal_plan (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    item_type TEXT NOT NULL CHECK (item_type IN ('official', 'manual')),
-    course_code TEXT,
-    planned_term INTEGER NOT NULL CHECK (planned_term BETWEEN 1 AND 8),
-    manual_course_name TEXT,
-    manual_credits REAL CHECK (manual_credits IS NULL OR manual_credits >= 0),
-    manual_category_code TEXT CHECK (
-        manual_category_code IS NULL OR manual_category_code IN (
-            'general_education',
-            'major_platform',
-            'professional_education',
-            'quality_education',
-            'practice_education'
-        )
-    ),
-    manual_course_nature TEXT CHECK (
-        manual_course_nature IS NULL OR manual_course_nature IN ('必修', '选修')
-    ),
-    note TEXT,
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-    CHECK (
-        (
-            item_type = 'official'
-            AND course_code IS NOT NULL
-            AND manual_course_name IS NULL
-            AND manual_credits IS NULL
-            AND manual_category_code IS NULL
-            AND manual_course_nature IS NULL
-        )
-        OR
-        (
-            item_type = 'manual'
-            AND course_code IS NULL
-            AND manual_course_name IS NOT NULL
-            AND manual_credits IS NOT NULL
-            AND manual_category_code IS NOT NULL
-            AND manual_course_nature IS NOT NULL
-        )
-    ),
-    FOREIGN KEY (course_code)
-        REFERENCES courses(course_code)
-        ON UPDATE CASCADE
-        ON DELETE CASCADE
+const REQUIRED_TABLES = [
+  "plan_program_courses",
+  "plan_custom_courses",
+  "plan_program_requirements",
+  "raw_import_batches",
+  "raw_term_course_sections",
+  "raw_term_added_courses",
+];
+
+const existingTables = new Set(
+  db
+    .prepare("SELECT name FROM sqlite_master WHERE type = 'table'")
+    .all()
+    .map((row: any) => String(row.name))
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS ux_personal_plan_official_course
-    ON personal_plan(course_code)
-    WHERE item_type = 'official' AND course_code IS NOT NULL;
+const missingTables = REQUIRED_TABLES.filter((name) => !existingTables.has(name));
+if (missingTables.length > 0) {
+  throw new Error(
+    `[db] 数据库不是 v2 结构，缺少表：${missingTables.join(", ")}\n` +
+      `当前数据库：${DB_PATH}`
+  );
+}
 
-CREATE INDEX IF NOT EXISTS idx_personal_plan_term
-    ON personal_plan(planned_term);
-
-CREATE INDEX IF NOT EXISTS idx_personal_plan_manual_category
-    ON personal_plan(manual_category_code);
-`);
-
-// 进程退出前主动 close（保险，node:sqlite 写直达磁盘已经够，但加上无害）
 for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"] as const) {
   process.on(sig, () => {
-    try { db.close(); } catch {}
+    try {
+      db.close();
+    } catch {
+      // ignore
+    }
     process.exit(0);
   });
 }
 
-console.log(`[db] 已连接 SQLite (node:sqlite): ${DB_PATH}`);
+console.log(`[db] 已连接 SQLite v2: ${DB_PATH}`);
 
-export const CATEGORY_TABLES = {
-  general_education: {
-    table: "general_education_courses",
-    name: "通识教育",
-    extra: "course_category",
-  },
-  major_platform: {
-    table: "major_platform_courses",
-    name: "大类平台",
-    extra: null,
-  },
-  professional_education: {
-    table: "professional_direction_courses",
-    name: "专业教育",
-    extra: "preference_level",
-  },
-  quality_education: {
-    table: "quality_education_courses",
-    name: "素质教育",
-    extra: null,
-  },
-  practice_education: {
-    table: "practice_education_courses",
-    name: "实践教育",
-    extra: null,
-  },
-} as const;
+export const CATEGORIES = [
+  { code: "general_education", name: "通识教育" },
+  { code: "major_platform", name: "大类平台" },
+  { code: "professional_education", name: "专业教育" },
+  { code: "quality_education", name: "素质教育" },
+  { code: "practice_education", name: "实践教育" },
+] as const;
 
-export type CategoryCode = keyof typeof CATEGORY_TABLES;
+export type CategoryCode = (typeof CATEGORIES)[number]["code"];
+
+export const CATEGORY_NAME_BY_CODE = Object.fromEntries(
+  CATEGORIES.map((c) => [c.code, c.name])
+) as Record<CategoryCode, string>;

@@ -1,37 +1,144 @@
 import express, { type Request, type Response } from "express";
 import cors from "cors";
-import { db, CATEGORY_TABLES, type CategoryCode } from "./db";
+import { randomUUID } from "node:crypto";
+import { db, CATEGORIES, CATEGORY_NAME_BY_CODE, type CategoryCode } from "./db";
 
 const app = express();
-const PORT = Number(process.env.PORT ?? 5174);
+const PORT = Number(process.env.PORT ?? 6174);
 
 app.use(cors());
 app.use(express.json());
+
+const VALID_CATEGORIES = new Set(CATEGORIES.map((c) => c.code));
+const VALID_REQUIREMENT_TYPES = new Set(["必修", "选修", "跨专业"]);
+const VALID_ASSIGNMENTS = new Set(["interdisciplinary", "elective"]);
+
+function isCategoryCode(value: unknown): value is CategoryCode {
+  return typeof value === "string" && VALID_CATEGORIES.has(value as CategoryCode);
+}
+
+function categoryNameOf(code: string): string {
+  return CATEGORY_NAME_BY_CODE[code as CategoryCode] ?? code;
+}
+
+function scoreToStudyStatus(score: unknown, fallbackWhenNoScore: "正在修读" | "计划修读" | "未修读") {
+  if (score === null || score === undefined || score === "") return fallbackWhenNoScore;
+  const n = Number(score);
+  return n >= 60 ? "已修读" : "未通过";
+}
+
+function validateTerm(value: unknown, field = "term_number", allowNull = false): string | null {
+  if (allowNull && (value === null || value === undefined)) return null;
+  if (!Number.isInteger(value) || Number(value) < 1 || Number(value) > 8) {
+    return `${field} 必须为 1-8 整数${allowNull ? "或 null" : ""}`;
+  }
+  return null;
+}
+
+function validateCredits(value: unknown): string | null {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+    return "credits 必须为非负数";
+  }
+  return null;
+}
+
+function validateScore(value: unknown): string | null {
+  if (value === null || value === undefined || value === "") return null;
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0 || value > 100) {
+    return "score 必须为 0-100 之间的数字，或 null";
+  }
+  return null;
+}
+
+function assignmentToCreditCountTo(assignedTo: "interdisciplinary" | "elective"): string {
+  return assignedTo === "elective" ? "通识教育-选修" : "大类平台-选修";
+}
+
+function creditCountToToAssignment(value: unknown): "interdisciplinary" | "elective" {
+  return value === "通识教育-选修" ? "elective" : "interdisciplinary";
+}
+
+function isInterdisciplinaryFromRow(row: any): number {
+  const sub = String(row.course_subcategory ?? row.course_category ?? "");
+  const countTo = row.credit_count_to;
+  return sub.includes("经法管融通") || countTo ? 1 : 0;
+}
+
+function buildCustomCode(): string {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  for (let i = 0; i < 20; i += 1) {
+    const code = `CUSTOM-${y}${m}${d}-${String(Date.now() % 1000000).padStart(6, "0")}-${Math.floor(Math.random() * 1000).toString().padStart(3, "0")}`;
+    const exists = db.prepare("SELECT 1 FROM plan_custom_courses WHERE course_code = ?").get(code);
+    if (!exists) return code;
+  }
+  return `CUSTOM-${randomUUID()}`;
+}
+
+function courseSelectSql(tableName: "plan_program_courses" | "plan_custom_courses", alias = "pc") {
+  const offeredExpr = tableName === "plan_program_courses" ? `${alias}.official_term` : "NULL";
+  return `
+    SELECT
+      ${alias}.rowid AS id,
+      ${alias}.course_code,
+      ${alias}.section_code,
+      ${alias}.course_name,
+      ${alias}.credits,
+      ${alias}.total_hours,
+      ${alias}.lecture_hours,
+      ${alias}.experiment_hours,
+      ${alias}.extra_hours,
+      ${alias}.prerequisite_course_code,
+      pre.course_name AS prerequisite_course_name,
+      ${alias}.category_code,
+      ${alias}.category_name,
+      ${alias}.requirement_type AS course_nature,
+      ${offeredExpr} AS offered_term,
+      ${alias}.course_subcategory AS course_category,
+      ${alias}.credit_count_to,
+      ${alias}.note,
+      ${alias}.study_status,
+      ${tableName === "plan_program_courses" ? `${alias}.planned_term` : `${alias}.term_number`} AS planned_term,
+      ${tableName === "plan_program_courses" ? `${alias}.actual_term` : `${alias}.term_number`} AS actual_term,
+      ${alias}.score
+    FROM ${tableName} ${alias}
+    LEFT JOIN plan_program_courses pre ON pre.course_code = ${alias}.prerequisite_course_code
+  `;
+}
+
+function sendDbError(res: Response, e: unknown) {
+  res.status(400).json({ error: String((e as any)?.message ?? e) });
+}
 
 // ─────────────────────────────────────────────
 // 健康检查
 // ─────────────────────────────────────────────
 app.get("/api/health", (_req, res) => {
+  const tables = db
+    .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND (name LIKE 'plan_%' OR name LIKE 'raw_%') ORDER BY name")
+    .all()
+    .map((r: any) => r.name);
   res.json({
     ok: true,
-    message: "学旅后端运行正常",
+    message: "学旅后端运行正常，已连接 v2 数据库",
     time: new Date().toISOString(),
+    tables,
   });
 });
 
 // ─────────────────────────────────────────────
-// 课程基础信息
+// 课程基础信息：v2 中培养方案课程来自 plan_program_courses
 // ─────────────────────────────────────────────
 app.get("/api/courses", (_req, res) => {
-  const rows = db
-    .prepare("SELECT * FROM courses ORDER BY course_code")
-    .all();
+  const rows = db.prepare(`${courseSelectSql("plan_program_courses")} ORDER BY pc.course_code`).all();
   res.json(rows);
 });
 
 app.get("/api/courses/:code", (req: Request, res: Response) => {
   const row = db
-    .prepare("SELECT * FROM courses WHERE course_code = ?")
+    .prepare(`${courseSelectSql("plan_program_courses")} WHERE pc.course_code = ?`)
     .get(String(req.params.code));
   if (!row) {
     res.status(404).json({ error: "未找到该课程" });
@@ -46,14 +153,39 @@ app.get("/api/courses/:code", (req: Request, res: Response) => {
 app.get("/api/program-requirements", (_req, res) => {
   const rows = db
     .prepare(
-      "SELECT * FROM program_requirements ORDER BY category_code, requirement_type"
+      `
+      SELECT
+        category_code,
+        category_name,
+        requirement_type_code AS requirement_type,
+        requirement_name,
+        required_credits,
+        source,
+        note
+      FROM plan_program_requirements
+      ORDER BY
+        CASE category_code
+          WHEN 'general_education' THEN 1
+          WHEN 'major_platform' THEN 2
+          WHEN 'professional_education' THEN 3
+          WHEN 'quality_education' THEN 4
+          WHEN 'practice_education' THEN 5
+          ELSE 99
+        END,
+        CASE requirement_type_code
+          WHEN 'required' THEN 1
+          WHEN 'elective' THEN 2
+          WHEN 'interdisciplinary' THEN 3
+          ELSE 99
+        END
+      `
     )
     .all();
   res.json(rows);
 });
 
 // ─────────────────────────────────────────────
-// 已修记录：官方课 + 手动课统一返回
+// 已修/正在修读记录：官方课 + 自定义课统一返回
 // ─────────────────────────────────────────────
 app.get("/api/semester-courses", (_req, res) => {
   const official = db
@@ -61,17 +193,21 @@ app.get("/api/semester-courses", (_req, res) => {
       `
       SELECT
         'official' AS source,
-        NULL        AS id,
-        sc.term_number,
-        sc.course_code,
-        sc.score,
-        c.course_name,
-        c.credits,
-        NULL        AS category_code,
-        NULL        AS course_nature,
-        NULL        AS note
-      FROM semester_courses sc
-      JOIN courses c ON c.course_code = sc.course_code
+        NULL AS id,
+        pc.actual_term AS term_number,
+        pc.course_code,
+        pc.score,
+        pc.course_name,
+        pc.credits,
+        pc.category_code,
+        pc.requirement_type AS course_nature,
+        pc.note,
+        0 AS is_interdisciplinary,
+        NULL AS assigned_to
+      FROM plan_program_courses pc
+      WHERE pc.actual_term IS NOT NULL
+         OR pc.score IS NOT NULL
+         OR pc.study_status IN ('正在修读', '已修读', '未通过')
       `
     )
     .all();
@@ -80,327 +216,381 @@ app.get("/api/semester-courses", (_req, res) => {
     .prepare(
       `
       SELECT
-        'manual'      AS source,
-        id,
-        term_number,
-        NULL          AS course_code,
-        score,
-        course_name,
-        credits,
-        category_code,
-        course_nature,
-        note,
-        is_interdisciplinary,
-        assigned_to
-      FROM manual_courses
+        'manual' AS source,
+        pc.rowid AS id,
+        pc.term_number,
+        NULL AS course_code,
+        pc.score,
+        pc.course_name,
+        pc.credits,
+        pc.category_code,
+        pc.requirement_type AS course_nature,
+        pc.note,
+        CASE
+          WHEN pc.course_subcategory LIKE '%经法管融通%' OR pc.credit_count_to IS NOT NULL THEN 1
+          ELSE 0
+        END AS is_interdisciplinary,
+        CASE
+          WHEN pc.credit_count_to = '通识教育-选修' THEN 'elective'
+          ELSE 'interdisciplinary'
+        END AS assigned_to
+      FROM plan_custom_courses pc
+      WHERE pc.study_status IN ('正在修读', '已修读', '未通过')
+         OR pc.score IS NOT NULL
       `
     )
     .all();
 
-  const all = [...official, ...manual].sort(
-    (a: any, b: any) =>
-      a.term_number - b.term_number ||
-      String(a.course_name).localeCompare(String(b.course_name), "zh-Hans-CN")
-  );
+  const all = [...official, ...manual]
+    .filter((row: any) => row.term_number != null)
+    .sort(
+      (a: any, b: any) =>
+        Number(a.term_number) - Number(b.term_number) ||
+        String(a.course_name).localeCompare(String(b.course_name), "zh-Hans-CN")
+    );
 
   res.json(all);
 });
 
 // ── 写入：官方课程（培养方案内） ────────────────
-// POST   /api/semester-courses/official        { term_number, course_code, score? }
-// PATCH  /api/semester-courses/official/:code  { term_number?, score? }
-// DELETE /api/semester-courses/official/:code
 app.post("/api/semester-courses/official", (req: Request, res: Response) => {
   const { term_number, course_code, score } = req.body ?? {};
-  if (!Number.isInteger(term_number) || term_number < 1 || term_number > 8) {
-    res.status(400).json({ error: "term_number 必须为 1-8 整数" });
-    return;
-  }
+  const termErr = validateTerm(term_number);
+  const scoreErr = validateScore(score);
+  if (termErr) { res.status(400).json({ error: termErr }); return; }
+  if (scoreErr) { res.status(400).json({ error: scoreErr }); return; }
   if (typeof course_code !== "string" || !course_code.trim()) {
     res.status(400).json({ error: "course_code 必填" });
     return;
   }
+
+  const code = course_code.trim();
+  const status = scoreToStudyStatus(score, "正在修读");
   try {
-    db.prepare(
-      `INSERT INTO semester_courses (term_number, course_code, score)
-       VALUES (?, ?, ?)
-       ON CONFLICT(term_number, course_code) DO UPDATE SET score = excluded.score`
-    ).run(term_number, course_code, score ?? null);
-    res.json({ ok: true, term_number, course_code, score: score ?? null });
-  } catch (e: any) {
-    res.status(400).json({ error: String(e?.message ?? e) });
+    const info = db
+      .prepare(
+        `
+        UPDATE plan_program_courses
+        SET actual_term = ?,
+            score = ?,
+            study_status = ?
+        WHERE course_code = ?
+        `
+      )
+      .run(term_number, score ?? null, status, code);
+    if (info.changes === 0) {
+      res.status(404).json({ error: "未找到该培养方案课程" });
+      return;
+    }
+    res.json({ ok: true, term_number, course_code: code, score: score ?? null });
+  } catch (e) {
+    sendDbError(res, e);
   }
 });
 
-app.patch(
-  "/api/semester-courses/official/:code",
-  (req: Request, res: Response) => {
-    const code = req.params.code;
-    const { term_number, score } = req.body ?? {};
-    const sets: string[] = [];
-    const params: any[] = [];
-    if (term_number !== undefined) {
-      if (!Number.isInteger(term_number) || term_number < 1 || term_number > 8) {
-        res.status(400).json({ error: "term_number 必须为 1-8 整数" });
-        return;
-      }
-      sets.push("term_number = ?");
-      params.push(term_number);
-    }
-    if (score !== undefined) {
-      sets.push("score = ?");
-      params.push(score);
-    }
-    if (sets.length === 0) {
-      res.status(400).json({ error: "没有可更新字段" });
-      return;
-    }
-    params.push(code);
-    try {
-      const info = db
-        .prepare(`UPDATE semester_courses SET ${sets.join(", ")} WHERE course_code = ?`)
-        .run(...params);
-      if (info.changes === 0) {
-        res.status(404).json({ error: "未找到该已修记录" });
-        return;
-      }
-      res.json({ ok: true, course_code: code, changes: info.changes });
-    } catch (e: any) {
-      res.status(400).json({ error: String(e?.message ?? e) });
-    }
+app.patch("/api/semester-courses/official/:code", (req: Request, res: Response) => {
+  const code = String(req.params.code);
+  const current: any = db
+    .prepare("SELECT actual_term, planned_term, score FROM plan_program_courses WHERE course_code = ?")
+    .get(code);
+  if (!current) {
+    res.status(404).json({ error: "未找到该培养方案课程" });
+    return;
   }
-);
 
-app.delete(
-  "/api/semester-courses/official/:code",
-  (req: Request, res: Response) => {
+  const { term_number, score } = req.body ?? {};
+  if (term_number !== undefined) {
+    const termErr = validateTerm(term_number);
+    if (termErr) { res.status(400).json({ error: termErr }); return; }
+  }
+  if (score !== undefined) {
+    const scoreErr = validateScore(score);
+    if (scoreErr) { res.status(400).json({ error: scoreErr }); return; }
+  }
+  if (term_number === undefined && score === undefined) {
+    res.status(400).json({ error: "没有可更新字段" });
+    return;
+  }
+
+  const nextActualTerm = term_number !== undefined ? term_number : current.actual_term;
+  const nextScore = score !== undefined ? score : current.score;
+  const fallback = nextActualTerm != null ? "正在修读" : current.planned_term != null ? "计划修读" : "未修读";
+  const status = scoreToStudyStatus(nextScore, fallback);
+
+  try {
     const info = db
-      .prepare("DELETE FROM semester_courses WHERE course_code = ?")
-      .run(String(req.params.code));
-    if (info.changes === 0) {
-      res.status(404).json({ error: "未找到该已修记录" });
+      .prepare(
+        `
+        UPDATE plan_program_courses
+        SET actual_term = ?,
+            score = ?,
+            study_status = ?
+        WHERE course_code = ?
+        `
+      )
+      .run(nextActualTerm, nextScore ?? null, status, code);
+    res.json({ ok: true, course_code: code, changes: info.changes });
+  } catch (e) {
+    sendDbError(res, e);
+  }
+});
+
+app.delete("/api/semester-courses/official/:code", (req: Request, res: Response) => {
+  const code = String(req.params.code);
+  try {
+    const row: any = db
+      .prepare("SELECT planned_term FROM plan_program_courses WHERE course_code = ?")
+      .get(code);
+    if (!row) {
+      res.status(404).json({ error: "未找到该培养方案课程" });
       return;
     }
-    res.json({ ok: true });
+    const status = row.planned_term == null ? "未修读" : "计划修读";
+    const info = db
+      .prepare(
+        `
+        UPDATE plan_program_courses
+        SET actual_term = NULL,
+            score = NULL,
+            study_status = ?
+        WHERE course_code = ?
+        `
+      )
+      .run(status, code);
+    res.json({ ok: true, changes: info.changes });
+  } catch (e) {
+    sendDbError(res, e);
   }
-);
+});
 
-// ── 写入：手动课程（培养方案外） ────────────────
-// POST   /api/semester-courses/manual         { term_number, course_name, credits, category_code, course_nature, score?, note? }
-// PATCH  /api/semester-courses/manual/:id     任意字段
-// DELETE /api/semester-courses/manual/:id
-const VALID_CATEGORIES = new Set([
-  "general_education",
-  "major_platform",
-  "professional_education",
-  "quality_education",
-  "practice_education",
-]);
-
-function categoryNameOf(code: string): string {
-  return CATEGORY_TABLES[code as CategoryCode]?.name ?? code;
-}
-
-// 校验：is_interdisciplinary=1 仅允许在 通识/大类平台 上
-function validateInterdisciplinary(
-  isInter: unknown,
-  categoryCode: string
-): string | null {
-  if (isInter === undefined || isInter === null) return null;
-  const n = Number(isInter);
-  if (n !== 0 && n !== 1) return "is_interdisciplinary 必须为 0 或 1";
-  if (n === 1 && categoryCode !== "general_education" && categoryCode !== "major_platform") {
-    return "is_interdisciplinary=1 仅允许在 通识教育 或 大类平台 上";
+// ── 写入：自定义课程（培养方案外） ────────────────
+function validateManualBase(input: any, requireTerm: boolean): string | null {
+  if (requireTerm) {
+    const termErr = validateTerm(input.term_number);
+    if (termErr) return termErr;
   }
-  return null;
-}
-
-function validateAssignedTo(assignedTo: unknown): string | null {
-  if (assignedTo === undefined || assignedTo === null) return null;
-  if (assignedTo !== "interdisciplinary" && assignedTo !== "elective") {
+  if (typeof input.course_name !== "string" || !input.course_name.trim()) return "course_name 必填";
+  const creditErr = validateCredits(input.credits);
+  if (creditErr) return creditErr;
+  if (!isCategoryCode(input.category_code)) return `category_code 无效: ${input.category_code}`;
+  if (input.course_nature !== "必修" && input.course_nature !== "选修") return "course_nature 仅支持 必修/选修";
+  const scoreErr = validateScore(input.score);
+  if (scoreErr) return scoreErr;
+  if (input.is_interdisciplinary !== undefined && input.is_interdisciplinary !== null) {
+    const n = Number(input.is_interdisciplinary);
+    if (n !== 0 && n !== 1) return "is_interdisciplinary 必须为 0 或 1";
+    if (n === 1 && input.category_code !== "general_education" && input.category_code !== "major_platform") {
+      return "is_interdisciplinary=1 仅允许在 通识教育 或 大类平台 上";
+    }
+  }
+  if (input.assigned_to !== undefined && input.assigned_to !== null && !VALID_ASSIGNMENTS.has(input.assigned_to)) {
     return "assigned_to 必须为 interdisciplinary 或 elective";
   }
   return null;
 }
 
-app.post("/api/semester-courses/manual", (req: Request, res: Response) => {
-  const {
-    term_number,
-    course_name,
-    credits,
-    category_code,
-    course_nature,
-    score,
-    note,
-    is_interdisciplinary,
-    assigned_to,
-  } = req.body ?? {};
+function insertCustomCourse(input: any, mode: "record" | "plan") {
+  const isInter = Number(input.is_interdisciplinary ?? 0) === 1;
+  const assignedTo = (input.assigned_to ?? "interdisciplinary") as "interdisciplinary" | "elective";
+  const score = input.score ?? null;
+  const studyStatus = mode === "plan" ? "计划修读" : scoreToStudyStatus(score, "正在修读");
+  const courseCode = typeof input.course_code === "string" && input.course_code.trim()
+    ? input.course_code.trim()
+    : buildCustomCode();
 
-  if (!Number.isInteger(term_number) || term_number < 1 || term_number > 8) {
-    res.status(400).json({ error: "term_number 必须为 1-8 整数" });
-    return;
-  }
-  if (typeof course_name !== "string" || !course_name.trim()) {
-    res.status(400).json({ error: "course_name 必填" });
-    return;
-  }
-  if (typeof credits !== "number" || credits < 0) {
-    res.status(400).json({ error: "credits 必须为非负数" });
-    return;
-  }
-  if (!VALID_CATEGORIES.has(category_code)) {
-    res.status(400).json({ error: `category_code 无效: ${category_code}` });
-    return;
-  }
-  if (course_nature !== "必修" && course_nature !== "选修") {
-    res.status(400).json({ error: "course_nature 仅支持 必修/选修" });
-    return;
-  }
-  const interErr = validateInterdisciplinary(is_interdisciplinary, category_code);
-  if (interErr) { res.status(400).json({ error: interErr }); return; }
-  const aErr = validateAssignedTo(assigned_to);
-  if (aErr) { res.status(400).json({ error: aErr }); return; }
+  const info = db
+    .prepare(
+      `
+      INSERT INTO plan_custom_courses (
+        category_code,
+        category_name,
+        requirement_type,
+        course_subcategory,
+        course_code,
+        section_code,
+        course_name,
+        term_number,
+        credits,
+        total_hours,
+        lecture_hours,
+        experiment_hours,
+        extra_hours,
+        prerequisite_course_code,
+        study_status,
+        score,
+        credit_count_to,
+        note
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `
+    )
+    .run(
+      input.category_code,
+      categoryNameOf(input.category_code),
+      input.course_nature,
+      isInter ? "大类平台（经法管融通）" : null,
+      courseCode,
+      input.section_code ?? null,
+      input.course_name.trim(),
+      input.term_number ?? input.planned_term ?? null,
+      input.credits,
+      input.total_hours ?? 0,
+      input.lecture_hours ?? 0,
+      input.experiment_hours ?? 0,
+      input.extra_hours ?? 0,
+      input.prerequisite_course_code ?? null,
+      studyStatus,
+      score,
+      isInter ? assignmentToCreditCountTo(assignedTo) : null,
+      input.note ?? null
+    );
+
+  return { rowid: Number(info.lastInsertRowid), course_code: courseCode };
+}
+
+app.post("/api/semester-courses/manual", (req: Request, res: Response) => {
+  const input = req.body ?? {};
+  const err = validateManualBase(input, true);
+  if (err) { res.status(400).json({ error: err }); return; }
 
   try {
-    const info = db
-      .prepare(
-        `INSERT INTO manual_courses
-          (term_number, course_name, credits, category_code, course_nature, score, note,
-           is_interdisciplinary, assigned_to)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-      )
-      .run(
-        term_number,
-        course_name.trim(),
-        credits,
-        category_code,
-        course_nature,
-        score ?? null,
-        note ?? null,
-        Number(is_interdisciplinary ?? 0),
-        assigned_to ?? "interdisciplinary"
-      );
-    res.json({ ok: true, id: info.lastInsertRowid });
-  } catch (e: any) {
-    res.status(400).json({ error: String(e?.message ?? e) });
+    const result = insertCustomCourse(input, "record");
+    res.json({ ok: true, id: result.rowid, course_code: result.course_code });
+  } catch (e) {
+    sendDbError(res, e);
   }
 });
 
-app.patch(
-  "/api/semester-courses/manual/:id",
-  (req: Request, res: Response) => {
-    const id = Number(req.params.id);
-    if (!Number.isInteger(id)) {
-      res.status(400).json({ error: "id 必须为整数" });
-      return;
-    }
-    const allowed = [
-      "term_number",
-      "course_name",
-      "credits",
-      "category_code",
-      "course_nature",
-      "score",
-      "note",
-      "is_interdisciplinary",
-      "assigned_to",
-    ] as const;
-    const aErr = validateAssignedTo(req.body?.assigned_to);
-    if (aErr) { res.status(400).json({ error: aErr }); return; }
-    const sets: string[] = [];
-    const params: any[] = [];
-    for (const k of allowed) {
-      if (req.body?.[k] !== undefined) {
-        sets.push(`${k} = ?`);
-        params.push(
-          k === "is_interdisciplinary" ? Number(req.body[k]) : req.body[k]
-        );
-      }
-    }
-    if (sets.length === 0) {
-      res.status(400).json({ error: "没有可更新字段" });
-      return;
-    }
-    params.push(id);
-    try {
-      const info = db
-        .prepare(`UPDATE manual_courses SET ${sets.join(", ")} WHERE id = ?`)
-        .run(...params);
-      if (info.changes === 0) {
-        res.status(404).json({ error: "未找到该手动课" });
-        return;
-      }
-      res.json({ ok: true, id, changes: info.changes });
-    } catch (e: any) {
-      res.status(400).json({ error: String(e?.message ?? e) });
-    }
+app.patch("/api/semester-courses/manual/:id", (req: Request, res: Response) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) {
+    res.status(400).json({ error: "id 必须为整数" });
+    return;
   }
-);
 
-app.delete(
-  "/api/semester-courses/manual/:id",
-  (req: Request, res: Response) => {
-    const id = Number(req.params.id);
-    const info = db
-      .prepare("DELETE FROM manual_courses WHERE id = ?")
-      .run(id);
-    if (info.changes === 0) {
-      res.status(404).json({ error: "未找到该手动课" });
-      return;
-    }
-    res.json({ ok: true });
+  const current: any = db.prepare("SELECT * FROM plan_custom_courses WHERE rowid = ?").get(id);
+  if (!current) {
+    res.status(404).json({ error: "未找到该自定义课程" });
+    return;
   }
-);
+
+  const patch = req.body ?? {};
+  const next = {
+    term_number: current.term_number,
+    course_name: current.course_name,
+    credits: current.credits,
+    category_code: current.category_code,
+    course_nature: current.requirement_type,
+    score: current.score,
+    note: current.note,
+    is_interdisciplinary: isInterdisciplinaryFromRow(current),
+    assigned_to: creditCountToToAssignment(current.credit_count_to),
+  } as any;
+  if (patch.term_number !== undefined) next.term_number = patch.term_number;
+  if (patch.course_name !== undefined) next.course_name = patch.course_name;
+  if (patch.credits !== undefined) next.credits = patch.credits;
+  if (patch.category_code !== undefined) next.category_code = patch.category_code;
+  if (patch.course_nature !== undefined) next.course_nature = patch.course_nature;
+  if (patch.score !== undefined) next.score = patch.score;
+  if (patch.note !== undefined) next.note = patch.note;
+  if (patch.is_interdisciplinary !== undefined) next.is_interdisciplinary = patch.is_interdisciplinary;
+  if (patch.assigned_to !== undefined) next.assigned_to = patch.assigned_to;
+
+  const err = validateManualBase(next, false);
+  if (err) { res.status(400).json({ error: err }); return; }
+  if (patch.term_number !== undefined) {
+    const termErr = validateTerm(patch.term_number);
+    if (termErr) { res.status(400).json({ error: termErr }); return; }
+  }
+
+  const sets: string[] = [];
+  const params: any[] = [];
+  const add = (column: string, value: unknown) => { sets.push(`${column} = ?`); params.push(value); };
+
+  if (patch.term_number !== undefined) add("term_number", patch.term_number);
+  if (patch.course_name !== undefined) add("course_name", String(patch.course_name).trim());
+  if (patch.credits !== undefined) add("credits", patch.credits);
+  if (patch.category_code !== undefined) {
+    add("category_code", patch.category_code);
+    add("category_name", categoryNameOf(patch.category_code));
+  }
+  if (patch.course_nature !== undefined) add("requirement_type", patch.course_nature);
+  if (patch.score !== undefined) add("score", patch.score ?? null);
+  if (patch.note !== undefined) add("note", patch.note ?? null);
+
+  if (patch.is_interdisciplinary !== undefined || patch.assigned_to !== undefined) {
+    const isInter = Number(next.is_interdisciplinary ?? 0) === 1;
+    add("course_subcategory", isInter ? "大类平台（经法管融通）" : null);
+    add("credit_count_to", isInter ? assignmentToCreditCountTo(next.assigned_to) : null);
+  }
+
+  if (patch.score !== undefined || patch.term_number !== undefined) {
+    const fallback = next.term_number != null ? "正在修读" : "计划修读";
+    add("study_status", scoreToStudyStatus(next.score, fallback));
+  }
+
+  if (sets.length === 0) {
+    res.status(400).json({ error: "没有可更新字段" });
+    return;
+  }
+  params.push(id);
+
+  try {
+    const info = db
+      .prepare(`UPDATE plan_custom_courses SET ${sets.join(", ")} WHERE rowid = ?`)
+      .run(...params);
+    res.json({ ok: true, id, changes: info.changes });
+  } catch (e) {
+    sendDbError(res, e);
+  }
+});
+
+app.delete("/api/semester-courses/manual/:id", (req: Request, res: Response) => {
+  const id = Number(req.params.id);
+  const info = db.prepare("DELETE FROM plan_custom_courses WHERE rowid = ?").run(id);
+  if (info.changes === 0) {
+    res.status(404).json({ error: "未找到该自定义课程" });
+    return;
+  }
+  res.json({ ok: true, changes: info.changes });
+});
 
 // ─────────────────────────────────────────────
-// 我的计划：只保存用户规划层，不污染已修记录
+// 我的计划：官方课的 planned_term + 自定义计划课
 // ─────────────────────────────────────────────
 app.get("/api/personal-plan", (_req, res) => {
   const official = db
     .prepare(
       `
       SELECT
-        pp.id,
-        pp.item_type,
-        pp.course_code,
-        pp.planned_term,
-        c.course_name,
-        c.credits,
-        c.lecture_hours,
-        c.experiment_hours,
-        c.extra_hours,
-        c.prerequisite_course_code,
+        pc.rowid AS id,
+        'official' AS item_type,
+        pc.course_code,
+        pc.planned_term,
+        pc.course_name,
+        pc.credits,
+        pc.lecture_hours,
+        pc.experiment_hours,
+        pc.extra_hours,
+        pc.prerequisite_course_code,
         pre.course_name AS prerequisite_course_name,
-        cw.category_code,
-        cw.category_name,
-        cw.course_nature,
-        cw.offered_term,
-        cw.course_category,
-        pp.note
-      FROM personal_plan pp
-      JOIN courses c ON c.course_code = pp.course_code
-      LEFT JOIN courses pre ON pre.course_code = c.prerequisite_course_code
-      JOIN (
-        ${Object.entries(CATEGORY_TABLES)
-          .map(([code, meta]) => {
-            const subCol =
-              meta.extra === "course_category"
-                ? "t.course_category"
-                : "NULL AS course_category";
-            return `
-              SELECT
-                t.course_code,
-                '${code}' AS category_code,
-                '${meta.name}' AS category_name,
-                t.course_nature,
-                t.offered_term,
-                ${subCol}
-              FROM ${meta.table} t
-            `;
-          })
-          .join(" UNION ALL ")}
-      ) cw ON cw.course_code = pp.course_code
-      WHERE pp.item_type = 'official'
+        pc.category_code,
+        pc.category_name,
+        pc.requirement_type AS course_nature,
+        pc.official_term AS offered_term,
+        pc.course_subcategory AS course_category,
+        pc.note,
+        0 AS is_interdisciplinary,
+        NULL AS assigned_to
+      FROM plan_program_courses pc
+      LEFT JOIN plan_program_courses pre ON pre.course_code = pc.prerequisite_course_code
+      WHERE pc.planned_term IS NOT NULL
+         OR (
+          pc.planned_term IS NULL
+          AND pc.actual_term IS NULL
+          AND pc.score IS NULL
+          AND pc.study_status = '计划修读'
+         )
       `
     )
     .all();
@@ -409,52 +599,49 @@ app.get("/api/personal-plan", (_req, res) => {
     .prepare(
       `
       SELECT
-        id,
-        item_type,
+        pc.rowid AS id,
+        'manual' AS item_type,
         NULL AS course_code,
-        planned_term,
-        manual_course_name AS course_name,
-        manual_credits AS credits,
-        0 AS lecture_hours,
-        0 AS experiment_hours,
-        0 AS extra_hours,
-        NULL AS prerequisite_course_code,
-        NULL AS prerequisite_course_name,
-        manual_category_code AS category_code,
-        manual_course_nature AS course_nature,
+        pc.term_number AS planned_term,
+        pc.course_name,
+        pc.credits,
+        pc.lecture_hours,
+        pc.experiment_hours,
+        pc.extra_hours,
+        pc.prerequisite_course_code,
+        pre.course_name AS prerequisite_course_name,
+        pc.category_code,
+        pc.category_name,
+        pc.requirement_type AS course_nature,
         NULL AS offered_term,
-        NULL AS course_category,
-        note,
-        is_interdisciplinary,
-        assigned_to
-      FROM personal_plan
-      WHERE item_type = 'manual'
+        pc.course_subcategory AS course_category,
+        pc.note,
+        CASE
+          WHEN pc.course_subcategory LIKE '%经法管融通%' OR pc.credit_count_to IS NOT NULL THEN 1
+          ELSE 0
+        END AS is_interdisciplinary,
+        CASE
+          WHEN pc.credit_count_to = '通识教育-选修' THEN 'elective'
+          ELSE 'interdisciplinary'
+        END AS assigned_to
+      FROM plan_custom_courses pc
+      LEFT JOIN plan_program_courses pre ON pre.course_code = pc.prerequisite_course_code
+      WHERE pc.study_status = '计划修读'
       `
     )
-    .all()
-    .map((row: any) => ({
-      ...row,
-      category_name: categoryNameOf(row.category_code),
-    }));
+    .all();
 
   const rows = [...official, ...manual].sort((a: any, b: any) => {
-    // planned_term IS NULL（"待安排"）排在最后
     const at = a.planned_term ?? 99;
     const bt = b.planned_term ?? 99;
-    return (
-      at - bt ||
-      String(a.course_name).localeCompare(String(b.course_name), "zh-Hans-CN")
-    );
+    return at - bt || String(a.course_name).localeCompare(String(b.course_name), "zh-Hans-CN");
   });
   res.json(rows);
 });
 
-// 内部工具：判定一门 official 课是否已修（score IS NOT NULL）
 function isOfficialCompleted(courseCode: string): boolean {
   const row = db
-    .prepare(
-      "SELECT 1 FROM semester_courses WHERE course_code = ? AND score IS NOT NULL LIMIT 1"
-    )
+    .prepare("SELECT 1 FROM plan_program_courses WHERE course_code = ? AND score IS NOT NULL LIMIT 1")
     .get(courseCode);
   return !!row;
 }
@@ -465,125 +652,89 @@ app.post("/api/personal-plan/official", (req: Request, res: Response) => {
     res.status(400).json({ error: "course_code 必填" });
     return;
   }
-  // planned_term 允许 null（= 放进"待安排"抽屉）
   const isNull = planned_term === null || planned_term === undefined;
-  if (
-    !isNull &&
-    (!Number.isInteger(planned_term) || planned_term < 1 || planned_term > 8)
-  ) {
-    res.status(400).json({ error: "planned_term 必须为 1-8 整数或 null" });
-    return;
-  }
-  // 已修课（semester_courses 有成绩）不允许扔进"待安排"
+  const termErr = validateTerm(planned_term, "planned_term", true);
+  if (!isNull && termErr) { res.status(400).json({ error: termErr }); return; }
   if (isNull && isOfficialCompleted(course_code.trim())) {
-    res
-      .status(400)
-      .json({ error: "该课已修（有成绩），无法放入待安排抽屉" });
+    res.status(400).json({ error: "该课已修（有成绩），无法放入待安排抽屉" });
     return;
   }
-  const termValue = isNull ? null : planned_term;
-  try {
-    const updated = db
-      .prepare(
-        `UPDATE personal_plan
-         SET planned_term = ?, note = ?, updated_at = datetime('now')
-         WHERE item_type = 'official' AND course_code = ?`
-      )
-      .run(termValue, note ?? null, course_code.trim());
 
-    if (updated.changes > 0) {
-      res.json({ ok: true, id: null, course_code, planned_term: termValue });
+  const code = course_code.trim();
+  try {
+    const current: any = db
+      .prepare("SELECT rowid AS id, actual_term, score FROM plan_program_courses WHERE course_code = ?")
+      .get(code);
+    if (!current) {
+      res.status(404).json({ error: "未找到该培养方案课程" });
       return;
     }
-
-    const inserted = db
+    const status = current.score != null
+      ? scoreToStudyStatus(current.score, "正在修读")
+      : current.actual_term != null
+      ? "正在修读"
+      : "计划修读";
+    db
       .prepare(
-        `INSERT INTO personal_plan (item_type, course_code, planned_term, note)
-         VALUES ('official', ?, ?, ?)`
+        `
+        UPDATE plan_program_courses
+        SET planned_term = ?,
+            note = ?,
+            study_status = ?
+        WHERE course_code = ?
+        `
       )
-      .run(course_code.trim(), termValue, note ?? null);
-    res.json({
-      ok: true,
-      id: inserted.lastInsertRowid,
-      course_code,
-      planned_term: termValue,
-    });
-  } catch (e: any) {
-    res.status(400).json({ error: String(e?.message ?? e) });
+      .run(isNull ? null : planned_term, note ?? null, status, code);
+    res.json({ ok: true, id: Number(current.id), course_code: code, planned_term: isNull ? null : planned_term });
+  } catch (e) {
+    sendDbError(res, e);
   }
 });
 
 app.delete("/api/personal-plan/official/:code", (req: Request, res: Response) => {
-  const info = db
-    .prepare(
-      "DELETE FROM personal_plan WHERE item_type = 'official' AND course_code = ?"
-    )
-    .run(String(req.params.code));
-  res.json({ ok: true, changes: info.changes });
+  const code = String(req.params.code);
+  try {
+    const current: any = db
+      .prepare("SELECT actual_term, score FROM plan_program_courses WHERE course_code = ?")
+      .get(code);
+    if (!current) {
+      res.status(404).json({ error: "未找到该培养方案课程" });
+      return;
+    }
+    const status = current.score != null
+      ? scoreToStudyStatus(current.score, "正在修读")
+      : current.actual_term != null
+      ? "正在修读"
+      : "未修读";
+    const info = db
+      .prepare(
+        `
+        UPDATE plan_program_courses
+        SET planned_term = NULL,
+            study_status = ?,
+            note = NULL
+        WHERE course_code = ?
+        `
+      )
+      .run(status, code);
+    res.json({ ok: true, changes: info.changes });
+  } catch (e) {
+    sendDbError(res, e);
+  }
 });
 
 app.post("/api/personal-plan/manual", (req: Request, res: Response) => {
-  const {
-    planned_term,
-    course_name,
-    credits,
-    category_code,
-    course_nature,
-    note,
-    is_interdisciplinary,
-    assigned_to,
-  } = req.body ?? {};
-
-  const isPlannedTermNull = planned_term === null || planned_term === undefined;
-  if (
-    !isPlannedTermNull &&
-    (!Number.isInteger(planned_term) || planned_term < 1 || planned_term > 8)
-  ) {
-    res.status(400).json({ error: "planned_term 必须为 1-8 整数或 null" });
-    return;
-  }
-  if (typeof course_name !== "string" || !course_name.trim()) {
-    res.status(400).json({ error: "course_name 必填" });
-    return;
-  }
-  if (typeof credits !== "number" || credits < 0) {
-    res.status(400).json({ error: "credits 必须为非负数" });
-    return;
-  }
-  if (!VALID_CATEGORIES.has(category_code)) {
-    res.status(400).json({ error: `category_code 无效: ${category_code}` });
-    return;
-  }
-  if (course_nature !== "必修" && course_nature !== "选修") {
-    res.status(400).json({ error: "course_nature 仅支持 必修/选修" });
-    return;
-  }
-  const interErr = validateInterdisciplinary(is_interdisciplinary, category_code);
-  if (interErr) { res.status(400).json({ error: interErr }); return; }
-  const aErr = validateAssignedTo(assigned_to);
-  if (aErr) { res.status(400).json({ error: aErr }); return; }
+  const input = req.body ?? {};
+  const termErr = validateTerm(input.planned_term, "planned_term", true);
+  if (termErr) { res.status(400).json({ error: termErr }); return; }
+  const err = validateManualBase({ ...input, term_number: input.planned_term ?? 1 }, false);
+  if (err) { res.status(400).json({ error: err }); return; }
 
   try {
-    const info = db
-      .prepare(
-        `INSERT INTO personal_plan
-          (item_type, planned_term, manual_course_name, manual_credits, manual_category_code, manual_course_nature, note,
-           is_interdisciplinary, assigned_to)
-         VALUES ('manual', ?, ?, ?, ?, ?, ?, ?, ?)`
-      )
-      .run(
-        isPlannedTermNull ? null : planned_term,
-        course_name.trim(),
-        credits,
-        category_code,
-        course_nature,
-        note ?? null,
-        Number(is_interdisciplinary ?? 0),
-        assigned_to ?? "interdisciplinary"
-      );
-    res.json({ ok: true, id: info.lastInsertRowid });
-  } catch (e: any) {
-    res.status(400).json({ error: String(e?.message ?? e) });
+    const result = insertCustomCourse({ ...input, term_number: input.planned_term ?? null }, "plan");
+    res.json({ ok: true, id: result.rowid, course_code: result.course_code });
+  } catch (e) {
+    sendDbError(res, e);
   }
 });
 
@@ -594,212 +745,268 @@ app.patch("/api/personal-plan/:id", (req: Request, res: Response) => {
     return;
   }
 
-  const fieldMap: Record<string, string> = {
-    planned_term: "planned_term",
-    course_name: "manual_course_name",
-    credits: "manual_credits",
-    category_code: "manual_category_code",
-    course_nature: "manual_course_nature",
-    note: "note",
-    is_interdisciplinary: "is_interdisciplinary",
-    assigned_to: "assigned_to",
-  };
-  const aErr = validateAssignedTo(req.body?.assigned_to);
-  if (aErr) { res.status(400).json({ error: aErr }); return; }
+  const current: any = db.prepare("SELECT * FROM plan_custom_courses WHERE rowid = ?").get(id);
+  if (!current) {
+    res.status(404).json({ error: "未找到该计划记录；官方课程计划请使用 /api/personal-plan/official" });
+    return;
+  }
 
-  // planned_term 校验：允许 null，但若设为 null 且条目是已修 official 课 → 拒绝
-  if (req.body?.planned_term !== undefined) {
-    const pt = req.body.planned_term;
-    if (pt !== null && (!Number.isInteger(pt) || pt < 1 || pt > 8)) {
-      res.status(400).json({ error: "planned_term 必须为 1-8 整数或 null" });
-      return;
-    }
-    if (pt === null) {
-      const row: any = db
-        .prepare(
-          "SELECT item_type, course_code FROM personal_plan WHERE id = ?"
-        )
-        .get(id);
-      if (
-        row &&
-        row.item_type === "official" &&
-        row.course_code &&
-        isOfficialCompleted(String(row.course_code))
-      ) {
-        res
-          .status(400)
-          .json({ error: "该课已修（有成绩），无法放入待安排抽屉" });
-        return;
-      }
-    }
+  const patch = req.body ?? {};
+  if (patch.planned_term !== undefined) {
+    const termErr = validateTerm(patch.planned_term, "planned_term", true);
+    if (termErr) { res.status(400).json({ error: termErr }); return; }
+  }
+  if (patch.credits !== undefined) {
+    const creditErr = validateCredits(patch.credits);
+    if (creditErr) { res.status(400).json({ error: creditErr }); return; }
+  }
+  if (patch.category_code !== undefined && !isCategoryCode(patch.category_code)) {
+    res.status(400).json({ error: `category_code 无效: ${patch.category_code}` });
+    return;
+  }
+  if (patch.course_nature !== undefined && patch.course_nature !== "必修" && patch.course_nature !== "选修") {
+    res.status(400).json({ error: "course_nature 仅支持 必修/选修" });
+    return;
+  }
+  if (patch.assigned_to !== undefined && !VALID_ASSIGNMENTS.has(patch.assigned_to)) {
+    res.status(400).json({ error: "assigned_to 必须为 interdisciplinary 或 elective" });
+    return;
   }
 
   const sets: string[] = [];
   const params: any[] = [];
-  for (const [inputKey, column] of Object.entries(fieldMap)) {
-    if (req.body?.[inputKey] !== undefined) {
-      sets.push(`${column} = ?`);
-      params.push(
-        inputKey === "is_interdisciplinary"
-          ? Number(req.body[inputKey])
-          : req.body[inputKey]
-      );
-    }
+  const add = (column: string, value: unknown) => { sets.push(`${column} = ?`); params.push(value); };
+
+  if (patch.planned_term !== undefined) add("term_number", patch.planned_term);
+  if (patch.course_name !== undefined) add("course_name", String(patch.course_name).trim());
+  if (patch.credits !== undefined) add("credits", patch.credits);
+  if (patch.category_code !== undefined) {
+    add("category_code", patch.category_code);
+    add("category_name", categoryNameOf(patch.category_code));
   }
+  if (patch.course_nature !== undefined) add("requirement_type", patch.course_nature);
+  if (patch.note !== undefined) add("note", patch.note ?? null);
+
+  if (patch.is_interdisciplinary !== undefined || patch.assigned_to !== undefined) {
+    const isInter = patch.is_interdisciplinary !== undefined
+      ? Number(patch.is_interdisciplinary) === 1
+      : isInterdisciplinaryFromRow(current) === 1;
+    const assignedTo = (patch.assigned_to ?? creditCountToToAssignment(current.credit_count_to)) as "interdisciplinary" | "elective";
+    add("course_subcategory", isInter ? "大类平台（经法管融通）" : null);
+    add("credit_count_to", isInter ? assignmentToCreditCountTo(assignedTo) : null);
+  }
+
   if (sets.length === 0) {
     res.status(400).json({ error: "没有可更新字段" });
     return;
   }
-  sets.push("updated_at = datetime('now')");
   params.push(id);
+
   try {
     const info = db
-      .prepare(`UPDATE personal_plan SET ${sets.join(", ")} WHERE id = ?`)
+      .prepare(`UPDATE plan_custom_courses SET ${sets.join(", ")} WHERE rowid = ?`)
       .run(...params);
-    if (info.changes === 0) {
-      res.status(404).json({ error: "未找到该计划记录" });
-      return;
-    }
     res.json({ ok: true, id, changes: info.changes });
-  } catch (e: any) {
-    res.status(400).json({ error: String(e?.message ?? e) });
+  } catch (e) {
+    sendDbError(res, e);
   }
 });
 
 app.delete("/api/personal-plan/:id", (req: Request, res: Response) => {
   const id = Number(req.params.id);
-  const info = db.prepare("DELETE FROM personal_plan WHERE id = ?").run(id);
+  const info = db
+    .prepare("DELETE FROM plan_custom_courses WHERE rowid = ? AND study_status = '计划修读'")
+    .run(id);
   if (info.changes === 0) {
     res.status(404).json({ error: "未找到该计划记录" });
     return;
   }
-  res.json({ ok: true });
+  res.json({ ok: true, changes: info.changes });
 });
 
 // ─────────────────────────────────────────────
-// 学分归属（经法管融通课程的二选一覆盖）
-//   默认 = interdisciplinary（计入「大类平台·经法管融通」）
-//   override = elective（搬回该课原属板块的"选修"桶）
+// 经法管融通学分归属
+// 前端兼容：interdisciplinary = 计入大类平台经法管融通；elective = 计入通识教育选修
 // ─────────────────────────────────────────────
 app.get("/api/credit-assignments", (_req, res) => {
-  const rows = db
-    .prepare("SELECT course_code, assigned_to FROM credit_assignment")
+  const official = db
+    .prepare(
+      `
+      SELECT
+        course_code,
+        CASE WHEN credit_count_to = '通识教育-选修' THEN 'elective' ELSE 'interdisciplinary' END AS assigned_to
+      FROM plan_program_courses
+      WHERE course_subcategory LIKE '%经法管融通%'
+         OR credit_count_to IS NOT NULL
+      `
+    )
     .all();
-  res.json(rows);
+  res.json(official);
 });
 
 app.put("/api/credit-assignments/:code", (req: Request, res: Response) => {
   const code = String(req.params.code);
   const { assigned_to } = req.body ?? {};
-  if (assigned_to !== "interdisciplinary" && assigned_to !== "elective") {
-    res
-      .status(400)
-      .json({ error: "assigned_to 必须为 interdisciplinary 或 elective" });
+  if (!VALID_ASSIGNMENTS.has(assigned_to)) {
+    res.status(400).json({ error: "assigned_to 必须为 interdisciplinary 或 elective" });
     return;
   }
+  const value = assignmentToCreditCountTo(assigned_to);
   try {
-    db.prepare(
-      `INSERT INTO credit_assignment (course_code, assigned_to, updated_at)
-       VALUES (?, ?, datetime('now'))
-       ON CONFLICT(course_code) DO UPDATE SET
-         assigned_to = excluded.assigned_to,
-         updated_at = excluded.updated_at`
-    ).run(code, assigned_to);
+    const official = db
+      .prepare("UPDATE plan_program_courses SET credit_count_to = ? WHERE course_code = ?")
+      .run(value, code);
+    if (official.changes === 0) {
+      const custom = db
+        .prepare("UPDATE plan_custom_courses SET credit_count_to = ? WHERE course_code = ?")
+        .run(value, code);
+      if (custom.changes === 0) {
+        res.status(404).json({ error: "未找到该课程" });
+        return;
+      }
+    }
     res.json({ ok: true, course_code: code, assigned_to });
-  } catch (e: any) {
-    res.status(400).json({ error: String(e?.message ?? e) });
+  } catch (e) {
+    sendDbError(res, e);
   }
 });
 
 app.delete("/api/credit-assignments/:code", (req: Request, res: Response) => {
-  const info = db
-    .prepare("DELETE FROM credit_assignment WHERE course_code = ?")
-    .run(String(req.params.code));
-  res.json({ ok: true, changes: info.changes });
+  const code = String(req.params.code);
+  const official = db.prepare("UPDATE plan_program_courses SET credit_count_to = NULL WHERE course_code = ?").run(code);
+  const custom = db.prepare("UPDATE plan_custom_courses SET credit_count_to = NULL WHERE course_code = ?").run(code);
+  res.json({ ok: true, changes: Number(official.changes) + Number(custom.changes) });
 });
 
 // ─────────────────────────────────────────────
 // 5 大板块列表
 // ─────────────────────────────────────────────
 app.get("/api/categories", (_req, res) => {
-  res.json(
-    Object.entries(CATEGORY_TABLES).map(([code, v]) => ({
-      code,
-      name: v.name,
-    }))
-  );
+  res.json(CATEGORIES.map((c) => ({ code: c.code, name: c.name })));
 });
 
-// ─────────────────────────────────────────────
-// 某板块下所有课程（联表 courses）
-// ─────────────────────────────────────────────
 app.get("/api/categories/:code/courses", (req: Request, res: Response) => {
-  const code = req.params.code as CategoryCode;
-  const meta = CATEGORY_TABLES[code];
-  if (!meta) {
+  const code = req.params.code;
+  if (!isCategoryCode(code)) {
     res.status(404).json({ error: `未知类别: ${code}` });
     return;
   }
-  const extraCol = meta.extra ? `, t.${meta.extra}` : "";
   const rows = db
     .prepare(
       `
-      SELECT
-        c.course_code,
-        c.course_name,
-        c.credits,
-        c.lecture_hours,
-        c.experiment_hours,
-        c.extra_hours,
-        c.prerequisite_course_code,
-        pre.course_name AS prerequisite_course_name,
-        t.course_nature,
-        t.offered_term${extraCol}
-      FROM ${meta.table} t
-      JOIN courses c ON c.course_code = t.course_code
-      LEFT JOIN courses pre ON pre.course_code = c.prerequisite_course_code
-      ORDER BY t.course_nature DESC, c.course_code
+      ${courseSelectSql("plan_program_courses")}
+      WHERE pc.category_code = ?
+      ORDER BY
+        CASE pc.requirement_type WHEN '必修' THEN 1 WHEN '选修' THEN 2 WHEN '跨专业' THEN 3 ELSE 9 END,
+        pc.course_code
+      `
+    )
+    .all(code);
+  res.json({ code, name: categoryNameOf(code), courses: rows });
+});
+
+app.get("/api/courses-with-category", (_req, res) => {
+  const rows = db
+    .prepare(
+      `
+      ${courseSelectSql("plan_program_courses")}
+      ORDER BY
+        CASE pc.category_code
+          WHEN 'general_education' THEN 1
+          WHEN 'major_platform' THEN 2
+          WHEN 'professional_education' THEN 3
+          WHEN 'quality_education' THEN 4
+          WHEN 'practice_education' THEN 5
+          ELSE 99
+        END,
+        pc.course_code
       `
     )
     .all();
-  res.json({ code, name: meta.name, courses: rows });
+  res.json(rows);
 });
 
 // ─────────────────────────────────────────────
-// 一次拿全：所有课程 + 其所属板块（时间轴页要用）
+// raw_ 查询接口：不与 plan_ 产生外键关系，仅查询学校原始课程表
 // ─────────────────────────────────────────────
-app.get("/api/courses-with-category", (_req, res) => {
-  const queries = Object.entries(CATEGORY_TABLES).map(
-    ([code, meta]) => {
-      // 只有 general_education 有 course_category 字段；其他用 NULL 占位以对齐 UNION
-      const subCol =
-        meta.extra === "course_category"
-          ? "t.course_category"
-          : "NULL AS course_category";
-      return `
-        SELECT
-          c.course_code,
-          c.course_name,
-          c.credits,
-          c.lecture_hours,
-          c.experiment_hours,
-          c.extra_hours,
-          c.prerequisite_course_code,
-          pre.course_name AS prerequisite_course_name,
-          '${code}' AS category_code,
-          '${meta.name}' AS category_name,
-          t.course_nature,
-          t.offered_term,
-          ${subCol}
-        FROM ${meta.table} t
-        JOIN courses c ON c.course_code = t.course_code
-        LEFT JOIN courses pre ON pre.course_code = c.prerequisite_course_code
-      `;
-    }
-  );
-  const sql = `SELECT * FROM (${queries.join(" UNION ALL ")}) ORDER BY course_code`;
-  const rows = db.prepare(sql).all();
+app.get("/api/raw/batches", (_req, res) => {
+  const rows = db
+    .prepare("SELECT * FROM raw_import_batches ORDER BY academic_year DESC, semester DESC, phase DESC, id DESC")
+    .all();
   res.json(rows);
+});
+
+app.get("/api/raw/sections", (req: Request, res: Response) => {
+  const params: any[] = [];
+  const where: string[] = [];
+  if (req.query.batch_id) { where.push("s.batch_id = ?"); params.push(Number(req.query.batch_id)); }
+  if (req.query.course_code) { where.push("s.course_code LIKE ?"); params.push(`%${String(req.query.course_code).trim()}%`); }
+  if (req.query.course_name) { where.push("s.course_name LIKE ?"); params.push(`%${String(req.query.course_name).trim()}%`); }
+  const limit = Math.min(Math.max(Number(req.query.limit ?? 200), 1), 1000);
+  params.push(limit);
+  const rows = db
+    .prepare(
+      `
+      SELECT s.*, b.academic_year, b.semester, b.phase, b.source_file
+      FROM raw_term_course_sections s
+      JOIN raw_import_batches b ON b.id = s.batch_id
+      ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
+      ORDER BY s.batch_id DESC, s.course_code, s.section_code
+      LIMIT ?
+      `
+    )
+    .all(...params);
+  res.json(rows);
+});
+
+app.get("/api/raw/added-courses", (req: Request, res: Response) => {
+  const params: any[] = [];
+  const where: string[] = [];
+  if (req.query.batch_id) { where.push("a.batch_id = ?"); params.push(Number(req.query.batch_id)); }
+  if (req.query.course_code) { where.push("a.course_code LIKE ?"); params.push(`%${String(req.query.course_code).trim()}%`); }
+  if (req.query.course_name) { where.push("a.course_name LIKE ?"); params.push(`%${String(req.query.course_name).trim()}%`); }
+  const limit = Math.min(Math.max(Number(req.query.limit ?? 200), 1), 1000);
+  params.push(limit);
+  const rows = db
+    .prepare(
+      `
+      SELECT a.*, b.academic_year, b.semester, b.phase, b.source_file
+      FROM raw_term_added_courses a
+      JOIN raw_import_batches b ON b.id = a.batch_id
+      ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
+      ORDER BY a.batch_id DESC, a.course_code
+      LIMIT ?
+      `
+    )
+    .all(...params);
+  res.json(rows);
+});
+
+app.get("/api/raw/course-openings/:code", (req: Request, res: Response) => {
+  const code = String(req.params.code).trim();
+  const sections = db
+    .prepare(
+      `
+      SELECT s.*, b.academic_year, b.semester, b.phase, b.source_file
+      FROM raw_term_course_sections s
+      JOIN raw_import_batches b ON b.id = s.batch_id
+      WHERE s.course_code = ?
+      ORDER BY s.batch_id DESC, s.section_code
+      `
+    )
+    .all(code);
+  const added = db
+    .prepare(
+      `
+      SELECT a.*, b.academic_year, b.semester, b.phase, b.source_file
+      FROM raw_term_added_courses a
+      JOIN raw_import_batches b ON b.id = a.batch_id
+      WHERE a.course_code = ?
+      ORDER BY a.batch_id DESC
+      `
+    )
+    .all(code);
+  res.json({ course_code: code, sections, added });
 });
 
 app.listen(PORT, () => {
