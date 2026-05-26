@@ -1,10 +1,11 @@
 import type {
   CategoryCode,
-  CourseWithCategory,
-  CreditAssignment,
-  PersonalPlanItem,
+  CreditCountTo,
+  PlanCustomCourse,
+  PlanProgramCourse,
   ProgramRequirement,
-  SemesterCourse,
+  RequirementType,
+  StudyStatus,
 } from "../types";
 
 async function getJSON<T>(path: string): Promise<T> {
@@ -30,148 +31,94 @@ async function send<T>(
   return r.json() as Promise<T>;
 }
 
+export type PlanCoursePatch = Partial<{
+  planned_term: number | null;
+  actual_term: number | null;
+  study_status: StudyStatus;
+  score: number | null;
+  credit_count_to: CreditCountTo | null;
+  note: string | null;
+  preference_level: number | null;
+}>;
+
+export type CustomCourseCreate = {
+  course_code: string;
+  course_name: string;
+  category_code: CategoryCode;
+  requirement_type: RequirementType;
+  credits: number;
+  course_subcategory?: string | null;
+  section_code?: string | null;
+  term_number?: number | null;
+  lecture_hours?: number;
+  experiment_hours?: number;
+  extra_hours?: number;
+  prerequisite_course_code?: string | null;
+  study_status?: StudyStatus;
+  score?: number | null;
+  credit_count_to?: CreditCountTo | null;
+  note?: string | null;
+};
+
+export type CustomCoursePatch = Partial<Omit<CustomCourseCreate, "course_code">>;
+
 export const api = {
-  coursesWithCategory: () =>
-    getJSON<CourseWithCategory[]>("/api/courses-with-category"),
-  programRequirements: () =>
-    getJSON<ProgramRequirement[]>("/api/program-requirements"),
-  semesterCourses: () =>
-    getJSON<SemesterCourse[]>("/api/semester-courses"),
-  personalPlan: () =>
-    getJSON<PersonalPlanItem[]>("/api/personal-plan"),
-
-  // ── 官方课（培养方案内）────────────
-  upsertOfficial: (input: {
-    term_number: number;
-    course_code: string;
-    score?: number | null;
-  }) => send<{ ok: true }>("/api/semester-courses/official", "POST", input),
-
-  patchOfficial: (
-    course_code: string,
-    patch: { term_number?: number; score?: number | null }
-  ) =>
-    send<{ ok: true }>(
-      `/api/semester-courses/official/${encodeURIComponent(course_code)}`,
+  // ── 培养方案课程 ───────────────────────────
+  planCourses: () => getJSON<PlanProgramCourse[]>("/api/plan-courses"),
+  planCourse: (code: string) =>
+    getJSON<PlanProgramCourse>(`/api/plan-courses/${encodeURIComponent(code)}`),
+  patchPlanCourse: (code: string, patch: PlanCoursePatch) =>
+    send<{ ok: true; changes: number }>(
+      `/api/plan-courses/${encodeURIComponent(code)}`,
       "PATCH",
       patch
     ),
 
-  deleteOfficial: (course_code: string) =>
-    send<{ ok: true }>(
-      `/api/semester-courses/official/${encodeURIComponent(course_code)}`,
-      "DELETE"
-    ),
-
-  // ── 手动课（培养方案外）────────────
-  createManual: (input: {
-    term_number: number;
-    course_name: string;
-    credits: number;
-    category_code: CategoryCode;
-    course_nature: "必修" | "选修";
-    score?: number | null;
-    note?: string | null;
-    is_interdisciplinary?: 0 | 1;
-    assigned_to?: "interdisciplinary" | "elective";
-  }) =>
-    send<{ ok: true; id: number }>(
-      "/api/semester-courses/manual",
+  // ── 自定义课程 ─────────────────────────────
+  customCourses: () => getJSON<PlanCustomCourse[]>("/api/custom-courses"),
+  customCourse: (code: string) =>
+    getJSON<PlanCustomCourse>(`/api/custom-courses/${encodeURIComponent(code)}`),
+  createCustomCourse: (input: CustomCourseCreate) =>
+    send<{ ok: true; course_code: string; changes: number }>(
+      "/api/custom-courses",
       "POST",
       input
     ),
-
-  patchManual: (
-    id: number,
-    patch: Partial<{
-      term_number: number;
-      course_name: string;
-      credits: number;
-      category_code: CategoryCode;
-      course_nature: "必修" | "选修";
-      score: number | null;
-      note: string | null;
-      is_interdisciplinary: 0 | 1;
-      assigned_to: "interdisciplinary" | "elective";
-    }>
-  ) =>
-    send<{ ok: true }>(`/api/semester-courses/manual/${id}`, "PATCH", patch),
-
-  deleteManual: (id: number) =>
-    send<{ ok: true }>(`/api/semester-courses/manual/${id}`, "DELETE"),
-
-  // ── 我的计划（不等于已修记录）────────────
-  upsertPersonalOfficial: (input: {
-    course_code: string;
-    /** null = 放进"待安排"抽屉 */
-    planned_term: number | null;
-    note?: string | null;
-  }) =>
-    send<{
-      ok: true;
-      id: number | null;
-      course_code: string;
-      planned_term: number | null;
-    }>("/api/personal-plan/official", "POST", input),
-
-  resetPersonalOfficial: (course_code: string) =>
+  patchCustomCourse: (code: string, patch: CustomCoursePatch) =>
     send<{ ok: true; changes: number }>(
-      `/api/personal-plan/official/${encodeURIComponent(course_code)}`,
+      `/api/custom-courses/${encodeURIComponent(code)}`,
+      "PATCH",
+      patch
+    ),
+  deleteCustomCourse: (code: string) =>
+    send<{ ok: true; changes: number }>(
+      `/api/custom-courses/${encodeURIComponent(code)}`,
       "DELETE"
     ),
 
-  createPersonalManual: (input: {
-    /** null = 放进"待安排"抽屉 */
-    planned_term: number | null;
-    course_name: string;
-    credits: number;
-    category_code: CategoryCode;
-    course_nature: "必修" | "选修";
-    note?: string | null;
-    is_interdisciplinary?: 0 | 1;
-    assigned_to?: "interdisciplinary" | "elective";
-  }) =>
-    send<{ ok: true; id: number }>(
-      "/api/personal-plan/manual",
-      "POST",
-      input
-    ),
+  // ── 毕业要求 ───────────────────────────────
+  programRequirements: () =>
+    getJSON<ProgramRequirement[]>("/api/program-requirements"),
 
-  patchPersonalPlan: (
-    id: number,
-    patch: Partial<{
-      /** null = 放进"待安排"抽屉 */
-      planned_term: number | null;
-      course_name: string;
-      credits: number;
-      category_code: CategoryCode;
-      course_nature: "必修" | "选修";
-      note: string | null;
-      is_interdisciplinary: 0 | 1;
-      assigned_to: "interdisciplinary" | "elective";
-    }>
-  ) => send<{ ok: true; id: number }>(`/api/personal-plan/${id}`, "PATCH", patch),
+  // ── 删除（走垃圾篓）─────────────────────────
+  deletePlanCourse: (code: string) =>
+    send<{ ok: true }>(`/api/plan-courses/${encodeURIComponent(code)}`, "DELETE"),
 
-  deletePersonalPlan: (id: number) =>
-    send<{ ok: true }>(`/api/personal-plan/${id}`, "DELETE"),
-
-  // ── 经法管融通学分归属覆盖 ────────────
-  creditAssignments: () =>
-    getJSON<CreditAssignment[]>("/api/credit-assignments"),
-
-  setCreditAssignment: (
-    course_code: string,
-    assigned_to: "interdisciplinary" | "elective"
-  ) =>
-    send<{ ok: true }>(
-      `/api/credit-assignments/${encodeURIComponent(course_code)}`,
-      "PUT",
-      { assigned_to }
-    ),
-
-  resetCreditAssignment: (course_code: string) =>
-    send<{ ok: true }>(
-      `/api/credit-assignments/${encodeURIComponent(course_code)}`,
-      "DELETE"
-    ),
+  // ── 垃圾篓 ─────────────────────────────────
+  trash: () => getJSON<TrashEntry[]>("/api/trash"),
+  restoreTrash: (id: number) =>
+    send<{ ok: true }>(`/api/trash/${id}/restore`, "POST"),
+  permanentDeleteTrash: (id: number) =>
+    send<{ ok: true }>(`/api/trash/${id}`, "DELETE"),
+  emptyTrash: () =>
+    send<{ ok: true; changes: number }>("/api/trash", "DELETE"),
 };
+
+export interface TrashEntry {
+  id: number;
+  source_table: "plan_program_courses" | "plan_custom_courses";
+  course_code: string;
+  course_name: string;
+  deleted_at: string;
+  snapshot: Record<string, unknown>;
+}

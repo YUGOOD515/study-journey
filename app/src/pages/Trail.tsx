@@ -3,84 +3,66 @@ import { createPortal } from "react-dom";
 import { api } from "../lib/api";
 import { CATEGORY_STYLE } from "../lib/categoryStyle";
 import {
-  buildAssignmentMap,
   bundleByCategory,
   computeRequirementRows,
+  toInstances,
   type CategoryBundle,
-  type CreditAssignmentMap,
-  type EarnedCourse,
-  type PlannedCourse,
+  type CourseInstance,
   type RequirementRow,
 } from "../lib/progress";
 import { TERM_LABEL } from "../lib/offeredTerm";
 import { ProgressBar } from "../components/ProgressBar";
-import { InterdisciplinaryFlow, type FlowItem } from "../components/InterdisciplinaryFlow";
 import type {
-  CourseWithCategory,
-  CreditAssignment,
-  PersonalPlanItem,
+  CreditCountTo,
+  PlanCustomCourse,
+  PlanProgramCourse,
   ProgramRequirement,
-  SemesterCourse,
 } from "../types";
 
 export default function Trail() {
-  const [courses, setCourses] = useState<CourseWithCategory[]>([]);
+  const [programCourses, setProgramCourses] = useState<PlanProgramCourse[]>([]);
+  const [customCourses, setCustomCourses] = useState<PlanCustomCourse[]>([]);
   const [reqs, setReqs] = useState<ProgramRequirement[]>([]);
-  const [done, setDone] = useState<SemesterCourse[]>([]);
-  const [personalPlan, setPersonalPlan] = useState<PersonalPlanItem[]>([]);
-  const [assignments, setAssignments] = useState<CreditAssignment[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
+  const refetchAll = useCallback(async () => {
+    const [p, c] = await Promise.all([api.planCourses(), api.customCourses()]);
+    setProgramCourses(p);
+    setCustomCourses(c);
+  }, []);
+
   useEffect(() => {
-    Promise.all([
-      api.coursesWithCategory(),
-      api.programRequirements(),
-      api.semesterCourses(),
-      api.personalPlan(),
-      api.creditAssignments(),
-    ])
-      .then(([c, r, d, p, a]) => {
-        setCourses(c);
+    Promise.all([api.planCourses(), api.customCourses(), api.programRequirements()])
+      .then(([p, c, r]) => {
+        setProgramCourses(p);
+        setCustomCourses(c);
         setReqs(r);
-        setDone(d);
-        setPersonalPlan(p);
-        setAssignments(a);
       })
       .catch((e) => setErr(String(e)))
       .finally(() => setLoading(false));
   }, []);
 
-  const refetchTrailData = useCallback(async () => {
-    const [d, p, a] = await Promise.all([
-      api.semesterCourses(),
-      api.personalPlan(),
-      api.creditAssignments(),
-    ]);
-    setDone(d);
-    setPersonalPlan(p);
-    setAssignments(a);
-  }, []);
-
-  const assignmentMap: CreditAssignmentMap = useMemo(
-    () => buildAssignmentMap(assignments),
-    [assignments]
+  const instances = useMemo(
+    () => toInstances(programCourses, customCourses),
+    [programCourses, customCourses]
   );
 
   const bundles = useMemo(
-    () =>
-      bundleByCategory(
-        computeRequirementRows(reqs, courses, done, personalPlan, assignmentMap)
-      ),
-    [reqs, courses, done, personalPlan, assignmentMap]
+    () => bundleByCategory(computeRequirementRows(reqs, instances)),
+    [reqs, instances]
   );
 
   const overall = useMemo(() => {
     const required = bundles.reduce((s, b) => s + b.totalRequired, 0);
     const earned = bundles.reduce((s, b) => s + b.totalEarned, 0);
     const planned = bundles.reduce((s, b) => s + b.totalPlanned, 0);
-    return { required: round1(required), earned: round1(earned), planned: round1(planned) };
+    return {
+      required: round1(required),
+      earned: round1(earned),
+      planned: round1(planned),
+    };
   }, [bundles]);
 
   const toggle = (key: string) => {
@@ -91,117 +73,6 @@ export default function Trail() {
       return next;
     });
   };
-
-  // 经法管融通 流向图 items —— 三种来源合一
-  // 注意：所有 hooks 必须在早 return 之前调用，否则违反 Rules of Hooks
-  const flowItems: FlowItem[] = useMemo(() => {
-    const list: FlowItem[] = [];
-
-    // 1) 培养方案内经法管融通课
-    const earnedOfficialCodes = new Set<string>();
-    for (const r of done) {
-      if (r.source === "official" && r.course_code && r.score != null) {
-        earnedOfficialCodes.add(r.course_code);
-      }
-    }
-    for (const c of courses) {
-      if (c.course_category?.includes("经法管融通")) {
-        list.push({
-          key: `official:${c.course_code}`,
-          courseName: c.course_name,
-          credits: c.credits,
-          categoryCode: c.category_code,
-          isEarned: earnedOfficialCodes.has(c.course_code),
-          assignment: assignmentMap.get(c.course_code) ?? "interdisciplinary",
-        });
-      }
-    }
-
-    // 2) 手动已修课带经法管融通旗标
-    for (const r of done) {
-      if (
-        r.source === "manual" &&
-        r.is_interdisciplinary === 1 &&
-        r.category_code &&
-        r.id != null
-      ) {
-        list.push({
-          key: `record:${r.id}`,
-          courseName: r.course_name,
-          credits: r.credits,
-          categoryCode: r.category_code,
-          isEarned: r.score != null,
-          assignment: (r.assigned_to ?? "interdisciplinary") as
-            | "interdisciplinary"
-            | "elective",
-        });
-      }
-    }
-
-    // 3) 计划课带经法管融通旗标
-    for (const p of personalPlan) {
-      if (p.item_type === "manual" && p.is_interdisciplinary === 1) {
-        list.push({
-          key: `plan:${p.id}`,
-          courseName: p.course_name,
-          credits: p.credits,
-          categoryCode: p.category_code,
-          isEarned: false,
-          assignment: (p.assigned_to ?? "interdisciplinary") as
-            | "interdisciplinary"
-            | "elective",
-        });
-      }
-    }
-    return list;
-  }, [courses, done, personalPlan, assignmentMap]);
-
-  const interdisciplinaryTotal = useMemo(() => {
-    for (const b of bundles) {
-      for (const row of b.rows) {
-        if (row.requirementType === "interdisciplinary") {
-          return { earned: row.earnedCredits, required: row.requiredCredits };
-        }
-      }
-    }
-    return { earned: 0, required: 0 };
-  }, [bundles]);
-
-  const electiveTotalByCategory = useMemo(() => {
-    const m = new Map<string, { earned: number; required: number }>();
-    for (const b of bundles) {
-      for (const row of b.rows) {
-        if (row.requirementType === "elective") {
-          m.set(b.code, {
-            earned: row.earnedCredits,
-            required: row.requiredCredits,
-          });
-        }
-      }
-    }
-    return m;
-  }, [bundles]);
-
-  const toggleItem = useCallback(
-    async (item: FlowItem) => {
-      const next =
-        item.assignment === "interdisciplinary" ? "elective" : "interdisciplinary";
-      try {
-        const [kind, raw] = item.key.split(":");
-        if (kind === "official") {
-          await api.setCreditAssignment(raw, next);
-        } else if (kind === "record") {
-          await api.patchManual(Number(raw), { assigned_to: next });
-        } else if (kind === "plan") {
-          await api.patchPersonalPlan(Number(raw), { assigned_to: next });
-        }
-        await refetchTrailData();
-      } catch (e) {
-        console.error(e);
-      }
-    },
-    [refetchTrailData]
-  );
 
   if (loading) {
     return (
@@ -235,12 +106,8 @@ export default function Trail() {
         <div className="flex items-baseline justify-between mb-3">
           <div className="text-sm text-sub">总进度</div>
           <div className="flex items-baseline gap-2">
-            <span className="text-3xl text-ink tabular-nums">
-              {overall.earned}
-            </span>
-            <span className="text-sub tabular-nums">
-              / {overall.required} 学分
-            </span>
+            <span className="text-3xl text-ink tabular-nums">{overall.earned}</span>
+            <span className="text-sub tabular-nums">/ {overall.required} 学分</span>
             <span className="ml-3 text-xs text-sub tabular-nums">
               ({overallPct.toFixed(1)}%)
             </span>
@@ -261,25 +128,6 @@ export default function Trail() {
         />
       </section>
 
-      {/* 经法管融通学分流向（仅当有该类课程时显示） */}
-      {flowItems.length > 0 && (
-        <section className="bg-card border border-sub/15 rounded-xl p-4 mb-6 inline-block">
-          <div className="mb-2">
-            <h2 className="text-xs text-ink">学分流向 · 经法管融通</h2>
-            <div className="text-[10px] text-sub mt-0.5">
-              点击课程或连线，切换归属
-            </div>
-          </div>
-          <InterdisciplinaryFlow
-            items={flowItems}
-            onToggle={toggleItem}
-            interdisciplinaryTotal={interdisciplinaryTotal}
-            electiveTotalByCategory={electiveTotalByCategory}
-          />
-        </section>
-      )}
-
-      {/* 5 个板块 */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {bundles.map((b) => (
           <CategoryCard
@@ -287,7 +135,7 @@ export default function Trail() {
             bundle={b}
             expandedKeys={expanded}
             onToggle={toggle}
-            onRefetch={refetchTrailData}
+            onRefetch={refetchAll}
           />
         ))}
       </div>
@@ -333,7 +181,7 @@ function CategoryCard({
 
       <div className="space-y-3">
         {bundle.rows.map((row) => {
-          const key = `${bundle.code}-${row.requirementType}`;
+          const key = `${bundle.code}-${row.requirementTypeCode}`;
           const isOpen = expandedKeys.has(key);
           const rowPct =
             row.requiredCredits > 0
@@ -341,10 +189,7 @@ function CategoryCard({
               : 0;
           return (
             <div key={key}>
-              <button
-                onClick={() => onToggle(key)}
-                className="w-full text-left group"
-              >
+              <button onClick={() => onToggle(key)} className="w-full text-left group">
                 <div className="flex items-baseline justify-between text-xs mb-1.5">
                   <div className="flex items-center gap-1.5">
                     <span className="text-sub group-hover:text-ink transition-colors">
@@ -357,9 +202,7 @@ function CategoryCard({
                   <div className="tabular-nums" style={{ color: style.text }}>
                     {row.earnedCredits}
                     {row.plannedCredits > 0 && (
-                      <span className="text-sub/70 ml-1">
-                        +{row.plannedCredits}
-                      </span>
+                      <span className="text-sub/70 ml-1">+{row.plannedCredits}</span>
                     )}
                     <span className="text-sub mx-0.5">/</span>
                     {row.requiredCredits}
@@ -378,11 +221,7 @@ function CategoryCard({
               </button>
 
               {isOpen && (
-                <CourseStatusList
-                  row={row}
-                  color={style.text}
-                  onRefetch={onRefetch}
-                />
+                <CourseStatusList row={row} color={style.text} onRefetch={onRefetch} />
               )}
             </div>
           );
@@ -413,10 +252,11 @@ function CourseStatusList({
       {row.earnedCourses.length > 0 && (
         <CourseGroup label="已修">
           {row.earnedCourses.map((c) => (
-            <ScorePill
-              key={`earned-${c.source}-${c.courseCode ?? c.id}`}
+            <CoursePill
+              key={`earned-${c.source}-${c.course_code}`}
               course={c}
               color={color}
+              kind="earned"
               onRefetch={onRefetch}
             />
           ))}
@@ -426,10 +266,11 @@ function CourseStatusList({
       {row.plannedCourses.length > 0 && (
         <CourseGroup label="计划修读">
           {row.plannedCourses.map((c) => (
-            <PlannedCoursePill
-              key={`planned-${c.source}-${c.courseCode ?? c.id}-${c.courseName}`}
+            <CoursePill
+              key={`planned-${c.source}-${c.course_code}`}
               course={c}
               color={color}
+              kind="planned"
               onRefetch={onRefetch}
             />
           ))}
@@ -454,21 +295,19 @@ function CourseGroup({
   );
 }
 
-// ── 可点击的"成绩药丸" + popover 输入框 ─────────────────
-function ScorePill({
+function CoursePill({
   course,
   color,
+  kind,
   onRefetch,
 }: {
-  course: EarnedCourse;
+  course: CourseInstance;
   color: string;
+  kind: "earned" | "planned";
   onRefetch: () => Promise<void>;
 }) {
   const btnRef = useRef<HTMLButtonElement>(null);
   const [anchor, setAnchor] = useState<DOMRect | null>(null);
-
-  const score = course.score;
-  const hasScore = score != null;
 
   const open = () => {
     const r = btnRef.current?.getBoundingClientRect();
@@ -476,34 +315,59 @@ function ScorePill({
   };
   const close = () => setAnchor(null);
 
+  const isCustom = course.source === "custom";
+  const hasScore = course.score != null;
+  const isPlanned = kind === "planned";
+
   return (
     <>
       <button
         ref={btnRef}
         type="button"
         onClick={open}
-        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] bg-sub/10 hover:bg-sub/20 transition-colors cursor-pointer"
-        style={{ color }}
-        title={course.source === "official" ? course.courseCode ?? "" : "手动添加"}
+        className={
+          "inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] transition-colors cursor-pointer " +
+          (isPlanned
+            ? "border border-dashed bg-sub/5 hover:bg-sub/10"
+            : "bg-sub/10 hover:bg-sub/20")
+        }
+        style={{
+          color,
+          borderColor: isPlanned ? "rgb(var(--sub) / 0.25)" : undefined,
+        }}
+        title={course.course_code}
       >
-        {course.source === "manual" && (
+        {isCustom && (
           <span className="px-1 rounded-sm bg-sub/10 text-[9px] text-sub">自</span>
         )}
-        <span>{course.courseName}</span>
+        <span>{course.course_name}</span>
         <span className="text-sub/70 tabular-nums">{course.credits}</span>
-        <span
-          className="ml-1 pl-1.5 border-l border-sub/25 tabular-nums text-[10px]"
-          style={{ color: hasScore ? color : "rgb(var(--sub) / 0.55)" }}
-        >
-          {hasScore ? score : "—"}
-        </span>
+        {isPlanned ? (
+          <>
+            <span className="text-sub/55 tabular-nums">
+              {course.planned_term == null
+                ? "待安排"
+                : TERM_LABEL[course.planned_term]}
+            </span>
+            <span className="ml-1 pl-1.5 border-l border-sub/25 tabular-nums text-[10px] text-sub/70">
+              填成绩
+            </span>
+          </>
+        ) : (
+          <span
+            className="ml-1 pl-1.5 border-l border-sub/25 tabular-nums text-[10px]"
+            style={{ color: hasScore ? color : "rgb(var(--sub) / 0.55)" }}
+          >
+            {hasScore ? course.score : "—"}
+          </span>
+        )}
       </button>
       {anchor &&
         createPortal(
           <ScorePopover
             anchor={anchor}
             course={course}
-            initialScore={score ?? null}
+            kind={kind}
             onClose={close}
             onSaved={async () => {
               await onRefetch();
@@ -515,85 +379,25 @@ function ScorePill({
     </>
   );
 }
-
-function PlannedCoursePill({
-  course,
-  color,
-  onRefetch,
-}: {
-  course: PlannedCourse;
-  color: string;
-  onRefetch: () => Promise<void>;
-}) {
-  const btnRef = useRef<HTMLButtonElement>(null);
-  const [anchor, setAnchor] = useState<DOMRect | null>(null);
-
-  const open = () => {
-    const r = btnRef.current?.getBoundingClientRect();
-    if (r) setAnchor(r);
-  };
-  const close = () => setAnchor(null);
-
-  return (
-    <>
-      <button
-        ref={btnRef}
-        type="button"
-        onClick={open}
-        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border border-dashed text-[11px] bg-sub/5 hover:bg-sub/10 transition-colors cursor-pointer"
-        style={{ color, borderColor: "rgb(var(--sub) / 0.25)" }}
-        title={course.source === "official" ? course.courseCode ?? "" : "计划课程"}
-      >
-        <span>{course.courseName}</span>
-        <span className="text-sub/70 tabular-nums">{course.credits}</span>
-        <span className="text-sub/55 tabular-nums">
-          {course.plannedTerm == null ? "待安排" : TERM_LABEL[course.plannedTerm]}
-        </span>
-        <span className="ml-1 pl-1.5 border-l border-sub/25 tabular-nums text-[10px] text-sub/70">
-          填成绩
-        </span>
-      </button>
-      {anchor &&
-        createPortal(
-          <ScorePopover
-            anchor={anchor}
-            course={course}
-            initialScore={null}
-            onClose={close}
-            onSaved={async () => {
-              await onRefetch();
-              close();
-            }}
-          />,
-          document.body
-        )}
-    </>
-  );
-}
-
-type ScoreEditableCourse = EarnedCourse | PlannedCourse;
 
 function ScorePopover({
   anchor,
   course,
-  initialScore,
+  kind,
   onClose,
   onSaved,
 }: {
   anchor: DOMRect;
-  course: ScoreEditableCourse;
-  initialScore: number | null;
+  course: CourseInstance;
+  kind: "earned" | "planned";
   onClose: () => void;
   onSaved: () => Promise<void>;
 }) {
-  const [val, setVal] = useState<string>(
-    initialScore != null ? String(initialScore) : ""
-  );
+  const [val, setVal] = useState<string>(course.score != null ? String(course.score) : "");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
 
-  // 点击外部 / Esc 关闭
   useEffect(() => {
     const onDocClick = (e: MouseEvent) => {
       if (!rootRef.current) return;
@@ -611,12 +415,11 @@ function ScorePopover({
   }, [onClose]);
 
   const persist = async (newScore: number | null) => {
-    const isPlanned = isPlannedCourse(course);
-    if (isPlanned && newScore == null) {
+    if (kind === "planned" && newScore == null) {
       setErr("计划课程需要填写成绩后才会计入已修");
       return;
     }
-    if (isPlanned && course.plannedTerm == null) {
+    if (kind === "planned" && course.planned_term == null) {
       setErr("「待安排」的课程需先拖到某个学期后才能填成绩");
       return;
     }
@@ -624,48 +427,34 @@ function ScorePopover({
     setBusy(true);
     setErr(null);
     try {
-      if (isPlanned) {
-        if (course.plannedTerm == null) {
-          throw new Error("plannedTerm 不应为 null（已在前面拦截）");
-        }
-        const plannedTerm = course.plannedTerm;
-        if (course.source === "manual") {
-          const courseNature =
-            course.courseNature === "跨专业" ? "选修" : course.courseNature;
-          if (course.origin === "record") {
-            if (course.id == null) throw new Error("手动课缺少 id");
-            await api.patchManual(course.id, { score: newScore });
-          } else {
-            const created = await api.createManual({
-              term_number: plannedTerm,
-              course_name: course.courseName,
-              credits: course.credits,
-              category_code: course.categoryCode,
-              course_nature: courseNature,
-              score: newScore,
-              note: "由计划转为已修",
-              is_interdisciplinary: course.isInterdisciplinary ? 1 : 0,
-              assigned_to: course.assignedTo ?? "interdisciplinary",
-            });
-            if (!created.ok) throw new Error("手动课写入失败");
-            if (course.id != null) {
-              await api.deletePersonalPlan(course.id);
-            }
-          }
-        } else {
-          if (!course.courseCode) throw new Error("官方课缺少课程号");
-          await api.upsertOfficial({
-            term_number: plannedTerm,
-            course_code: course.courseCode,
+      if (newScore != null) {
+        // 填分数 → 标记为已修读；actual_term 同步到 planned_term
+        if (course.source === "program") {
+          await api.patchPlanCourse(course.course_code, {
             score: newScore,
+            study_status: "已修读",
+            actual_term: course.planned_term,
+          });
+        } else {
+          await api.patchCustomCourse(course.course_code, {
+            score: newScore,
+            study_status: "已修读",
           });
         }
-      } else if (course.source === "manual") {
-        if (course.id == null) throw new Error("手动课缺少 id");
-        await api.patchManual(course.id, { score: newScore });
       } else {
-        if (!course.courseCode) throw new Error("官方课缺少课程号");
-        await api.patchOfficial(course.courseCode, { score: newScore });
+        // 清空分数 → 回到未修读
+        if (course.source === "program") {
+          await api.patchPlanCourse(course.course_code, {
+            score: null,
+            study_status: "未修读",
+            actual_term: null,
+          });
+        } else {
+          await api.patchCustomCourse(course.course_code, {
+            score: null,
+            study_status: "未修读",
+          });
+        }
       }
       await onSaved();
     } catch (e: any) {
@@ -689,7 +478,30 @@ function ScorePopover({
     void persist(n);
   };
 
-  // 默认放在按钮下方；右侧超出屏幕则左对齐到屏右边距
+  // 经法管融通课程可切换 credit_count_to
+  const isInter =
+    course.requirement_type === "经法管融通" ||
+    (course.course_subcategory?.includes("经法管融通") ?? false);
+
+  const toggleCreditFlow = async () => {
+    if (!isInter) return;
+    const next: CreditCountTo =
+      course.credit_count_to === "通识教育-选修" ? "大类平台-选修" : "通识教育-选修";
+    setBusy(true);
+    setErr(null);
+    try {
+      if (course.source === "program") {
+        await api.patchPlanCourse(course.course_code, { credit_count_to: next });
+      } else {
+        await api.patchCustomCourse(course.course_code, { credit_count_to: next });
+      }
+      await onSaved();
+    } catch (e: any) {
+      setErr(String(e?.message ?? e));
+      setBusy(false);
+    }
+  };
+
   const W = 240;
   const top = anchor.bottom + 6;
   const screenW = typeof window !== "undefined" ? window.innerWidth : 1920;
@@ -708,8 +520,8 @@ function ScorePopover({
       }}
     >
       <div className="flex items-baseline justify-between mb-2 gap-2">
-        <div className="text-[12px] text-ink truncate" title={course.courseName}>
-          {course.courseName}
+        <div className="text-[12px] text-ink truncate" title={course.course_name}>
+          {course.course_name}
         </div>
         <div className="text-[10px] text-sub tabular-nums shrink-0">
           {course.credits} 学分
@@ -740,11 +552,23 @@ function ScorePopover({
         </button>
       </form>
 
+      {isInter && (
+        <div className="mt-2 pt-2 border-t border-sub/10">
+          <div className="text-[10px] text-sub mb-1">学分流向</div>
+          <button
+            type="button"
+            onClick={toggleCreditFlow}
+            disabled={busy}
+            className="text-[11px] text-ink hover:bg-sub/10 rounded-md px-2 py-1 transition-colors disabled:opacity-50"
+          >
+            {course.credit_count_to ?? "未设置"} ↔ 切换
+          </button>
+        </div>
+      )}
+
       <div className="flex items-center justify-between mt-2 min-h-[14px]">
-        {isPlannedCourse(course) ? (
-          <div className="text-[10px] text-sub/70">
-            保存后进入已修进度
-          </div>
+        {kind === "planned" ? (
+          <div className="text-[10px] text-sub/70">保存后进入已修进度</div>
         ) : (
           <button
             type="button"
@@ -759,10 +583,6 @@ function ScorePopover({
       </div>
     </div>
   );
-}
-
-function isPlannedCourse(course: ScoreEditableCourse): course is PlannedCourse {
-  return !("score" in course);
 }
 
 function round1(n: number) {

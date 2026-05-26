@@ -1,44 +1,47 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { CATEGORY_STYLE } from "../lib/categoryStyle";
-import type { CategoryCode } from "../types";
+import type { CategoryCode, CreditCountTo, RequirementType } from "../types";
 
 /**
  * 板块 + 是否经法管融通 的组合选项。
  * 仅 通识 / 大类平台 允许标记为经法管融通；
- * 标记后会被纳入「学分流向」桑基图，可在「大类·经法管融通」与「自身板块·选修」之间切换归属。
+ * 标记后必须选择 credit_count_to。
  */
 interface CategoryChoice {
   code: CategoryCode;
-  isInterdisciplinary: 0 | 1;
+  requirement_type: RequirementType | null; // null = 由表单的"必修/选修"按钮决定；非空 = 经法管融通 固定
+  credit_count_to: CreditCountTo | null;
   label: string;
   shortLabel: string;
 }
 
 const CATEGORY_CHOICES: CategoryChoice[] = [
-  { code: "general_education",      isInterdisciplinary: 0, label: "通识教育",          shortLabel: "通识" },
-  { code: "general_education",      isInterdisciplinary: 1, label: "通识·经法管融通",  shortLabel: "通识·经融" },
-  { code: "major_platform",         isInterdisciplinary: 0, label: "大类平台",          shortLabel: "大类" },
-  { code: "major_platform",         isInterdisciplinary: 1, label: "大类·经法管融通",  shortLabel: "大类·经融" },
-  { code: "professional_education", isInterdisciplinary: 0, label: "专业教育",          shortLabel: "专业" },
-  { code: "quality_education",      isInterdisciplinary: 0, label: "素质教育",          shortLabel: "素质" },
-  { code: "practice_education",     isInterdisciplinary: 0, label: "实践教育",          shortLabel: "实践" },
+  { code: "general_education",      requirement_type: null,           credit_count_to: null,            label: "通识教育",          shortLabel: "通识" },
+  { code: "general_education",      requirement_type: "经法管融通",   credit_count_to: "通识教育-选修", label: "通识·经法管融通",  shortLabel: "通识·经融" },
+  { code: "major_platform",         requirement_type: null,           credit_count_to: null,            label: "大类平台",          shortLabel: "大类" },
+  { code: "major_platform",         requirement_type: "经法管融通",   credit_count_to: "大类平台-选修", label: "大类·经法管融通",  shortLabel: "大类·经融" },
+  { code: "professional_education", requirement_type: null,           credit_count_to: null,            label: "专业教育",          shortLabel: "专业" },
+  { code: "quality_education",      requirement_type: null,           credit_count_to: null,            label: "素质教育",          shortLabel: "素质" },
+  { code: "practice_education",     requirement_type: null,           credit_count_to: null,            label: "实践教育",          shortLabel: "实践" },
 ];
+
+export interface ManualCourseInput {
+  course_code: string;
+  course_name: string;
+  category_code: CategoryCode;
+  requirement_type: RequirementType;
+  credit_count_to: CreditCountTo | null;
+  credits: number;
+  term_number: number | null;
+  note: string | null;
+}
 
 interface Props {
   /** null = 添加到"待安排"抽屉 */
   termNumber: number | null;
   onClose: () => void;
-  onSubmit: (input: {
-    /** null = 添加到"待安排"抽屉 */
-    term_number: number | null;
-    course_name: string;
-    credits: number;
-    category_code: CategoryCode;
-    course_nature: "必修" | "选修";
-    note?: string | null;
-    is_interdisciplinary?: 0 | 1;
-  }) => Promise<void>;
+  onSubmit: (input: ManualCourseInput) => Promise<void>;
 }
 
 export function ManualCourseDialog({
@@ -46,7 +49,7 @@ export function ManualCourseDialog({
   onClose,
   onSubmit,
 }: Props) {
-  const [choiceIdx, setChoiceIdx] = useState(0); // 默认：通识教育
+  const [choiceIdx, setChoiceIdx] = useState(0);
   const [courseName, setCourseName] = useState("");
   const [credits, setCredits] = useState("2");
   const [nature, setNature] = useState<"必修" | "选修">("选修");
@@ -55,6 +58,7 @@ export function ManualCourseDialog({
   const [err, setErr] = useState<string | null>(null);
 
   const choice = CATEGORY_CHOICES[choiceIdx];
+  const isInterdisciplinary = choice.requirement_type === "经法管融通";
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -69,25 +73,20 @@ export function ManualCourseDialog({
     setErr(null);
 
     const c = Number(credits);
-    if (!courseName.trim()) {
-      setErr("课程名不能为空");
-      return;
-    }
-    if (!Number.isFinite(c) || c < 0) {
-      setErr("学分必须为非负数");
-      return;
-    }
+    if (!courseName.trim()) { setErr("课程名不能为空"); return; }
+    if (!Number.isFinite(c) || c < 0) { setErr("学分必须为非负数"); return; }
 
     setBusy(true);
     try {
       await onSubmit({
-        term_number: termNumber,
+        course_code: generateCustomCourseCode(),
         course_name: courseName.trim(),
-        credits: c,
         category_code: choice.code,
-        course_nature: nature,
+        requirement_type: isInterdisciplinary ? "经法管融通" : nature,
+        credit_count_to: choice.credit_count_to,
+        credits: c,
+        term_number: termNumber,
         note: note.trim() || null,
-        is_interdisciplinary: choice.isInterdisciplinary,
       });
       onClose();
     } catch (e: any) {
@@ -159,7 +158,7 @@ export function ManualCourseDialog({
             <div className="text-[11px] text-sub mb-1">
               归属板块{" "}
               <span className="text-sub/60">
-                · 选「·经融」会进入桑基图，可在大类经融桶与原板块选修桶间切换
+                · 选「·经融」= 经法管融通课，按所选板块计入选修桶
               </span>
             </div>
             <div className="flex flex-wrap gap-1">
@@ -189,26 +188,28 @@ export function ManualCourseDialog({
             </div>
           </div>
 
-          <div>
-            <div className="text-[11px] text-sub mb-1">课程性质</div>
-            <div className="grid grid-cols-2 gap-1">
-              {(["选修", "必修"] as const).map((n) => (
-                <button
-                  key={n}
-                  type="button"
-                  onClick={() => setNature(n)}
-                  className={
-                    "h-8 rounded-md border text-xs transition-colors " +
-                    (nature === n
-                      ? "border-brand bg-brand/10 text-ink"
-                      : "border-sub/15 text-sub hover:text-ink hover:bg-sub/5")
-                  }
-                >
-                  {n}
-                </button>
-              ))}
+          {!isInterdisciplinary && (
+            <div>
+              <div className="text-[11px] text-sub mb-1">课程性质</div>
+              <div className="grid grid-cols-2 gap-1">
+                {(["选修", "必修"] as const).map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    onClick={() => setNature(n)}
+                    className={
+                      "h-8 rounded-md border text-xs transition-colors " +
+                      (nature === n
+                        ? "border-brand bg-brand/10 text-ink"
+                        : "border-sub/15 text-sub hover:text-ink hover:bg-sub/5")
+                    }
+                  >
+                    {n}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
 
           <label className="block">
             <div className="text-[11px] text-sub mb-1">备注（可选）</div>
@@ -246,4 +247,9 @@ export function ManualCourseDialog({
     </div>,
     document.body
   );
+}
+
+function generateCustomCourseCode(): string {
+  // C + 时间戳 base36（大写） → 13~14 字符，唯一性足够
+  return `C${Date.now().toString(36).toUpperCase()}`;
 }

@@ -13,7 +13,7 @@ process.removeAllListeners("warning");
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.resolve(__dirname, "../..");
-const DB_PATH = path.join(PROJECT_ROOT, "db", "course_planner.sqlite");
+const DB_PATH = path.join(PROJECT_ROOT, "db", "course_planner_v2.sqlite");
 
 const rel = process.argv[2];
 if (!rel) {

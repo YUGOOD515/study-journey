@@ -1,36 +1,40 @@
 import { useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import type { CourseCardDisplayOptions, CourseWithCategory } from "../types";
+import type { CourseCardDisplayOptions } from "../types";
+import type { CourseInstance } from "../lib/progress";
 import { CATEGORY_STYLE } from "../lib/categoryStyle";
-import { parseOfferedTerm } from "../lib/offeredTerm";
 import { DEFAULT_COURSE_CARD_DISPLAY_OPTIONS } from "../lib/courseCardDisplay";
 
 interface Props {
-  course: CourseWithCategory;
-  completedScore?: number | null;
+  course: CourseInstance;
+  /** 培养方案课的开课建议（program 用 official_term，custom 没有） */
+  officialTerm?: string | null;
   draggable?: boolean;
-  movedToTerm?: number;
   warning?: string;
   displayOptions?: CourseCardDisplayOptions;
   onDragStart?: (event: React.DragEvent<HTMLDivElement>) => void;
   onDragEnd?: () => void;
+  onDelete?: () => void;
 }
 
 export function CourseCard({
   course,
-  completedScore,
+  officialTerm,
   draggable = false,
-  movedToTerm,
   warning,
   displayOptions = DEFAULT_COURSE_CARD_DISPLAY_OPTIONS,
   onDragStart,
   onDragEnd,
+  onDelete,
 }: Props) {
   const style = CATEGORY_STYLE[course.category_code];
-  const isRequired = course.course_nature === "必修";
+  const isRequired = course.requirement_type === "必修";
+  const isCustom = course.source === "custom";
+  const isCompleted = course.study_status === "已修读";
 
   const bg = isRequired ? style.bgSoft : style.bgGhost;
-  const borderStyle = isRequired ? "solid" : "dashed";
+  // 实线=必修；虚线=选修/跨专业/经法管融通 或 用户自加
+  const borderStyle = isRequired && !isCustom ? "solid" : "dashed";
 
   const cardRef = useRef<HTMLDivElement>(null);
   const [tip, setTip] = useState<{ x: number; y: number } | null>(null);
@@ -55,7 +59,7 @@ export function CourseCard({
         onMouseEnter={showTip}
         onMouseLeave={() => setTip(null)}
         className={
-          "rounded-md px-2.5 py-2 text-[11px] leading-tight transition-all hover:-translate-y-0.5 hover:shadow-sm " +
+          "relative rounded-md px-2.5 py-2 text-[11px] leading-tight transition-all hover:-translate-y-0.5 hover:shadow-sm " +
           (draggable ? "cursor-grab active:cursor-grabbing" : "cursor-default")
         }
         style={{
@@ -64,7 +68,8 @@ export function CourseCard({
         }}
       >
         {displayOptions.showCourseCode && (
-          <div className="text-[9px] text-sub/80 tabular-nums">
+          <div className="text-[9px] text-sub/80 tabular-nums flex items-center gap-1">
+            {isCustom && <span className="text-sub/70">自</span>}
             {course.course_code}
           </div>
         )}
@@ -85,29 +90,44 @@ export function CourseCard({
                 className={isRequired ? "px-1 rounded-sm text-white" : "text-sub"}
                 style={isRequired ? { backgroundColor: style.color } : undefined}
               >
-                {course.course_nature}
+                {course.requirement_type}
               </span>
             )}
           </div>
         )}
-        {displayOptions.showScore && completedScore != null && (
+        {displayOptions.showScore && isCompleted && course.score != null && (
           <div className="mt-1 text-[10px] text-brand tabular-nums">
-            ✓ {completedScore}
+            ✓ {course.score}
           </div>
         )}
-        {movedToTerm != null && (
-          <div className="mt-1 text-[10px] text-sub tabular-nums">
-            实际 → 学期 {movedToTerm}
-          </div>
+        {course.study_status === "正在修读" && (
+          <div className="mt-1 text-[10px] text-sub tabular-nums">在修</div>
         )}
         {warning && (
           <div className="mt-1 text-[10px] text-brand leading-snug">
             {warning}
           </div>
         )}
+
+        {onDelete && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete();
+            }}
+            className="absolute top-1 right-1 w-4 h-4 rounded-sm text-sub/60 hover:text-red-500 hover:bg-red-500/10 transition-colors text-[10px] leading-none"
+            aria-label="删除"
+          >
+            ×
+          </button>
+        )}
       </div>
 
-      {tip && createPortal(<Tooltip x={tip.x} y={tip.y} course={course} />, document.body)}
+      {tip && createPortal(
+        <Tooltip x={tip.x} y={tip.y} course={course} officialTerm={officialTerm} />,
+        document.body
+      )}
     </>
   );
 }
@@ -116,15 +136,15 @@ function Tooltip({
   x,
   y,
   course,
+  officialTerm,
 }: {
   x: number;
   y: number;
-  course: CourseWithCategory;
+  course: CourseInstance;
+  officialTerm?: string | null;
 }) {
   const style = CATEGORY_STYLE[course.category_code];
-  const parsed = parseOfferedTerm(course.offered_term);
 
-  // 若浮窗右边会超出屏幕，则改放左侧
   const w = 260;
   const screenW = typeof window !== "undefined" ? window.innerWidth : 1920;
   const placeLeft = x + w + 16 > screenW;
@@ -158,35 +178,30 @@ function Tooltip({
             className="inline-block w-2 h-2 rounded-sm"
             style={{ backgroundColor: style.color }}
           />
-          {course.category_name} · {course.course_nature}
+          {course.course_subcategory ?? `${categoryName(course.category_code)} · ${course.requirement_type}`}
         </span>
       </Row>
       <Row label="学分">
         <span className="tabular-nums">{course.credits}</span>
       </Row>
-      <Row label="学时">
-        <span className="tabular-nums text-sub">
-          讲 {course.lecture_hours} / 实 {course.experiment_hours} / 外 {course.extra_hours}
-        </span>
+      <Row label="状态">
+        <span>{course.study_status}{course.score != null ? ` · ${course.score}` : ""}</span>
       </Row>
-      <Row label="开课学期">
-        <span className="tabular-nums">
-          {parsed.isFlexible
-            ? "灵活（任意学期）"
-            : parsed.rangeEnd != null
-            ? `第 ${parsed.primary} – ${parsed.rangeEnd} 学期`
-            : `第 ${parsed.primary} 学期`}
-        </span>
-      </Row>
-      <Row label="先修">
-        {course.prerequisite_course_name ? (
-          <span style={{ color: style.text }}>
-            {course.prerequisite_course_name}
-          </span>
-        ) : (
-          <span className="text-sub/60">无</span>
-        )}
-      </Row>
+      {officialTerm && (
+        <Row label="开课建议">
+          <span className="tabular-nums">{officialTerm}</span>
+        </Row>
+      )}
+      {course.actual_term != null && (
+        <Row label="实际修读">
+          <span className="tabular-nums">第 {course.actual_term} 学期</span>
+        </Row>
+      )}
+      {course.credit_count_to && (
+        <Row label="学分流向">
+          <span>{course.credit_count_to}</span>
+        </Row>
+      )}
     </div>
   );
 }
@@ -198,4 +213,14 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
       <div className="flex-1 text-ink">{children}</div>
     </div>
   );
+}
+
+function categoryName(code: string): string {
+  return {
+    general_education: "通识教育",
+    major_platform: "大类平台",
+    professional_education: "专业教育",
+    quality_education: "素质教育",
+    practice_education: "实践教育",
+  }[code] ?? code;
 }
