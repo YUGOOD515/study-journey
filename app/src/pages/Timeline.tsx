@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../lib/api";
 import { parseOfferedTerm, TERM_LABEL } from "../lib/offeredTerm";
 import { CATEGORY_STYLE } from "../lib/categoryStyle";
@@ -55,7 +55,7 @@ export default function Timeline() {
   const [reqs, setReqs] = useState<ProgramRequirement[]>([]);
   const [done, setDone] = useState<SemesterCourse[]>([]);
   const [personalPlan, setPersonalPlan] = useState<PersonalPlanItem[]>([]);
-  const [viewMode, setViewMode] = useState<ViewMode>("official");
+  const [viewMode, setViewMode] = useState<ViewMode>("personal");
   const [displayOptions, setDisplayOptions] = useState<CourseCardDisplayOptions>(
     loadCourseCardDisplayOptions
   );
@@ -66,6 +66,8 @@ export default function Timeline() {
   const [hint, setHint] = useState<string | null>(null);
   const [trashItems, setTrashItems] = useState<TrashItem[]>([]);
   const [activeDrawer, setActiveDrawer] = useState<ActiveDrawer>(null);
+  const viewportWidth = useViewportWidth();
+  const clearHint = useCallback(() => setHint(null), []);
 
   useEffect(() => {
     Promise.all([
@@ -343,6 +345,12 @@ export default function Timeline() {
     personalManualDrawer.reduce((s, p) => s + p.credits, 0);
   const trashCount = trashItems.length;
   const trashCredits = trashItems.reduce((s, item) => s + item.credits, 0);
+  const pendingItemCount = isPersonal ? personalDrawerCount : officialDrawerCount;
+  const pendingPanelWidth = getDrawerPanelWidth(pendingItemCount, viewportWidth);
+  const trashPanelWidth = getDrawerPanelWidth(trashCount, viewportWidth);
+  const pendingDrawerColumns = getDrawerColumns(pendingItemCount, viewportWidth);
+  const trashDrawerColumns = getDrawerColumns(trashCount, viewportWidth);
+  const anyDrawerOpen = isPersonal ? activeDrawer != null : pendingIsOpen;
 
   const moveOfficialToTrash = async (course: CourseWithCategory) => {
     if (!window.confirm(`将「${course.course_name}」移入垃圾篓？`)) return;
@@ -395,15 +403,15 @@ export default function Timeline() {
         <div>
           <h1 className="text-lg text-ink">时间轴</h1>
           <div className="text-[11px] text-sub mt-0.5">
-            官方计划只读 · 我的计划可拖拽，违规只提示不阻止
+            我的计划可拖拽 · 官方计划只读，违规只提示不阻止
           </div>
           <div className="mt-3 flex items-center gap-2">
             <div className="inline-flex rounded-lg border border-sub/15 bg-card p-0.5">
-              <ModeButton active={viewMode === "official"} onClick={() => setViewMode("official")}>
-                官方计划
-              </ModeButton>
               <ModeButton active={viewMode === "personal"} onClick={() => setViewMode("personal")}>
                 我的计划
+              </ModeButton>
+              <ModeButton active={viewMode === "official"} onClick={() => setViewMode("official")}>
+                官方计划
               </ModeButton>
             </div>
             <DisplayOptionsMenu
@@ -422,11 +430,7 @@ export default function Timeline() {
         </div>
       </header>
 
-      {hint && (
-        <div className="mb-4 rounded-lg border border-brand/25 bg-brand/10 px-3 py-2 text-xs text-brand">
-          {hint}
-        </div>
-      )}
+      <FloatingHint message={hint} drawerOpen={anyDrawerOpen} onClose={clearHint} />
 
       <Legend />
 
@@ -473,6 +477,8 @@ export default function Timeline() {
           onToggle={toggleActiveDrawer}
           pendingCountLabel={`${personalDrawerCount} 门 · ${round1(personalDrawerCredits)} 学分`}
           trashCountLabel={`${trashCount} 门 · ${round1(trashCredits)} 学分`}
+          pendingPanelWidth={pendingPanelWidth}
+          trashPanelWidth={trashPanelWidth}
           pendingDropActive={dragging != null && dragging.fromTerm != null}
           onPendingDragOver={(event) => {
             if (!dragging || dragging.fromTerm == null) return;
@@ -500,6 +506,7 @@ export default function Timeline() {
                 await api.deletePersonalPlan(id);
                 await refetchPlan();
               }}
+              columns={pendingDrawerColumns}
             />
           }
           trashContent={
@@ -518,6 +525,7 @@ export default function Timeline() {
                 await refetchTimelineData();
                 setHint("垃圾篓已清空");
               }}
+              columns={trashDrawerColumns}
             />
           }
         />
@@ -527,6 +535,7 @@ export default function Timeline() {
           subtitle="灵活课程（按 offered_term 推断）"
           countLabel={`${officialDrawerCount} 门 · ${round1(officialDrawerCredits)} 学分`}
           open={pendingIsOpen}
+          panelWidth={pendingPanelWidth}
           onToggle={() => toggleActiveDrawer("pending")}
         >
           <OfficialDrawerContent
@@ -534,6 +543,7 @@ export default function Timeline() {
             completedByCode={completedByCode}
             displayOptions={displayOptions}
             onSaveCourse={saveProgramCourse}
+            columns={pendingDrawerColumns}
           />
         </Drawer>
       )}
@@ -564,6 +574,164 @@ export default function Timeline() {
       )}
     </div>
   );
+}
+
+
+function FloatingHint({
+  message,
+  drawerOpen,
+  onClose,
+}: {
+  message: string | null;
+  drawerOpen: boolean;
+  onClose: () => void;
+}) {
+  const [displayMessage, setDisplayMessage] = useState<string | null>(message);
+  const [visible, setVisible] = useState(false);
+  const [bottomOffset, setBottomOffset] = useState(FLOATING_HINT_DOCK_OFFSET);
+
+  const updateBottomOffset = useCallback(() => {
+    if (typeof window === "undefined") return;
+
+    if (!drawerOpen) {
+      setBottomOffset(FLOATING_HINT_DOCK_OFFSET);
+      return;
+    }
+
+    const drawerPanel = document.querySelector<HTMLElement>(
+      '[data-timeline-drawer-panel="active"]'
+    );
+
+    if (!drawerPanel) {
+      setBottomOffset(FLOATING_HINT_DOCK_OFFSET);
+      return;
+    }
+
+    const rect = drawerPanel.getBoundingClientRect();
+    const nextOffset = Math.round(
+      Math.max(
+        FLOATING_HINT_DOCK_OFFSET,
+        window.innerHeight - rect.top + FLOATING_HINT_DRAWER_GAP
+      )
+    );
+    setBottomOffset(nextOffset);
+  }, [drawerOpen]);
+
+  useEffect(() => {
+    const frames = [
+      window.requestAnimationFrame(updateBottomOffset),
+      window.requestAnimationFrame(() => window.requestAnimationFrame(updateBottomOffset)),
+    ];
+    const timers = [80, 180, 240].map((delay) =>
+      window.setTimeout(updateBottomOffset, delay)
+    );
+
+    window.addEventListener("resize", updateBottomOffset);
+    return () => {
+      frames.forEach((frame) => window.cancelAnimationFrame(frame));
+      timers.forEach((timer) => window.clearTimeout(timer));
+      window.removeEventListener("resize", updateBottomOffset);
+    };
+  }, [drawerOpen, updateBottomOffset]);
+
+  useEffect(() => {
+    let showFrame = 0;
+    let autoTimer = 0;
+    let clearTimer = 0;
+
+    if (!message) {
+      setVisible(false);
+      clearTimer = window.setTimeout(() => setDisplayMessage(null), 220);
+      return () => window.clearTimeout(clearTimer);
+    }
+
+    setDisplayMessage(message);
+    updateBottomOffset();
+    showFrame = window.requestAnimationFrame(() => setVisible(true));
+
+    const isError = isErrorHint(message);
+    autoTimer = window.setTimeout(() => {
+      setVisible(false);
+      clearTimer = window.setTimeout(onClose, 220);
+    }, isError ? 5200 : 2800);
+
+    return () => {
+      window.cancelAnimationFrame(showFrame);
+      window.clearTimeout(autoTimer);
+      window.clearTimeout(clearTimer);
+    };
+  }, [message, onClose, updateBottomOffset]);
+
+  if (!displayMessage) return null;
+
+  const variant = isErrorHint(displayMessage)
+    ? "error"
+    : isWarningHint(displayMessage)
+    ? "warning"
+    : "success";
+
+  const tone =
+    variant === "error"
+      ? {
+          panel: "border-red-500/20 bg-red-50/90 text-red-700 dark:bg-red-500/10 dark:text-red-200",
+          dot: "bg-red-500/75",
+          button: "text-red-700/60 hover:text-red-700 dark:text-red-200/60 dark:hover:text-red-100",
+        }
+      : variant === "warning"
+      ? {
+          panel: "border-amber-500/20 bg-amber-50/90 text-amber-800 dark:bg-amber-500/10 dark:text-amber-100",
+          dot: "bg-amber-500/75",
+          button: "text-amber-800/60 hover:text-amber-800 dark:text-amber-100/60 dark:hover:text-amber-50",
+        }
+      : {
+          panel: "border-sub/15 bg-card/95 text-ink",
+          dot: "bg-brand/80",
+          button: "text-sub hover:text-ink",
+        };
+
+  return (
+    <div
+      className="fixed inset-x-6 z-[70] pointer-events-none transition-[bottom] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] sm:inset-x-8"
+      style={{ bottom: `${bottomOffset}px` }}
+    >
+      <div
+        className={
+          "mx-auto flex max-w-[520px] items-center gap-3 rounded-2xl border px-3.5 py-2.5 text-xs backdrop-blur-xl transform-gpu transition-[opacity,transform,box-shadow] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] pointer-events-auto " +
+          tone.panel +
+          " " +
+          (visible ? "translate-y-0 scale-100 opacity-100" : "translate-y-2 scale-[0.985] opacity-0")
+        }
+        style={{
+          boxShadow:
+            "0 18px 44px rgb(var(--shadow-rgb) / var(--shadow-soft)), 0 6px 16px rgb(var(--shadow-rgb) / 0.08)",
+        }}
+        role="status"
+        aria-live="polite"
+      >
+        <span className={"h-1.5 w-1.5 shrink-0 rounded-full " + tone.dot} />
+        <div className="min-w-0 flex-1 truncate leading-5">{displayMessage}</div>
+        <button
+          type="button"
+          onClick={() => {
+            setVisible(false);
+            window.setTimeout(onClose, 200);
+          }}
+          className={"shrink-0 rounded-full px-1.5 py-0.5 text-[13px] leading-none transition-colors " + tone.button}
+          aria-label="关闭提示"
+        >
+          ×
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function isErrorHint(message: string) {
+  return /error|http|失败|无法|约束|constraint|no such|异常/i.test(message);
+}
+
+function isWarningHint(message: string) {
+  return /建议|先修|不早于|违规|警告/.test(message);
 }
 
 function OfficialTermColumn({
@@ -714,6 +882,7 @@ function Drawer({
   subtitle,
   countLabel,
   open,
+  panelWidth,
   onToggle,
   dropActive,
   onDragOver,
@@ -724,6 +893,7 @@ function Drawer({
   subtitle: string;
   countLabel: string;
   open: boolean;
+  panelWidth: number;
   onToggle: () => void;
   dropActive?: boolean;
   onDragOver?: (event: React.DragEvent<HTMLDivElement>) => void;
@@ -733,7 +903,7 @@ function Drawer({
   const transition =
     "transform-gpu transition-[opacity,transform,border-color,background-color,box-shadow] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]";
   const panelClass =
-    "absolute inset-x-0 bottom-14 max-h-[30vh] overflow-hidden rounded-2xl border bg-card/95 backdrop-blur-xl " +
+    "absolute bottom-14 left-1/2 max-h-[30vh] overflow-hidden rounded-2xl border bg-card/95 backdrop-blur-xl -translate-x-1/2 " +
     transition +
     " " +
     (open
@@ -746,10 +916,14 @@ function Drawer({
     <div className="fixed inset-x-6 bottom-5 z-50 pointer-events-none sm:inset-x-8">
       <div className="relative mx-auto w-full max-w-[1280px]">
         <div
+          data-timeline-drawer-panel={open ? "active" : undefined}
           onDragOver={onDragOver}
           onDrop={onDrop}
           className={panelClass}
           style={{
+            width: `${panelWidth}px`,
+            minWidth: `${panelWidth}px`,
+            maxWidth: `${panelWidth}px`,
             boxShadow:
               "0 24px 70px rgb(var(--shadow-rgb) / var(--shadow-strong)), 0 6px 18px rgb(var(--shadow-rgb) / var(--shadow-soft))",
           }}
@@ -757,7 +931,7 @@ function Drawer({
           <button
             type="button"
             onClick={onToggle}
-            className="flex h-12 w-full items-center justify-between gap-4 border-b border-sub/10 px-4 text-left transition-colors hover:bg-sub/5"
+            className="flex h-12 w-full min-w-0 items-center justify-between gap-2 border-b border-sub/10 px-2 text-left transition-colors hover:bg-sub/5"
             aria-expanded={open}
           >
             <div className="flex min-w-0 items-center gap-3">
@@ -778,7 +952,7 @@ function Drawer({
               {countLabel}
             </span>
           </button>
-          <div className="max-h-[calc(30vh_-_48px)] overflow-y-auto px-3 pb-3 pt-2">
+          <div className="max-h-[calc(30vh_-_48px)] overflow-y-auto overflow-x-hidden px-2.5 pb-2.5 pt-2.5">
             {children}
           </div>
         </div>
@@ -807,6 +981,8 @@ function DualDrawer({
   onToggle,
   pendingCountLabel,
   trashCountLabel,
+  pendingPanelWidth,
+  trashPanelWidth,
   pendingDropActive,
   onPendingDragOver,
   onPendingDrop,
@@ -817,6 +993,8 @@ function DualDrawer({
   onToggle: (drawer: Exclude<ActiveDrawer, null>) => void;
   pendingCountLabel: string;
   trashCountLabel: string;
+  pendingPanelWidth: number;
+  trashPanelWidth: number;
   pendingDropActive?: boolean;
   onPendingDragOver?: React.DragEventHandler;
   onPendingDrop?: React.DragEventHandler;
@@ -836,7 +1014,7 @@ function DualDrawer({
   const transition =
     "transform-gpu transition-[opacity,transform,border-color,background-color,box-shadow] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]";
   const panelClass =
-    "absolute inset-x-0 bottom-14 max-h-[30vh] overflow-hidden rounded-2xl border bg-card/95 backdrop-blur-xl " +
+    "absolute bottom-14 left-1/2 max-h-[30vh] overflow-hidden rounded-2xl border bg-card/95 backdrop-blur-xl -translate-x-1/2 " +
     transition +
     " " +
     (isOpen
@@ -850,15 +1028,20 @@ function DualDrawer({
     ? "可恢复，也可永久删除"
     : "灵活课程 / 未安排课程";
   const countLabel = isTrash ? trashCountLabel : pendingCountLabel;
+  const panelWidth = isTrash ? trashPanelWidth : pendingPanelWidth;
 
   return (
     <div className="fixed inset-x-6 bottom-5 z-50 pointer-events-none sm:inset-x-8">
       <div className="relative mx-auto w-full max-w-[1280px]">
         <div
+          data-timeline-drawer-panel={isOpen ? "active" : undefined}
           onDragOver={active === "pending" ? onPendingDragOver : undefined}
           onDrop={active === "pending" ? onPendingDrop : undefined}
           className={panelClass}
           style={{
+            width: `${panelWidth}px`,
+            minWidth: `${panelWidth}px`,
+            maxWidth: `${panelWidth}px`,
             boxShadow:
               "0 24px 70px rgb(var(--shadow-rgb) / var(--shadow-strong)), 0 6px 18px rgb(var(--shadow-rgb) / var(--shadow-soft))",
           }}
@@ -866,7 +1049,7 @@ function DualDrawer({
           <button
             type="button"
             onClick={() => onToggle(displayedDrawer)}
-            className="flex h-12 w-full items-center justify-between gap-4 border-b border-sub/10 px-4 text-left transition-colors hover:bg-sub/5"
+            className="flex h-12 w-full min-w-0 items-center justify-between gap-2 border-b border-sub/10 px-2 text-left transition-colors hover:bg-sub/5"
             aria-expanded={isOpen}
           >
             <div className="flex min-w-0 items-center gap-3">
@@ -887,7 +1070,7 @@ function DualDrawer({
               {countLabel}
             </span>
           </button>
-          <div className="max-h-[calc(30vh_-_48px)] overflow-y-auto px-3 pb-3 pt-2">
+          <div className="max-h-[calc(30vh_-_48px)] overflow-y-auto overflow-x-hidden px-2.5 pb-2.5 pt-2.5">
             {isTrash ? trashContent : pendingContent}
           </div>
         </div>
@@ -965,12 +1148,14 @@ function TrashDrawerContent({
   onPermanentDelete,
   onRestoreAll,
   onEmpty,
+  columns,
 }: {
   items: TrashItem[];
   onRestore: (item: TrashItem) => Promise<void>;
   onPermanentDelete: (item: TrashItem) => Promise<void>;
   onRestoreAll: () => Promise<void>;
   onEmpty: () => Promise<void>;
+  columns: number;
 }) {
   if (items.length === 0) {
     return (
@@ -981,12 +1166,12 @@ function TrashDrawerContent({
   }
 
   return (
-    <div className="flex flex-col gap-2">
-      <div className="flex items-center justify-between gap-3">
-        <div className="text-[11px] text-sub">
-          删除的课程暂存在这里。恢复后会回到原计划学期或待安排状态。
+    <div className="flex flex-col gap-1.5">
+      <div className="min-w-0 space-y-1.5">
+        <div className="text-[10px] leading-snug text-sub/75">
+          恢复后回到原位置；永久删除不可撤销。
         </div>
-        <div className="flex shrink-0 items-center gap-1.5">
+        <div className="flex flex-wrap items-center gap-1.5">
           <button
             type="button"
             onClick={() => { void onRestoreAll(); }}
@@ -1003,7 +1188,7 @@ function TrashDrawerContent({
           </button>
         </div>
       </div>
-      <DrawerCourseGrid>
+      <DrawerCourseGrid columns={columns}>
         {items.map((item) => (
           <DrawerCourseItem key={`${item.source}-${item.id}-${item.course_code ?? "custom"}`}>
             <TrashCourseCard
@@ -1063,7 +1248,7 @@ function TrashCourseCard({
         className="rounded-md px-2.5 py-2 text-[11px] leading-tight transition-all hover:-translate-y-0.5 hover:shadow-sm"
         style={{
           backgroundColor: isRequired ? style.bgSoft : style.bgGhost,
-          border: `1px dashed ${style.border}`,
+          border: `1px ${isRequired ? "solid" : "dashed"} ${style.border}`,
         }}
       >
         <div className="text-[9px] text-sub/80 tabular-nums">
@@ -1076,30 +1261,16 @@ function TrashCourseCard({
           <span className="tabular-nums" style={{ color: style.text }}>
             {item.credits} 学分
           </span>
-          <span className="text-sub">{item.course_nature}</span>
+          <span
+            className={isRequired ? "rounded-sm px-1 text-white" : "text-sub"}
+            style={isRequired ? { backgroundColor: style.color } : undefined}
+          >
+            {item.course_nature}
+          </span>
         </div>
         {item.score != null && (
           <div className="mt-1 text-[10px] text-brand tabular-nums">✓ {item.score}</div>
         )}
-        <div className="mt-1 text-[10px] text-sub/70">
-          {item.planned_term == null ? "原位置：待安排" : `原位置：第 ${item.planned_term} 学期`}
-        </div>
-        <div className="mt-2 flex gap-1.5">
-          <button
-            type="button"
-            onClick={() => { hover.close(); void onRestore(); }}
-            className="h-6 flex-1 rounded-md border border-sub/15 bg-card/70 text-[10px] text-sub transition-colors hover:border-sub/35 hover:text-ink"
-          >
-            恢复
-          </button>
-          <button
-            type="button"
-            onClick={() => { hover.close(); void onPermanentDelete(); }}
-            className="h-6 flex-1 rounded-md border border-sub/15 bg-card/70 text-[10px] text-sub transition-colors hover:border-brand/35 hover:text-brand"
-          >
-            永久删除
-          </button>
-        </div>
       </div>
 
       {hover.position && (
@@ -1119,12 +1290,30 @@ function TrashCourseCard({
   );
 }
 
-function DrawerCourseGrid({ children }: { children: React.ReactNode }) {
-  return <div className="flex flex-wrap content-start gap-1.5">{children}</div>;
+function DrawerCourseGrid({
+  children,
+  columns,
+}: {
+  children: React.ReactNode;
+  columns: number;
+}) {
+  const contentWidth = getDrawerCardsContentWidth(columns);
+  return (
+    <div
+      className="mx-auto grid content-start gap-[6px]"
+      style={{
+        width: `${contentWidth}px`,
+        maxWidth: "100%",
+        gridTemplateColumns: `repeat(${columns}, ${DRAWER_CARD_WIDTH}px)`,
+      }}
+    >
+      {children}
+    </div>
+  );
 }
 
 function DrawerCourseItem({ children }: { children: React.ReactNode }) {
-  return <div className="w-[180px] shrink-0">{children}</div>;
+  return <div className="w-[158px] min-w-0 shrink-0">{children}</div>;
 }
 
 function OfficialDrawerContent({
@@ -1132,11 +1321,13 @@ function OfficialDrawerContent({
   completedByCode,
   displayOptions,
   onSaveCourse,
+  columns,
 }: {
   courses: CourseWithCategory[];
   completedByCode: Map<string, number | null>;
   displayOptions: CourseCardDisplayOptions;
   onSaveCourse: (courseCode: string, patch: PlanCoursePatch) => Promise<void>;
+  columns: number;
 }) {
   if (courses.length === 0) {
     return (
@@ -1146,7 +1337,7 @@ function OfficialDrawerContent({
     );
   }
   return (
-    <DrawerCourseGrid>
+    <DrawerCourseGrid columns={columns}>
       {courses.map((course) => (
         <DrawerCourseItem key={`official-drawer-${course.course_code}`}>
           <CourseCard
@@ -1176,6 +1367,7 @@ function PersonalDrawerContent({
   onSaveOfficial,
   onSaveManual,
   onDeleteManual,
+  columns,
 }: {
   officialItems: PlannedOfficial[];
   manualItems: PersonalPlanItem[];
@@ -1195,6 +1387,7 @@ function PersonalDrawerContent({
   onSaveOfficial: (courseCode: string, patch: PlanCoursePatch) => Promise<void>;
   onSaveManual: (id: number, patch: PlanCoursePatch) => Promise<void>;
   onDeleteManual: (id: number) => Promise<void>;
+  columns: number;
 }) {
   const empty = officialItems.length === 0 && manualItems.length === 0;
   return (
@@ -1205,7 +1398,7 @@ function PersonalDrawerContent({
         </div>
       )}
       {!empty && (
-        <DrawerCourseGrid>
+        <DrawerCourseGrid columns={columns}>
           {officialItems.map((item) => (
             <DrawerCourseItem key={`personal-drawer-${item.course.course_code}`}>
               <CourseCard
@@ -1437,6 +1630,79 @@ function Stat({ label, value }: { label: string; value: number }) {
       <div className="text-[10px] text-sub uppercase tracking-wide">{label}</div>
       <div className="text-lg text-ink tabular-nums">{round1(value)}</div>
     </div>
+  );
+}
+
+
+const FLOATING_HINT_DOCK_OFFSET = 80;
+const FLOATING_HINT_DRAWER_GAP = 12;
+
+const DRAWER_CARD_WIDTH = 158;
+const DRAWER_CARD_GAP = 6;
+// Total horizontal breathing room around the course-card grid.
+// Match the term-card spacing: courses stay compact, but the panel keeps a small balanced inset.
+const DRAWER_PANEL_PADDING_X = 20;
+const DRAWER_EMPTY_PANEL_WIDTH = 280;
+const DRAWER_PANEL_MAX_WIDTH = 1500;
+
+function useViewportWidth() {
+  const [width, setWidth] = useState(() =>
+    typeof window === "undefined" ? 1024 : window.innerWidth
+  );
+
+  useEffect(() => {
+    const update = () => setWidth(window.innerWidth || 1024);
+    update();
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, []);
+
+  return width;
+}
+
+function getDrawerColumns(itemCount: number, viewportWidth: number) {
+  if (itemCount <= 0) return 1;
+
+  const safeWidth = Math.max(240, viewportWidth - 48);
+  const panelLimit = Math.min(safeWidth, DRAWER_PANEL_MAX_WIDTH);
+  const contentLimit = Math.max(0, panelLimit - DRAWER_PANEL_PADDING_X);
+  const maxColumnsByAvailableWidth = Math.max(
+    1,
+    Math.floor(
+      (contentLimit + DRAWER_CARD_GAP) /
+        (DRAWER_CARD_WIDTH + DRAWER_CARD_GAP)
+    )
+  );
+
+  // Let the drawer expand when there is room, but never create a grid wider
+  // than the panel can actually contain. When the viewport is narrower, the
+  // column count decreases and courses wrap to new rows instead of overflowing
+  // horizontally.
+  let columns = Math.max(1, Math.min(itemCount, maxColumnsByAvailableWidth, 8));
+
+  // Avoid a visually awkward single-card orphan row when one fewer column still
+  // keeps the panel reasonably wide.
+  if (columns > 2 && itemCount > columns && itemCount % columns === 1) {
+    columns -= 1;
+  }
+
+  return columns;
+}
+
+function getDrawerCardsContentWidth(columns: number) {
+  return columns * DRAWER_CARD_WIDTH + (columns - 1) * DRAWER_CARD_GAP;
+}
+
+function getDrawerPanelWidth(itemCount: number, viewportWidth: number) {
+  const safeWidth = Math.max(240, viewportWidth - 48);
+  if (itemCount <= 0) {
+    return Math.round(Math.min(safeWidth, DRAWER_EMPTY_PANEL_WIDTH));
+  }
+
+  const columns = getDrawerColumns(itemCount, viewportWidth);
+  const contentWidth = getDrawerCardsContentWidth(columns);
+  return Math.round(
+    Math.min(safeWidth, DRAWER_PANEL_MAX_WIDTH, contentWidth + DRAWER_PANEL_PADDING_X)
   );
 }
 
