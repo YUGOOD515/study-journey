@@ -1,17 +1,19 @@
-import { useRef, useState } from "react";
-import { createPortal } from "react-dom";
-import type { CourseCardDisplayOptions, CourseWithCategory } from "../types";
+import type { CourseCardDisplayOptions, CourseWithCategory, PlanCoursePatch } from "../types";
 import { CATEGORY_STYLE } from "../lib/categoryStyle";
-import { parseOfferedTerm } from "../lib/offeredTerm";
 import { DEFAULT_COURSE_CARD_DISPLAY_OPTIONS } from "../lib/courseCardDisplay";
+import { CourseHoverCard, type CourseHoverInfo } from "./CourseHoverCard";
+import { useHoverIntentTriangle } from "../hooks/useHoverIntentTriangle";
 
 interface Props {
   course: CourseWithCategory;
   completedScore?: number | null;
   draggable?: boolean;
+  plannedTerm?: number | null;
   movedToTerm?: number;
   warning?: string;
   displayOptions?: CourseCardDisplayOptions;
+  editable?: boolean;
+  onSave?: (patch: PlanCoursePatch) => Promise<void>;
   onDragStart?: (event: React.DragEvent<HTMLDivElement>) => void;
   onDragEnd?: () => void;
   onDelete?: () => void;
@@ -22,9 +24,12 @@ export function CourseCard({
   course,
   completedScore,
   draggable = false,
+  plannedTerm,
   movedToTerm,
   warning,
   displayOptions = DEFAULT_COURSE_CARD_DISPLAY_OPTIONS,
+  editable = false,
+  onSave,
   onDragStart,
   onDragEnd,
   onDelete,
@@ -35,29 +40,39 @@ export function CourseCard({
 
   const bg = isRequired ? style.bgSoft : style.bgGhost;
   const borderStyle = isRequired ? "solid" : "dashed";
+  const hover = useHoverIntentTriangle<HTMLDivElement>({ width: 280 });
+  const score = completedScore ?? course.score ?? null;
 
-  const cardRef = useRef<HTMLDivElement>(null);
-  const [tip, setTip] = useState<{ x: number; y: number } | null>(null);
-
-  const showTip = () => {
-    const el = cardRef.current;
-    if (!el) return;
-    const r = el.getBoundingClientRect();
-    setTip({ x: r.right + 10, y: r.top });
+  const hoverItem: CourseHoverInfo = {
+    source: "program",
+    course_code: course.course_code,
+    course_name: course.course_name,
+    credits: course.credits,
+    lecture_hours: course.lecture_hours,
+    experiment_hours: course.experiment_hours,
+    extra_hours: course.extra_hours,
+    prerequisite_course_code: course.prerequisite_course_code,
+    prerequisite_course_name: course.prerequisite_course_name,
+    category_code: course.category_code,
+    category_name: course.category_name,
+    course_nature: course.course_nature,
+    offered_term: course.offered_term,
+    planned_term: plannedTerm !== undefined ? plannedTerm : course.planned_term,
+    score,
   };
 
   return (
     <>
       <div
-        ref={cardRef}
+        ref={hover.anchorRef}
         draggable={draggable}
         onDragStart={(event) => {
-          setTip(null);
+          hover.close();
           onDragStart?.(event);
         }}
         onDragEnd={onDragEnd}
-        onMouseEnter={showTip}
-        onMouseLeave={() => setTip(null)}
+        onMouseEnter={hover.open}
+        onMouseLeave={hover.startGuardedClose}
         className={
           "relative rounded-md px-2.5 py-2 text-[11px] leading-tight transition-all hover:-translate-y-0.5 hover:shadow-sm " +
           (draggable ? "cursor-grab active:cursor-grabbing" : "cursor-default")
@@ -94,9 +109,9 @@ export function CourseCard({
             )}
           </div>
         )}
-        {displayOptions.showScore && completedScore != null && (
+        {displayOptions.showScore && score != null && (
           <div className="mt-1 text-[10px] text-brand tabular-nums">
-            ✓ {completedScore}
+            ✓ {score}
           </div>
         )}
         {movedToTerm != null && (
@@ -115,7 +130,7 @@ export function CourseCard({
             onMouseDown={(event) => event.stopPropagation()}
             onClick={(event) => {
               event.stopPropagation();
-              setTip(null);
+              hover.close();
               onDelete();
             }}
             className="absolute -right-1.5 -top-1.5 h-4 w-4 rounded-full border border-sub/25 bg-card text-[10px] leading-none text-sub transition-colors hover:border-sub/50 hover:text-ink"
@@ -127,95 +142,18 @@ export function CourseCard({
         )}
       </div>
 
-      {tip && createPortal(<Tooltip x={tip.x} y={tip.y} course={course} />, document.body)}
+      {hover.position && (
+        <CourseHoverCard
+          position={hover.position}
+          popoverRef={hover.popoverRef}
+          visible={hover.visible}
+          item={hoverItem}
+          editable={editable}
+          onSave={onSave}
+          onMouseEnter={hover.keepOpen}
+          onMouseLeave={hover.scheduleClose}
+        />
+      )}
     </>
-  );
-}
-
-function Tooltip({
-  x,
-  y,
-  course,
-}: {
-  x: number;
-  y: number;
-  course: CourseWithCategory;
-}) {
-  const style = CATEGORY_STYLE[course.category_code];
-  const parsed = parseOfferedTerm(course.offered_term);
-
-  // 若浮窗右边会超出屏幕，则改放左侧
-  const w = 260;
-  const screenW = typeof window !== "undefined" ? window.innerWidth : 1920;
-  const placeLeft = x + w + 16 > screenW;
-  const left = placeLeft ? x - w - 20 : x;
-
-  return (
-    <div
-      className="fixed z-50 rounded-lg text-[11px] leading-relaxed pointer-events-none text-ink bg-card"
-      style={{
-        left,
-        top: y,
-        width: w,
-        border: `1px solid ${style.border}`,
-        boxShadow:
-          "0 14px 36px rgb(var(--shadow-rgb) / var(--shadow-strong)), 0 2px 8px rgb(var(--shadow-rgb) / var(--shadow-soft))",
-        padding: "10px 12px",
-      }}
-    >
-      <div className="flex items-baseline justify-between gap-2 mb-2 pb-2 border-b border-sub/15">
-        <div className="text-[13px] font-medium" style={{ color: style.text }}>
-          {course.course_name}
-        </div>
-        <div className="text-[10px] text-sub tabular-nums shrink-0">
-          {course.course_code}
-        </div>
-      </div>
-
-      <Row label="类别">
-        <span className="inline-flex items-center gap-1.5">
-          <span
-            className="inline-block w-2 h-2 rounded-sm"
-            style={{ backgroundColor: style.color }}
-          />
-          {course.category_name} · {course.course_nature}
-        </span>
-      </Row>
-      <Row label="学分">
-        <span className="tabular-nums">{course.credits}</span>
-      </Row>
-      <Row label="学时">
-        <span className="tabular-nums text-sub">
-          讲 {course.lecture_hours} / 实 {course.experiment_hours} / 外 {course.extra_hours}
-        </span>
-      </Row>
-      <Row label="开课学期">
-        <span className="tabular-nums">
-          {parsed.isFlexible
-            ? "灵活（任意学期）"
-            : parsed.rangeEnd != null
-            ? `第 ${parsed.primary} – ${parsed.rangeEnd} 学期`
-            : `第 ${parsed.primary} 学期`}
-        </span>
-      </Row>
-      <Row label="先修">
-        {course.prerequisite_course_name ? (
-          <span style={{ color: style.text }}>
-            {course.prerequisite_course_name}
-          </span>
-        ) : (
-          <span className="text-sub/60">无</span>
-        )}
-      </Row>
-    </div>
-  );
-}
-
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="flex items-baseline gap-3 py-0.5">
-      <div className="w-14 text-[10px] text-sub shrink-0">{label}</div>
-      <div className="flex-1 text-ink">{children}</div>
-    </div>
   );
 }

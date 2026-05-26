@@ -50,6 +50,46 @@ function validateScore(value: unknown): string | null {
   return null;
 }
 
+
+function validateNonNegativeNumber(value: unknown, field: string): string | null {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+    return `${field} 必须为非负数`;
+  }
+  return null;
+}
+
+function validateCoursePatch(patch: any, allowCrossMajor = true): string | null {
+  if (patch.course_name !== undefined && (typeof patch.course_name !== "string" || !patch.course_name.trim())) {
+    return "course_name 必填";
+  }
+  if (patch.category_code !== undefined && !isCategoryCode(patch.category_code)) {
+    return `category_code 无效: ${patch.category_code}`;
+  }
+  if (patch.course_nature !== undefined) {
+    if (!VALID_REQUIREMENT_TYPES.has(patch.course_nature) || (!allowCrossMajor && patch.course_nature === "跨专业")) {
+      return allowCrossMajor ? "course_nature 仅支持 必修/选修/跨专业" : "course_nature 仅支持 必修/选修";
+    }
+  }
+  for (const field of ["credits", "lecture_hours", "experiment_hours", "extra_hours"] as const) {
+    if (patch[field] !== undefined) {
+      const err = validateNonNegativeNumber(patch[field], field);
+      if (err) return err;
+    }
+  }
+  if (patch.planned_term !== undefined) {
+    const err = validateTerm(patch.planned_term, "planned_term", true);
+    if (err) return err;
+  }
+  if (patch.score !== undefined) {
+    const err = validateScore(patch.score);
+    if (err) return err;
+  }
+  if (patch.prerequisite_course_code !== undefined && patch.prerequisite_course_code !== null && typeof patch.prerequisite_course_code !== "string") {
+    return "prerequisite_course_code 必须为字符串或 null";
+  }
+  return null;
+}
+
 function assignmentToCreditCountTo(assignedTo: "interdisciplinary" | "elective"): string {
   return assignedTo === "elective" ? "通识教育-选修" : "大类平台-选修";
 }
@@ -216,12 +256,19 @@ app.get("/api/semester-courses", (_req, res) => {
         pc.score,
         pc.course_name,
         pc.credits,
+        pc.lecture_hours,
+        pc.experiment_hours,
+        pc.extra_hours,
+        pc.prerequisite_course_code,
+        pre.course_name AS prerequisite_course_name,
+        pc.official_term AS offered_term,
         pc.category_code,
         pc.requirement_type AS course_nature,
         pc.note,
         0 AS is_interdisciplinary,
         NULL AS assigned_to
       FROM plan_program_courses pc
+      LEFT JOIN plan_program_courses pre ON pre.course_code = pc.prerequisite_course_code
       WHERE ${programActiveWhere("pc")}
         AND (pc.actual_term IS NOT NULL
          OR pc.score IS NOT NULL
@@ -241,6 +288,12 @@ app.get("/api/semester-courses", (_req, res) => {
         pc.score,
         pc.course_name,
         pc.credits,
+        pc.lecture_hours,
+        pc.experiment_hours,
+        pc.extra_hours,
+        pc.prerequisite_course_code,
+        pre.course_name AS prerequisite_course_name,
+        NULL AS offered_term,
         pc.category_code,
         pc.requirement_type AS course_nature,
         pc.note,
@@ -253,6 +306,7 @@ app.get("/api/semester-courses", (_req, res) => {
           ELSE 'interdisciplinary'
         END AS assigned_to
       FROM plan_custom_courses pc
+      LEFT JOIN plan_program_courses pre ON pre.course_code = pc.prerequisite_course_code
       WHERE ${customActiveWhere("pc")}
         AND (pc.study_status IN ('正在修读', '已修读', '未通过')
          OR pc.score IS NOT NULL)
@@ -582,6 +636,120 @@ app.delete("/api/semester-courses/manual/:id", (req: Request, res: Response) => 
   res.json({ ok: true, changes: info.changes });
 });
 
+
+// ─────────────────────────────────────────────
+// 课程悬浮卡片轻量编辑：不允许修改 course_code
+// ─────────────────────────────────────────────
+app.patch("/api/plan-courses/program/:code", (req: Request, res: Response) => {
+  const code = String(req.params.code).trim();
+  const patch = req.body ?? {};
+  const err = validateCoursePatch(patch, true);
+  if (err) { res.status(400).json({ error: err }); return; }
+
+  const current: any = db
+    .prepare("SELECT * FROM plan_program_courses WHERE course_code = ? AND is_deleted = 0 AND is_permanently_deleted = 0")
+    .get(code);
+  if (!current) {
+    res.status(404).json({ error: "未找到该培养方案课程" });
+    return;
+  }
+
+  const sets: string[] = [];
+  const params: any[] = [];
+  const add = (column: string, value: unknown) => { sets.push(`${column} = ?`); params.push(value); };
+
+  if (patch.course_name !== undefined) add("course_name", String(patch.course_name).trim());
+  if (patch.category_code !== undefined) {
+    add("category_code", patch.category_code);
+    add("category_name", categoryNameOf(patch.category_code));
+  }
+  if (patch.course_nature !== undefined) add("requirement_type", patch.course_nature);
+  if (patch.credits !== undefined) add("credits", patch.credits);
+  const nextLecture = patch.lecture_hours !== undefined ? patch.lecture_hours : current.lecture_hours;
+  const nextExperiment = patch.experiment_hours !== undefined ? patch.experiment_hours : current.experiment_hours;
+  const nextExtra = patch.extra_hours !== undefined ? patch.extra_hours : current.extra_hours;
+  if (patch.lecture_hours !== undefined) add("lecture_hours", patch.lecture_hours);
+  if (patch.experiment_hours !== undefined) add("experiment_hours", patch.experiment_hours);
+  if (patch.extra_hours !== undefined) add("extra_hours", patch.extra_hours);
+  if (patch.lecture_hours !== undefined || patch.experiment_hours !== undefined || patch.extra_hours !== undefined) {
+    add("total_hours", Number(nextLecture ?? 0) + Number(nextExperiment ?? 0) + Number(nextExtra ?? 0));
+  }
+  if (patch.planned_term !== undefined) add("planned_term", patch.planned_term ?? null);
+  if (patch.prerequisite_course_code !== undefined) add("prerequisite_course_code", String(patch.prerequisite_course_code ?? "").trim() || null);
+  if (patch.score !== undefined) add("score", patch.score ?? null);
+
+  if (patch.score !== undefined || patch.planned_term !== undefined) {
+    const nextScore = patch.score !== undefined ? patch.score : current.score;
+    const nextPlannedTerm = patch.planned_term !== undefined ? patch.planned_term : current.planned_term;
+    const fallback = current.actual_term != null ? "正在修读" : nextPlannedTerm != null ? "计划修读" : "未修读";
+    add("study_status", scoreToStudyStatus(nextScore, fallback));
+  }
+
+  if (sets.length === 0) { res.status(400).json({ error: "没有可更新字段" }); return; }
+  params.push(code);
+
+  try {
+    const info = db
+      .prepare(`UPDATE plan_program_courses SET ${sets.join(", ")} WHERE course_code = ? AND is_deleted = 0 AND is_permanently_deleted = 0`)
+      .run(...params);
+    res.json({ ok: true, changes: info.changes });
+  } catch (e) {
+    sendDbError(res, e);
+  }
+});
+
+app.patch("/api/plan-courses/custom/:id", (req: Request, res: Response) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) { res.status(400).json({ error: "id 必须为整数" }); return; }
+  const patch = req.body ?? {};
+  const err = validateCoursePatch(patch, true);
+  if (err) { res.status(400).json({ error: err }); return; }
+
+  const current: any = db.prepare("SELECT * FROM plan_custom_courses WHERE rowid = ? AND is_deleted = 0").get(id);
+  if (!current) { res.status(404).json({ error: "未找到该自定义课程" }); return; }
+
+  const sets: string[] = [];
+  const params: any[] = [];
+  const add = (column: string, value: unknown) => { sets.push(`${column} = ?`); params.push(value); };
+
+  if (patch.course_name !== undefined) add("course_name", String(patch.course_name).trim());
+  if (patch.category_code !== undefined) {
+    add("category_code", patch.category_code);
+    add("category_name", categoryNameOf(patch.category_code));
+  }
+  if (patch.course_nature !== undefined) add("requirement_type", patch.course_nature);
+  if (patch.credits !== undefined) add("credits", patch.credits);
+  const nextLecture = patch.lecture_hours !== undefined ? patch.lecture_hours : current.lecture_hours;
+  const nextExperiment = patch.experiment_hours !== undefined ? patch.experiment_hours : current.experiment_hours;
+  const nextExtra = patch.extra_hours !== undefined ? patch.extra_hours : current.extra_hours;
+  if (patch.lecture_hours !== undefined) add("lecture_hours", patch.lecture_hours);
+  if (patch.experiment_hours !== undefined) add("experiment_hours", patch.experiment_hours);
+  if (patch.extra_hours !== undefined) add("extra_hours", patch.extra_hours);
+  if (patch.lecture_hours !== undefined || patch.experiment_hours !== undefined || patch.extra_hours !== undefined) {
+    add("total_hours", Number(nextLecture ?? 0) + Number(nextExperiment ?? 0) + Number(nextExtra ?? 0));
+  }
+  if (patch.planned_term !== undefined) add("term_number", patch.planned_term ?? null);
+  if (patch.prerequisite_course_code !== undefined) add("prerequisite_course_code", String(patch.prerequisite_course_code ?? "").trim() || null);
+  if (patch.score !== undefined) add("score", patch.score ?? null);
+
+  if (patch.score !== undefined || patch.planned_term !== undefined) {
+    const nextScore = patch.score !== undefined ? patch.score : current.score;
+    const nextTerm = patch.planned_term !== undefined ? patch.planned_term : current.term_number;
+    const fallback = nextTerm != null ? "计划修读" : "未修读";
+    add("study_status", scoreToStudyStatus(nextScore, fallback));
+  }
+
+  if (sets.length === 0) { res.status(400).json({ error: "没有可更新字段" }); return; }
+  params.push(id);
+
+  try {
+    const info = db.prepare(`UPDATE plan_custom_courses SET ${sets.join(", ")} WHERE rowid = ? AND is_deleted = 0`).run(...params);
+    res.json({ ok: true, changes: info.changes });
+  } catch (e) {
+    sendDbError(res, e);
+  }
+});
+
 // ─────────────────────────────────────────────
 // 我的计划：官方课的 planned_term + 自定义计划课
 // ─────────────────────────────────────────────
@@ -606,6 +774,7 @@ app.get("/api/personal-plan", (_req, res) => {
         pc.requirement_type AS course_nature,
         pc.official_term AS offered_term,
         pc.course_subcategory AS course_category,
+        pc.score,
         pc.note,
         0 AS is_interdisciplinary,
         NULL AS assigned_to
@@ -643,6 +812,7 @@ app.get("/api/personal-plan", (_req, res) => {
         pc.requirement_type AS course_nature,
         NULL AS offered_term,
         pc.course_subcategory AS course_category,
+        pc.score,
         pc.note,
         CASE
           WHEN pc.course_subcategory LIKE '%经法管融通%' OR pc.credit_count_to IS NOT NULL THEN 1
@@ -889,6 +1059,12 @@ app.get("/api/trash", (_req, res) => {
         pc.course_code,
         pc.course_name,
         pc.credits,
+        pc.lecture_hours,
+        pc.experiment_hours,
+        pc.extra_hours,
+        pc.prerequisite_course_code,
+        pre.course_name AS prerequisite_course_name,
+        pc.official_term AS offered_term,
         pc.category_code,
         pc.category_name,
         pc.requirement_type AS course_nature,
@@ -900,6 +1076,7 @@ app.get("/api/trash", (_req, res) => {
         pc.deleted_at,
         pc.deleted_note
       FROM plan_program_courses pc
+      LEFT JOIN plan_program_courses pre ON pre.course_code = pc.prerequisite_course_code
       WHERE pc.is_deleted = 1 AND pc.is_permanently_deleted = 0
     `)
     .all();
@@ -912,6 +1089,12 @@ app.get("/api/trash", (_req, res) => {
         pc.course_code,
         pc.course_name,
         pc.credits,
+        pc.lecture_hours,
+        pc.experiment_hours,
+        pc.extra_hours,
+        pc.prerequisite_course_code,
+        pre.course_name AS prerequisite_course_name,
+        NULL AS offered_term,
         pc.category_code,
         pc.category_name,
         pc.requirement_type AS course_nature,
@@ -923,6 +1106,7 @@ app.get("/api/trash", (_req, res) => {
         pc.deleted_at,
         pc.deleted_note
       FROM plan_custom_courses pc
+      LEFT JOIN plan_program_courses pre ON pre.course_code = pc.prerequisite_course_code
       WHERE pc.is_deleted = 1
     `)
     .all();

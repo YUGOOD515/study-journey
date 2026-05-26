@@ -19,6 +19,12 @@ export interface CourseWithCategory {
   course_nature: "必修" | "选修" | "跨专业";
   offered_term: string | null;
   course_category: string | null;
+  planned_term?: number | null;
+  actual_term?: number | null;
+  study_status?: string | null;
+  score?: number | null;
+  note?: string | null;
+  credit_count_to?: string | null;
   is_deleted?: number;
   is_permanently_deleted?: number;
   deleted_at?: string | null;
@@ -73,6 +79,7 @@ export interface PersonalPlanItem {
   course_nature: "必修" | "选修" | "跨专业";
   offered_term: string | null;
   course_category: string | null;
+  score?: number | null;
   note: string | null;
   /** 仅 item_type='manual' 有效 */
   is_interdisciplinary?: number | null;
@@ -93,6 +100,12 @@ export interface TrashItem {
   actual_term: number | null;
   score: number | null;
   note: string | null;
+  lecture_hours?: number | null;
+  experiment_hours?: number | null;
+  extra_hours?: number | null;
+  prerequisite_course_code?: string | null;
+  prerequisite_course_name?: string | null;
+  offered_term?: string | null;
   deleted_at: string | null;
   deleted_note: string | null;
 }
@@ -102,6 +115,20 @@ export interface CourseCardDisplayOptions {
   showScore: boolean;
   showCredits: boolean;
   showCourseCode: boolean;
+}
+
+
+export interface PlanCoursePatch {
+  course_name?: string;
+  category_code?: CategoryCode;
+  course_nature?: "必修" | "选修" | "跨专业";
+  credits?: number;
+  lecture_hours?: number;
+  experiment_hours?: number;
+  extra_hours?: number;
+  planned_term?: number | null;
+  prerequisite_course_code?: string | null;
+  score?: number | null;
 }
 
 /**

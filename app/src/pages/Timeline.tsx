@@ -11,6 +11,7 @@ import type {
   CourseCardDisplayOptions,
   CourseWithCategory,
   PersonalPlanItem,
+  PlanCoursePatch,
   ProgramRequirement,
   SemesterCourse,
   TrashItem,
@@ -18,6 +19,8 @@ import type {
 import { CourseCard } from "../components/CourseCard";
 import { ManualCourseCard } from "../components/ManualCourseCard";
 import { ManualCourseDialog } from "../components/ManualCourseDialog";
+import { CourseHoverCard, type CourseHoverInfo } from "../components/CourseHoverCard";
+import { useHoverIntentTriangle } from "../hooks/useHoverIntentTriangle";
 
 const TERMS = [1, 2, 3, 4, 5, 6, 7, 8];
 
@@ -352,6 +355,18 @@ export default function Timeline() {
     }
   };
 
+  const saveProgramCourse = async (courseCode: string, patch: PlanCoursePatch) => {
+    await api.updateProgramCourse(courseCode, patch);
+    await refetchTimelineData();
+    setHint("课程信息已保存");
+  };
+
+  const saveCustomCourse = async (id: number, patch: PlanCoursePatch) => {
+    await api.updateCustomCourse(id, patch);
+    await refetchTimelineData();
+    setHint("课程信息已保存");
+  };
+
   const restoreTrashItem = async (item: TrashItem) => {
     try {
       await api.restoreTrashItem(item);
@@ -432,6 +447,8 @@ export default function Timeline() {
               onDragEnd={() => setDragging(null)}
               onAdd={() => setAddTerm(term)}
               onDeleteOfficial={moveOfficialToTrash}
+              onSaveOfficial={saveProgramCourse}
+              onSaveManual={saveCustomCourse}
               onDeleteManual={async (id) => {
                 await api.deletePersonalPlan(id);
                 await refetchPlan();
@@ -444,6 +461,7 @@ export default function Timeline() {
               courses={officialBuckets.byTerm[term]}
               completedByCode={completedByCode}
               displayOptions={displayOptions}
+              onSaveCourse={saveProgramCourse}
             />
           )
         )}
@@ -476,6 +494,8 @@ export default function Timeline() {
               onDragEnd={() => setDragging(null)}
               onAdd={() => setAddTerm("drawer")}
               onDeleteOfficial={moveOfficialToTrash}
+              onSaveOfficial={saveProgramCourse}
+              onSaveManual={saveCustomCourse}
               onDeleteManual={async (id) => {
                 await api.deletePersonalPlan(id);
                 await refetchPlan();
@@ -513,6 +533,7 @@ export default function Timeline() {
             courses={officialBuckets.drawer}
             completedByCode={completedByCode}
             displayOptions={displayOptions}
+            onSaveCourse={saveProgramCourse}
           />
         </Drawer>
       )}
@@ -544,11 +565,13 @@ function OfficialTermColumn({
   courses,
   completedByCode,
   displayOptions,
+  onSaveCourse,
 }: {
   term: number;
   courses: CourseWithCategory[];
   completedByCode: Map<string, number | null>;
   displayOptions: CourseCardDisplayOptions;
+  onSaveCourse: (courseCode: string, patch: PlanCoursePatch) => Promise<void>;
 }) {
   const credits = courses.reduce((s, c) => s + c.credits, 0);
   return (
@@ -558,7 +581,10 @@ function OfficialTermColumn({
           key={`${term}-${course.course_code}`}
           course={course}
           completedScore={completedByCode.get(course.course_code)}
+          plannedTerm={course.planned_term}
           displayOptions={displayOptions}
+          editable
+          onSave={(patch) => onSaveCourse(course.course_code, patch)}
         />
       ))}
       {courses.length === 0 && <EmptyTerm />}
@@ -579,6 +605,8 @@ function PersonalTermColumn({
   onDragEnd,
   onAdd,
   onDeleteOfficial,
+  onSaveOfficial,
+  onSaveManual,
   onDeleteManual,
 }: {
   term: number;
@@ -599,6 +627,8 @@ function PersonalTermColumn({
   onDragEnd: () => void;
   onAdd: () => void;
   onDeleteOfficial: (course: CourseWithCategory) => Promise<void>;
+  onSaveOfficial: (courseCode: string, patch: PlanCoursePatch) => Promise<void>;
+  onSaveManual: (id: number, patch: PlanCoursePatch) => Promise<void>;
   onDeleteManual: (id: number) => Promise<void>;
 }) {
   const credits =
@@ -629,7 +659,10 @@ function PersonalTermColumn({
           completedScore={completedByCode.get(item.course.course_code)}
           draggable
           warning={item.warning ?? undefined}
+          plannedTerm={item.plannedTerm}
           displayOptions={displayOptions}
+          editable
+          onSave={(patch) => onSaveOfficial(item.course.course_code, patch)}
           onDragStart={(event) => onStartOfficialDrag(event, item)}
           onDragEnd={onDragEnd}
           onDelete={() => { void onDeleteOfficial(item.course); }}
@@ -644,6 +677,8 @@ function PersonalTermColumn({
               course={item}
               draggable
               displayOptions={displayOptions}
+              editable
+              onSave={(patch) => onSaveManual(item.id, patch)}
               onDragStart={(event) => onStartManualDrag(event, item)}
               onDragEnd={onDragEnd}
               onDelete={async (id) => {
@@ -782,8 +817,15 @@ function DualDrawer({
   pendingContent: React.ReactNode;
   trashContent: React.ReactNode;
 }) {
-  const isPending = active === "pending";
-  const isTrash = active === "trash";
+  const [lastActive, setLastActive] = useState<Exclude<ActiveDrawer, null>>("pending");
+
+  useEffect(() => {
+    if (active != null) setLastActive(active);
+  }, [active]);
+
+  const displayedDrawer = active ?? lastActive;
+  const isPending = displayedDrawer === "pending";
+  const isTrash = displayedDrawer === "trash";
   const isOpen = active != null;
   const transition =
     "transform-gpu transition-[opacity,transform,border-color,background-color,box-shadow] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]";
@@ -795,7 +837,7 @@ function DualDrawer({
       ? "pointer-events-auto translate-y-0 scale-100 opacity-100"
       : "pointer-events-none translate-y-4 scale-[0.985] opacity-0") +
     " " +
-    (pendingDropActive && isPending ? "border-brand bg-brand/10" : "border-sub/15");
+    (pendingDropActive && active === "pending" ? "border-brand bg-brand/10" : "border-sub/15");
 
   const title = isTrash ? "垃圾篓" : "待安排";
   const subtitle = isTrash
@@ -807,8 +849,8 @@ function DualDrawer({
     <div className="fixed inset-x-6 bottom-5 z-50 pointer-events-none sm:inset-x-8">
       <div className="relative mx-auto w-full max-w-[1280px]">
         <div
-          onDragOver={isPending ? onPendingDragOver : undefined}
-          onDrop={isPending ? onPendingDrop : undefined}
+          onDragOver={active === "pending" ? onPendingDragOver : undefined}
+          onDrop={active === "pending" ? onPendingDrop : undefined}
           className={panelClass}
           style={{
             boxShadow:
@@ -817,7 +859,7 @@ function DualDrawer({
         >
           <button
             type="button"
-            onClick={() => onToggle(isTrash ? "trash" : "pending")}
+            onClick={() => onToggle(displayedDrawer)}
             className="flex h-12 w-full items-center justify-between gap-4 border-b border-sub/10 px-4 text-left transition-colors hover:bg-sub/5"
             aria-expanded={isOpen}
           >
@@ -849,7 +891,7 @@ function DualDrawer({
           style={{ boxShadow: "0 16px 40px rgb(var(--shadow-rgb) / var(--shadow-soft))" }}
         >
           <DockButton
-            active={isPending}
+            active={active === "pending"}
             title="待安排"
             countLabel={pendingCountLabel}
             dropActive={pendingDropActive}
@@ -858,7 +900,7 @@ function DualDrawer({
             onDrop={onPendingDrop}
           />
           <DockButton
-            active={isTrash}
+            active={active === "trash"}
             title="垃圾篓"
             countLabel={trashCountLabel}
             onClick={() => onToggle("trash")}
@@ -981,46 +1023,89 @@ function TrashCourseCard({
 }) {
   const style = CATEGORY_STYLE[item.category_code];
   const isRequired = item.course_nature === "必修";
+  const hover = useHoverIntentTriangle<HTMLDivElement>({ width: 280 });
+  const hoverItem: CourseHoverInfo = {
+    source: item.source,
+    id: item.id,
+    course_code: item.course_code,
+    course_name: item.course_name,
+    credits: item.credits,
+    lecture_hours: item.lecture_hours ?? 0,
+    experiment_hours: item.experiment_hours ?? 0,
+    extra_hours: item.extra_hours ?? 0,
+    prerequisite_course_code: item.prerequisite_course_code ?? null,
+    prerequisite_course_name: item.prerequisite_course_name ?? null,
+    category_code: item.category_code,
+    category_name: item.category_name,
+    course_nature: item.course_nature,
+    offered_term: item.offered_term ?? null,
+    planned_term: item.planned_term,
+    score: item.score,
+    deleted_at: item.deleted_at,
+  };
+
   return (
-    <div
-      className="rounded-md px-2.5 py-2 text-[11px] leading-tight"
-      style={{
-        backgroundColor: isRequired ? style.bgSoft : style.bgGhost,
-        border: `1px dashed ${style.border}`,
-      }}
-    >
-      <div className="text-[9px] text-sub/80 tabular-nums">
-        {item.source === "program" ? item.course_code : "自定义"}
+    <>
+      <div
+        ref={hover.anchorRef}
+        onMouseEnter={hover.open}
+        onMouseLeave={hover.startGuardedClose}
+        className="rounded-md px-2.5 py-2 text-[11px] leading-tight transition-all hover:-translate-y-0.5 hover:shadow-sm"
+        style={{
+          backgroundColor: isRequired ? style.bgSoft : style.bgGhost,
+          border: `1px dashed ${style.border}`,
+        }}
+      >
+        <div className="text-[9px] text-sub/80 tabular-nums">
+          {item.source === "program" ? item.course_code : "自定义"}
+        </div>
+        <div className="mt-0.5 font-medium" style={{ color: style.text }}>
+          {item.course_name}
+        </div>
+        <div className="mt-1 flex items-center justify-between text-[10px]">
+          <span className="tabular-nums" style={{ color: style.text }}>
+            {item.credits} 学分
+          </span>
+          <span className="text-sub">{item.course_nature}</span>
+        </div>
+        {item.score != null && (
+          <div className="mt-1 text-[10px] text-brand tabular-nums">✓ {item.score}</div>
+        )}
+        <div className="mt-1 text-[10px] text-sub/70">
+          {item.planned_term == null ? "原位置：待安排" : `原位置：第 ${item.planned_term} 学期`}
+        </div>
+        <div className="mt-2 flex gap-1.5">
+          <button
+            type="button"
+            onClick={() => { hover.close(); void onRestore(); }}
+            className="h-6 flex-1 rounded-md border border-sub/15 bg-card/70 text-[10px] text-sub transition-colors hover:border-sub/35 hover:text-ink"
+          >
+            恢复
+          </button>
+          <button
+            type="button"
+            onClick={() => { hover.close(); void onPermanentDelete(); }}
+            className="h-6 flex-1 rounded-md border border-sub/15 bg-card/70 text-[10px] text-sub transition-colors hover:border-brand/35 hover:text-brand"
+          >
+            永久删除
+          </button>
+        </div>
       </div>
-      <div className="mt-0.5 font-medium" style={{ color: style.text }}>
-        {item.course_name}
-      </div>
-      <div className="mt-1 flex items-center justify-between text-[10px]">
-        <span className="tabular-nums" style={{ color: style.text }}>
-          {item.credits} 学分
-        </span>
-        <span className="text-sub">{item.course_nature}</span>
-      </div>
-      <div className="mt-1 text-[10px] text-sub/70">
-        {item.planned_term == null ? "原位置：待安排" : `原位置：第 ${item.planned_term} 学期`}
-      </div>
-      <div className="mt-2 flex gap-1.5">
-        <button
-          type="button"
-          onClick={() => { void onRestore(); }}
-          className="h-6 flex-1 rounded-md border border-sub/15 bg-card/70 text-[10px] text-sub transition-colors hover:border-sub/35 hover:text-ink"
-        >
-          恢复
-        </button>
-        <button
-          type="button"
-          onClick={() => { void onPermanentDelete(); }}
-          className="h-6 flex-1 rounded-md border border-sub/15 bg-card/70 text-[10px] text-sub transition-colors hover:border-brand/35 hover:text-brand"
-        >
-          永久删除
-        </button>
-      </div>
-    </div>
+
+      {hover.position && (
+        <CourseHoverCard
+          position={hover.position}
+          popoverRef={hover.popoverRef}
+          visible={hover.visible}
+          item={hoverItem}
+          mode="trash"
+          onRestore={onRestore}
+          onPermanentDelete={onPermanentDelete}
+          onMouseEnter={hover.keepOpen}
+          onMouseLeave={hover.scheduleClose}
+        />
+      )}
+    </>
   );
 }
 
@@ -1036,10 +1121,12 @@ function OfficialDrawerContent({
   courses,
   completedByCode,
   displayOptions,
+  onSaveCourse,
 }: {
   courses: CourseWithCategory[];
   completedByCode: Map<string, number | null>;
   displayOptions: CourseCardDisplayOptions;
+  onSaveCourse: (courseCode: string, patch: PlanCoursePatch) => Promise<void>;
 }) {
   if (courses.length === 0) {
     return (
@@ -1055,7 +1142,10 @@ function OfficialDrawerContent({
           <CourseCard
             course={course}
             completedScore={completedByCode.get(course.course_code)}
+            plannedTerm={course.planned_term}
             displayOptions={displayOptions}
+            editable
+            onSave={(patch) => onSaveCourse(course.course_code, patch)}
           />
         </DrawerCourseItem>
       ))}
@@ -1073,6 +1163,8 @@ function PersonalDrawerContent({
   onDragEnd,
   onAdd,
   onDeleteOfficial,
+  onSaveOfficial,
+  onSaveManual,
   onDeleteManual,
 }: {
   officialItems: PlannedOfficial[];
@@ -1090,6 +1182,8 @@ function PersonalDrawerContent({
   onDragEnd: () => void;
   onAdd: () => void;
   onDeleteOfficial: (course: CourseWithCategory) => Promise<void>;
+  onSaveOfficial: (courseCode: string, patch: PlanCoursePatch) => Promise<void>;
+  onSaveManual: (id: number, patch: PlanCoursePatch) => Promise<void>;
   onDeleteManual: (id: number) => Promise<void>;
 }) {
   const empty = officialItems.length === 0 && manualItems.length === 0;
@@ -1107,8 +1201,11 @@ function PersonalDrawerContent({
               <CourseCard
                 course={item.course}
                 completedScore={completedByCode.get(item.course.course_code)}
+                plannedTerm={item.plannedTerm}
                 draggable
                 displayOptions={displayOptions}
+                editable
+                onSave={(patch) => onSaveOfficial(item.course.course_code, patch)}
                 onDragStart={(event) => onStartOfficialDrag(event, item)}
                 onDragEnd={onDragEnd}
                 onDelete={() => { void onDeleteOfficial(item.course); }}
@@ -1121,6 +1218,8 @@ function PersonalDrawerContent({
                 course={item}
                 draggable
                 displayOptions={displayOptions}
+                editable
+                onSave={(patch) => onSaveManual(item.id, patch)}
                 onDragStart={(event) => onStartManualDrag(event, item)}
                 onDragEnd={onDragEnd}
                 onDelete={async (id) => {

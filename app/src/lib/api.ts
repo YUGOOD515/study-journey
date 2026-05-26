@@ -3,6 +3,7 @@ import type {
   CourseWithCategory,
   CreditAssignment,
   PersonalPlanItem,
+  PlanCoursePatch,
   ProgramRequirement,
   SemesterCourse,
   TrashItem,
@@ -191,6 +192,22 @@ export const api = {
 
   emptyTrash: () =>
     send<{ ok: true; changes: number }>("/api/trash/empty", "DELETE"),
+
+
+  // ── 课程悬浮卡片轻量编辑 ─────────────
+  updateProgramCourse: (course_code: string, patch: PlanCoursePatch) =>
+    send<{ ok: true; changes: number }>(
+      `/api/plan-courses/program/${encodeURIComponent(course_code)}`,
+      "PATCH",
+      patch
+    ),
+
+  updateCustomCourse: (id: number, patch: PlanCoursePatch) =>
+    send<{ ok: true; changes: number }>(
+      `/api/plan-courses/custom/${encodeURIComponent(String(id))}`,
+      "PATCH",
+      patch
+    ),
 
   // ── 经法管融通学分归属覆盖 ────────────
   creditAssignments: () =>
