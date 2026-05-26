@@ -196,9 +196,15 @@ export default function Timeline() {
   const totals = useMemo(() => {
     const requiredTotal = reqs.reduce((s, r) => s + r.required_credits, 0);
     const officialPlanTotal = courses.reduce((s, c) => s + c.credits, 0);
-    const manualPlanTotal = personalPlan
-      .filter((p) => p.item_type === "manual")
-      .reduce((s, p) => s + p.credits, 0);
+
+    // 我的计划合计：只算时间线上的课（plannedTerm != null），抽屉里的不算
+    const personalOfficialOnTimeline = Object.values(personalBuckets.byTerm)
+      .flat()
+      .reduce((s, item) => s + item.course.credits, 0);
+    const personalManualOnTimeline = Object.values(manualPlanByTerm.byTerm)
+      .flat()
+      .reduce((s, item) => s + item.credits, 0);
+
     const completedTotal = done.reduce(
       (s, d) => s + (d.score != null ? d.credits ?? 0 : 0),
       0
@@ -206,10 +212,10 @@ export default function Timeline() {
     return {
       requiredTotal,
       officialPlanTotal,
-      personalPlanTotal: officialPlanTotal + manualPlanTotal,
+      personalPlanTotal: personalOfficialOnTimeline + personalManualOnTimeline,
       completedTotal,
     };
-  }, [reqs, courses, done, personalPlan]);
+  }, [reqs, courses, done, personalBuckets, manualPlanByTerm]);
 
   const startOfficialDrag = (
     event: React.DragEvent<HTMLDivElement>,
