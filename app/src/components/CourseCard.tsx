@@ -59,6 +59,10 @@ export function CourseCard({
     offered_term: course.offered_term,
     planned_term: plannedTerm !== undefined ? plannedTerm : course.planned_term,
     score,
+    note: course.note ?? null,
+    is_interdisciplinary: course.is_interdisciplinary ?? 0,
+    assigned_to: course.assigned_to ?? null,
+    credit_count_to: course.credit_count_to ?? null,
   };
 
   return (

@@ -63,6 +63,10 @@ export function ManualCourseCard({
     offered_term: "offered_term" in course ? course.offered_term : null,
     planned_term: termNumber,
     score,
+    note: "note" in course ? course.note : null,
+    is_interdisciplinary: "is_interdisciplinary" in course ? course.is_interdisciplinary ?? 0 : 0,
+    assigned_to: "assigned_to" in course ? course.assigned_to ?? null : null,
+    credit_count_to: "credit_count_to" in course ? course.credit_count_to ?? null : null,
   };
 
   return (

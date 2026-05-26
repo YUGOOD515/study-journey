@@ -1,29 +1,9 @@
+import type React from "react";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { CATEGORY_STYLE } from "../lib/categoryStyle";
-import type { CategoryCode } from "../types";
-
-/**
- * 板块 + 是否经法管融通 的组合选项。
- * 仅 通识 / 大类平台 允许标记为经法管融通；
- * 标记后会被纳入「学分流向」桑基图，可在「大类·经法管融通」与「自身板块·选修」之间切换归属。
- */
-interface CategoryChoice {
-  code: CategoryCode;
-  isInterdisciplinary: 0 | 1;
-  label: string;
-  shortLabel: string;
-}
-
-const CATEGORY_CHOICES: CategoryChoice[] = [
-  { code: "general_education",      isInterdisciplinary: 0, label: "通识教育",          shortLabel: "通识" },
-  { code: "general_education",      isInterdisciplinary: 1, label: "通识·经法管融通",  shortLabel: "通识·经融" },
-  { code: "major_platform",         isInterdisciplinary: 0, label: "大类平台",          shortLabel: "大类" },
-  { code: "major_platform",         isInterdisciplinary: 1, label: "大类·经法管融通",  shortLabel: "大类·经融" },
-  { code: "professional_education", isInterdisciplinary: 0, label: "专业教育",          shortLabel: "专业" },
-  { code: "quality_education",      isInterdisciplinary: 0, label: "素质教育",          shortLabel: "素质" },
-  { code: "practice_education",     isInterdisciplinary: 0, label: "实践教育",          shortLabel: "实践" },
-];
+import type { CategoryCode, CourseEditDraft, CourseNature, CreditAssignmentTarget } from "../types";
+import { CourseEditFields } from "./CourseEditFields";
+import { canUseInterdisciplinary } from "../lib/courseOptions";
 
 interface Props {
   /** null = 添加到"待安排"抽屉 */
@@ -35,9 +15,15 @@ interface Props {
     course_name: string;
     credits: number;
     category_code: CategoryCode;
-    course_nature: "必修" | "选修";
+    course_nature: CourseNature;
+    lecture_hours?: number;
+    experiment_hours?: number;
+    extra_hours?: number;
+    prerequisite_course_code?: string | null;
+    score?: number | null;
     note?: string | null;
     is_interdisciplinary?: 0 | 1;
+    assigned_to?: CreditAssignmentTarget;
   }) => Promise<void>;
 }
 
@@ -46,15 +32,23 @@ export function ManualCourseDialog({
   onClose,
   onSubmit,
 }: Props) {
-  const [choiceIdx, setChoiceIdx] = useState(0); // 默认：通识教育
-  const [courseName, setCourseName] = useState("");
-  const [credits, setCredits] = useState("2");
-  const [nature, setNature] = useState<"必修" | "选修">("选修");
-  const [note, setNote] = useState("我的计划");
+  const [draft, setDraft] = useState<CourseEditDraft>(() => ({
+    course_name: "",
+    category_code: "general_education",
+    course_nature: "选修",
+    is_interdisciplinary: 0,
+    assigned_to: "interdisciplinary",
+    credits: "2",
+    lecture_hours: "0",
+    experiment_hours: "0",
+    extra_hours: "0",
+    planned_term: termNumber,
+    prerequisite_course_code: "",
+    score: "",
+    note: "我的计划",
+  }));
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-
-  const choice = CATEGORY_CHOICES[choiceIdx];
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -68,26 +62,51 @@ export function ManualCourseDialog({
     e.preventDefault();
     setErr(null);
 
-    const c = Number(credits);
-    if (!courseName.trim()) {
+    const courseName = draft.course_name.trim();
+    const credits = Number(draft.credits);
+    const lectureHours = Number(draft.lecture_hours);
+    const experimentHours = Number(draft.experiment_hours);
+    const extraHours = Number(draft.extra_hours);
+    const score = draft.score.trim() === "" ? null : Number(draft.score);
+    const interAllowed = canUseInterdisciplinary(draft.category_code);
+    const isInter = interAllowed && draft.is_interdisciplinary === 1;
+
+    if (!courseName) {
       setErr("课程名不能为空");
       return;
     }
-    if (!Number.isFinite(c) || c < 0) {
-      setErr("学分必须为非负数");
+    for (const [label, value] of [
+      ["学分", credits],
+      ["讲课学时", lectureHours],
+      ["实践学时", experimentHours],
+      ["课外学时", extraHours],
+    ] as const) {
+      if (!Number.isFinite(value) || value < 0) {
+        setErr(`${label}必须为非负数`);
+        return;
+      }
+    }
+    if (score !== null && (!Number.isFinite(score) || score < 0 || score > 100)) {
+      setErr("成绩必须为 0-100，或留空");
       return;
     }
 
     setBusy(true);
     try {
       await onSubmit({
-        term_number: termNumber,
-        course_name: courseName.trim(),
-        credits: c,
-        category_code: choice.code,
-        course_nature: nature,
-        note: note.trim() || null,
-        is_interdisciplinary: choice.isInterdisciplinary,
+        term_number: draft.planned_term,
+        course_name: courseName,
+        credits,
+        category_code: draft.category_code,
+        course_nature: isInter ? "选修" : draft.course_nature,
+        lecture_hours: lectureHours,
+        experiment_hours: experimentHours,
+        extra_hours: extraHours,
+        prerequisite_course_code: draft.prerequisite_course_code.trim() || null,
+        score,
+        note: draft.note.trim() || null,
+        is_interdisciplinary: isInter ? 1 : 0,
+        assigned_to: draft.assigned_to,
       });
       onClose();
     } catch (e: any) {
@@ -99,26 +118,26 @@ export function ManualCourseDialog({
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 px-4">
       <div
-        className="w-[440px] max-w-full bg-card border border-sub/20 rounded-xl p-5"
+        className="max-h-[calc(100vh-32px)] w-[520px] max-w-full overflow-y-auto rounded-xl border border-sub/20 bg-card p-5"
         style={{
           boxShadow:
             "0 18px 54px rgb(var(--shadow-rgb) / var(--shadow-strong)), 0 4px 14px rgb(var(--shadow-rgb) / var(--shadow-soft))",
         }}
       >
-        <div className="flex items-baseline justify-between mb-4">
+        <div className="mb-4 flex items-baseline justify-between">
           <div>
             <h2 className="text-base text-ink">添加计划课程</h2>
-            <div className="text-[11px] text-sub mt-0.5">
-              {termNumber == null
+            <div className="mt-0.5 text-[11px] text-sub">
+              {draft.planned_term == null
                 ? "放入待安排抽屉，稍后再拖到学期"
-                : `放入第 ${termNumber} 学期`}
-              ，用于公选课、培养方案外课程
+                : `放入第 ${draft.planned_term} 学期`}
+              ，用于公选课、跨专业课、培养方案外课程
             </div>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="w-7 h-7 rounded-md text-sub hover:text-ink hover:bg-sub/10 transition-colors"
+            className="h-7 w-7 rounded-md text-sub transition-colors hover:bg-sub/10 hover:text-ink"
             aria-label="关闭"
           >
             ×
@@ -126,115 +145,30 @@ export function ManualCourseDialog({
         </div>
 
         <form onSubmit={submit} className="space-y-3">
-          <label className="block">
-            <div className="text-[11px] text-sub mb-1">课程名</div>
-            <input
-              autoFocus
-              value={courseName}
-              onChange={(e) => setCourseName(e.target.value)}
-              placeholder="例如：美学导论"
-              className="w-full px-3 py-2 rounded-md bg-bg border border-sub/25 text-sm text-ink focus:outline-none focus:border-brand"
-            />
-          </label>
-
-          <div className="grid grid-cols-2 gap-3">
-            <label className="block">
-              <div className="text-[11px] text-sub mb-1">学分</div>
-              <input
-                type="number"
-                min={0}
-                step="0.5"
-                value={credits}
-                onChange={(e) => setCredits(e.target.value)}
-                className="w-full px-3 py-2 rounded-md bg-bg border border-sub/25 text-sm text-ink tabular-nums focus:outline-none focus:border-brand"
-              />
-            </label>
-            <div className="rounded-md border border-sub/15 bg-sub/5 px-3 py-2">
-              <div className="text-[11px] text-sub mb-1">状态</div>
-              <div className="text-sm text-ink">计划中</div>
-            </div>
-          </div>
-
-          <div>
-            <div className="text-[11px] text-sub mb-1">
-              归属板块{" "}
-              <span className="text-sub/60">
-                · 选「·经融」会进入桑基图，可在大类经融桶与原板块选修桶间切换
-              </span>
-            </div>
-            <div className="flex flex-wrap gap-1">
-              {CATEGORY_CHOICES.map((c, i) => {
-                const s = CATEGORY_STYLE[c.code];
-                const active = i === choiceIdx;
-                return (
-                  <button
-                    key={i}
-                    type="button"
-                    onClick={() => setChoiceIdx(i)}
-                    className={
-                      "inline-flex items-center gap-1 h-8 px-2.5 rounded-md border text-[10px] transition-colors " +
-                      (active
-                        ? "border-sub/50 bg-sub/10 text-ink"
-                        : "border-sub/15 text-sub hover:text-ink hover:bg-sub/5")
-                    }
-                  >
-                    <span
-                      className="inline-block w-2 h-2 rounded-sm"
-                      style={{ backgroundColor: s.color }}
-                    />
-                    {c.shortLabel}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          <div>
-            <div className="text-[11px] text-sub mb-1">课程性质</div>
-            <div className="grid grid-cols-2 gap-1">
-              {(["选修", "必修"] as const).map((n) => (
-                <button
-                  key={n}
-                  type="button"
-                  onClick={() => setNature(n)}
-                  className={
-                    "h-8 rounded-md border text-xs transition-colors " +
-                    (nature === n
-                      ? "border-brand bg-brand/10 text-ink"
-                      : "border-sub/15 text-sub hover:text-ink hover:bg-sub/5")
-                  }
-                >
-                  {n}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <label className="block">
-            <div className="text-[11px] text-sub mb-1">备注（可选）</div>
-            <input
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              placeholder="例如：通选 / 跨专业 / 线下选修"
-              className="w-full px-3 py-2 rounded-md bg-bg border border-sub/25 text-sm text-ink focus:outline-none focus:border-brand"
-            />
-          </label>
+          <CourseEditFields
+            draft={draft}
+            onChange={setDraft}
+            compact={false}
+            allowInterdisciplinary
+            showCourseName
+            showNote
+          />
 
           <div className="flex items-center justify-between pt-2">
-            <div className="text-[11px] text-red-500 min-h-[16px]">{err}</div>
+            <div className="min-h-[16px] text-[11px] text-red-500">{err}</div>
             <div className="flex items-center gap-2">
               <button
                 type="button"
                 onClick={onClose}
                 disabled={busy}
-                className="px-3 py-1.5 rounded-md text-xs text-sub hover:text-ink hover:bg-sub/10 transition-colors disabled:opacity-50"
+                className="rounded-md px-3 py-1.5 text-xs text-sub transition-colors hover:bg-sub/10 hover:text-ink disabled:opacity-50"
               >
                 取消
               </button>
               <button
                 type="submit"
                 disabled={busy}
-                className="px-3 py-1.5 rounded-md text-xs text-white disabled:opacity-50"
+                className="rounded-md px-3 py-1.5 text-xs text-white disabled:opacity-50"
                 style={{ backgroundColor: "rgb(var(--brand) / 1)" }}
               >
                 {busy ? "保存中…" : "添加课程"}

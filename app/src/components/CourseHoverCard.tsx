@@ -1,8 +1,11 @@
+import type React from "react";
 import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import type { CategoryCode, PlanCoursePatch } from "../types";
+import type { CategoryCode, CourseEditDraft, CourseNature, CreditAssignmentTarget, PlanCoursePatch } from "../types";
 import { CATEGORY_STYLE } from "../lib/categoryStyle";
+import { assignmentLabel, canUseInterdisciplinary, categoryNameOf } from "../lib/courseOptions";
 import { parseOfferedTerm } from "../lib/offeredTerm";
+import { CourseEditFields } from "./CourseEditFields";
 
 export interface CourseHoverInfo {
   source: "program" | "custom";
@@ -17,10 +20,14 @@ export interface CourseHoverInfo {
   prerequisite_course_name?: string | null;
   category_code: CategoryCode;
   category_name: string;
-  course_nature: "必修" | "选修" | "跨专业";
+  course_nature: CourseNature;
   offered_term?: string | null;
   planned_term?: number | null;
   score?: number | null;
+  note?: string | null;
+  is_interdisciplinary?: number | null;
+  assigned_to?: CreditAssignmentTarget | null;
+  credit_count_to?: string | null;
   deleted_at?: string | null;
 }
 
@@ -31,6 +38,7 @@ type Props = {
     left: number;
     top: number;
     width: number;
+    placeLeft?: boolean;
   };
   popoverRef: React.RefObject<HTMLDivElement>;
   visible?: boolean;
@@ -43,16 +51,6 @@ type Props = {
   onMouseEnter?: React.MouseEventHandler<HTMLDivElement>;
   onMouseLeave?: React.MouseEventHandler<HTMLDivElement>;
 };
-
-const CATEGORY_OPTIONS: Array<{ code: CategoryCode; name: string }> = [
-  { code: "general_education", name: "通识教育" },
-  { code: "major_platform", name: "大类平台" },
-  { code: "professional_education", name: "专业教育" },
-  { code: "quality_education", name: "素质教育" },
-  { code: "practice_education", name: "实践教育" },
-];
-
-const TERM_OPTIONS = [1, 2, 3, 4, 5, 6, 7, 8];
 
 export function CourseHoverCard({
   position,
@@ -71,18 +69,36 @@ export function CourseHoverCard({
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [form, setForm] = useState(() => initialForm(item));
+  const [draft, setDraft] = useState<CourseEditDraft>(() => initialDraft(item));
   const [adjustedTop, setAdjustedTop] = useState(position.top);
 
   useEffect(() => {
-    if (!editing) setForm(initialForm(item));
-  }, [editing, item.course_code, item.course_name, item.credits, item.lecture_hours, item.experiment_hours, item.extra_hours, item.planned_term, item.prerequisite_course_code, item.score, item.category_code, item.course_nature]);
+    if (!editing) setDraft(initialDraft(item));
+  }, [
+    editing,
+    item.id,
+    item.course_code,
+    item.course_name,
+    item.credits,
+    item.lecture_hours,
+    item.experiment_hours,
+    item.extra_hours,
+    item.planned_term,
+    item.prerequisite_course_code,
+    item.score,
+    item.note,
+    item.category_code,
+    item.course_nature,
+    item.is_interdisciplinary,
+    item.assigned_to,
+    item.credit_count_to,
+  ]);
 
   useLayoutEffect(() => {
     const margin = 12;
     const updatePosition = () => {
       const viewportHeight = window.innerHeight || 800;
-      const maxUsableHeight = Math.max(160, viewportHeight - margin * 2);
+      const maxUsableHeight = Math.max(180, viewportHeight - margin * 2);
       const currentHeight = Math.min(
         popoverRef.current?.getBoundingClientRect().height ?? maxUsableHeight,
         maxUsableHeight
@@ -98,14 +114,16 @@ export function CourseHoverCard({
       window.cancelAnimationFrame(frame);
       window.removeEventListener("resize", updatePosition);
     };
-  }, [editing, item.course_code, item.course_name, item.credits, item.lecture_hours, item.experiment_hours, item.extra_hours, item.planned_term, item.prerequisite_course_code, item.score, item.category_code, item.course_nature, mode, popoverRef, position.top]);
+  }, [editing, draft, item.course_code, item.course_name, mode, popoverRef, position.top]);
 
   const offeredText = useMemo(() => formatOfferedTerm(item.offered_term), [item.offered_term]);
   const plannedText = item.planned_term == null ? "待安排 / 未设置" : `第 ${item.planned_term} 学期`;
   const scoreText = item.score == null ? "未填写" : String(item.score);
+  const isInter = Number(item.is_interdisciplinary ?? 0) === 1 || Boolean(item.credit_count_to);
+  const assignmentText = isInter ? assignmentLabel(item.assigned_to) : null;
 
   const reset = () => {
-    setForm(initialForm(item));
+    setDraft(initialDraft(item));
     setError(null);
     setEditing(false);
   };
@@ -115,7 +133,7 @@ export function CourseHoverCard({
     setSaving(true);
     setError(null);
     try {
-      const patch = buildPatch(form);
+      const patch = buildPatch(draft, { allowInterdisciplinary: item.source === "custom" });
       await onSave(patch);
       setEditing(false);
     } catch (e: any) {
@@ -160,83 +178,14 @@ export function CourseHoverCard({
 
       {editing ? (
         <div className="space-y-1.5">
-          <Field label="课程名">
-            <Input
-              value={form.course_name}
-              onChange={(value) => setForm((prev) => ({ ...prev, course_name: value }))}
-            />
-          </Field>
-          <Field label="类别">
-            <select
-              value={form.category_code}
-              onChange={(event) => setForm((prev) => ({ ...prev, category_code: event.target.value as CategoryCode }))}
-              className="h-7 w-full rounded-md border border-sub/15 bg-card px-2 text-[11px] text-ink outline-none focus:border-brand/45"
-            >
-              {CATEGORY_OPTIONS.map((option) => (
-                <option key={option.code} value={option.code}>
-                  {option.name}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="性质">
-            <select
-              value={form.course_nature}
-              onChange={(event) => setForm((prev) => ({ ...prev, course_nature: event.target.value as CourseHoverInfo["course_nature"] }))}
-              className="h-7 w-full rounded-md border border-sub/15 bg-card px-2 text-[11px] text-ink outline-none focus:border-brand/45"
-            >
-              <option value="必修">必修</option>
-              <option value="选修">选修</option>
-              <option value="跨专业">跨专业</option>
-            </select>
-          </Field>
-          <div className="grid grid-cols-2 gap-1.5">
-            <Field label="学分" compact>
-              <NumberInput value={form.credits} onChange={(value) => setForm((prev) => ({ ...prev, credits: value }))} />
-            </Field>
-            <Field label="成绩" compact>
-              <NumberInput
-                allowEmpty
-                value={form.score}
-                onChange={(value) => setForm((prev) => ({ ...prev, score: value }))}
-              />
-            </Field>
-            <Field label="讲课" compact>
-              <NumberInput value={form.lecture_hours} onChange={(value) => setForm((prev) => ({ ...prev, lecture_hours: value }))} />
-            </Field>
-            <Field label="实践" compact>
-              <NumberInput value={form.experiment_hours} onChange={(value) => setForm((prev) => ({ ...prev, experiment_hours: value }))} />
-            </Field>
-            <Field label="课外" compact>
-              <NumberInput value={form.extra_hours} onChange={(value) => setForm((prev) => ({ ...prev, extra_hours: value }))} />
-            </Field>
-            <Field label="计划" compact>
-              <select
-                value={form.planned_term == null ? "" : String(form.planned_term)}
-                onChange={(event) =>
-                  setForm((prev) => ({
-                    ...prev,
-                    planned_term: event.target.value === "" ? null : Number(event.target.value),
-                  }))
-                }
-                className="h-7 w-full rounded-md border border-sub/15 bg-card px-2 text-[11px] text-ink outline-none focus:border-brand/45"
-              >
-                <option value="">未设置</option>
-                {TERM_OPTIONS.map((term) => (
-                  <option key={term} value={term}>
-                    第 {term} 学期
-                  </option>
-                ))}
-              </select>
-            </Field>
-          </div>
-          <Field label="先修">
-            <Input
-              placeholder="课程号，可留空"
-              value={form.prerequisite_course_code}
-              onChange={(value) => setForm((prev) => ({ ...prev, prerequisite_course_code: value }))}
-            />
-          </Field>
+          <CourseEditFields
+            draft={draft}
+            onChange={setDraft}
+            compact
+            allowInterdisciplinary={item.source === "custom"}
+            showCourseName
+            showNote
+          />
           {error && <div className="rounded-md bg-brand/10 px-2 py-1 text-[10px] text-brand">{error}</div>}
           <div className="flex gap-1.5 pt-1">
             <button
@@ -265,6 +214,11 @@ export function CourseHoverCard({
               {item.category_name} · {item.course_nature}
             </span>
           </Row>
+          {isInter && (
+            <Row label="经融">
+              <span className="text-sub">是 · 计入 {assignmentText}</span>
+            </Row>
+          )}
           <Row label="学分">
             <span className="tabular-nums">{item.credits}</span>
           </Row>
@@ -293,6 +247,11 @@ export function CourseHoverCard({
           <Row label="成绩">
             <span className={item.score == null ? "text-sub/60" : "text-brand tabular-nums"}>{scoreText}</span>
           </Row>
+          {item.note && (
+            <Row label="备注">
+              <span className="text-sub">{item.note}</span>
+            </Row>
+          )}
           {mode === "trash" && item.deleted_at && (
             <Row label="删除时间">
               <span className="text-sub/70 tabular-nums">{item.deleted_at}</span>
@@ -335,11 +294,14 @@ export function CourseHoverCard({
   return createPortal(card, document.body);
 }
 
-function initialForm(item: CourseHoverInfo) {
+function initialDraft(item: CourseHoverInfo): CourseEditDraft {
+  const isInter = Number(item.is_interdisciplinary ?? 0) === 1 || Boolean(item.credit_count_to);
   return {
     course_name: item.course_name,
     category_code: item.category_code,
-    course_nature: item.course_nature,
+    course_nature: isInter ? "选修" : item.course_nature,
+    is_interdisciplinary: isInter ? 1 : 0,
+    assigned_to: item.assigned_to ?? "interdisciplinary",
     credits: String(item.credits ?? 0),
     lecture_hours: String(item.lecture_hours ?? 0),
     experiment_hours: String(item.experiment_hours ?? 0),
@@ -347,22 +309,32 @@ function initialForm(item: CourseHoverInfo) {
     planned_term: item.planned_term ?? null,
     prerequisite_course_code: item.prerequisite_course_code ?? "",
     score: item.score == null ? "" : String(item.score),
+    note: item.note ?? "",
   };
 }
 
-function buildPatch(form: ReturnType<typeof initialForm>): PlanCoursePatch {
-  const score = form.score.trim() === "" ? null : Number(form.score);
+function buildPatch(
+  draft: CourseEditDraft,
+  { allowInterdisciplinary }: { allowInterdisciplinary: boolean }
+): PlanCoursePatch {
+  const score = draft.score.trim() === "" ? null : Number(draft.score);
+  const category = draft.category_code;
+  const canKeepInter = allowInterdisciplinary && canUseInterdisciplinary(category);
+  const isInter = canKeepInter && draft.is_interdisciplinary === 1;
+  const nature = isInter ? "选修" : draft.course_nature;
   return {
-    course_name: form.course_name.trim(),
-    category_code: form.category_code,
-    course_nature: form.course_nature,
-    credits: Number(form.credits),
-    lecture_hours: Number(form.lecture_hours),
-    experiment_hours: Number(form.experiment_hours),
-    extra_hours: Number(form.extra_hours),
-    planned_term: form.planned_term,
-    prerequisite_course_code: form.prerequisite_course_code.trim() || null,
+    course_name: draft.course_name.trim(),
+    category_code: category,
+    course_nature: nature,
+    ...(allowInterdisciplinary ? { is_interdisciplinary: isInter ? 1 : 0, assigned_to: draft.assigned_to } : {}),
+    credits: Number(draft.credits),
+    lecture_hours: Number(draft.lecture_hours),
+    experiment_hours: Number(draft.experiment_hours),
+    extra_hours: Number(draft.extra_hours),
+    planned_term: draft.planned_term,
+    prerequisite_course_code: draft.prerequisite_course_code.trim() || null,
     score,
+    note: draft.note.trim() || null,
   };
 }
 
@@ -381,65 +353,5 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
       <div className="w-14 shrink-0 text-[10px] text-sub">{label}</div>
       <div className="flex-1 text-ink">{children}</div>
     </div>
-  );
-}
-
-function Field({
-  label,
-  compact = false,
-  children,
-}: {
-  label: string;
-  compact?: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <label className={compact ? "block" : "flex items-center gap-2"}>
-      <span className={compact ? "mb-0.5 block text-[10px] text-sub" : "w-14 shrink-0 text-[10px] text-sub"}>
-        {label}
-      </span>
-      <span className="min-w-0 flex-1">{children}</span>
-    </label>
-  );
-}
-
-function Input({
-  value,
-  placeholder,
-  onChange,
-}: {
-  value: string;
-  placeholder?: string;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <input
-      value={value}
-      placeholder={placeholder}
-      onChange={(event) => onChange(event.target.value)}
-      className="h-7 w-full rounded-md border border-sub/15 bg-card px-2 text-[11px] text-ink outline-none transition-colors placeholder:text-sub/45 focus:border-brand/45"
-    />
-  );
-}
-
-function NumberInput({
-  value,
-  allowEmpty = false,
-  onChange,
-}: {
-  value: string;
-  allowEmpty?: boolean;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <input
-      type="number"
-      min={0}
-      max={allowEmpty ? 100 : undefined}
-      step="0.1"
-      value={value}
-      onChange={(event) => onChange(event.target.value)}
-      className="h-7 w-full rounded-md border border-sub/15 bg-card px-2 text-[11px] text-ink outline-none transition-colors focus:border-brand/45"
-    />
   );
 }

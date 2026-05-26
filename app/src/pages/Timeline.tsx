@@ -549,8 +549,14 @@ export default function Timeline() {
               credits: input.credits,
               category_code: input.category_code,
               course_nature: input.course_nature,
+              lecture_hours: input.lecture_hours,
+              experiment_hours: input.experiment_hours,
+              extra_hours: input.extra_hours,
+              prerequisite_course_code: input.prerequisite_course_code,
+              score: input.score,
               note: input.note,
               is_interdisciplinary: input.is_interdisciplinary,
+              assigned_to: input.assigned_to,
             });
             await refetchPlan();
           }}
@@ -1041,6 +1047,10 @@ function TrashCourseCard({
     offered_term: item.offered_term ?? null,
     planned_term: item.planned_term,
     score: item.score,
+    note: item.note ?? null,
+    is_interdisciplinary: item.is_interdisciplinary ?? 0,
+    assigned_to: item.assigned_to ?? null,
+    credit_count_to: item.credit_count_to ?? null,
     deleted_at: item.deleted_at,
   };
 

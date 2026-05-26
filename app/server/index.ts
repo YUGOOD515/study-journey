@@ -87,6 +87,19 @@ function validateCoursePatch(patch: any, allowCrossMajor = true): string | null 
   if (patch.prerequisite_course_code !== undefined && patch.prerequisite_course_code !== null && typeof patch.prerequisite_course_code !== "string") {
     return "prerequisite_course_code 必须为字符串或 null";
   }
+  if (patch.note !== undefined && patch.note !== null && typeof patch.note !== "string") {
+    return "note 必须为字符串或 null";
+  }
+  if (patch.is_interdisciplinary !== undefined && patch.is_interdisciplinary !== null) {
+    const n = Number(patch.is_interdisciplinary);
+    if (n !== 0 && n !== 1) return "is_interdisciplinary 必须为 0 或 1";
+    if (n === 1 && patch.category_code !== undefined && patch.category_code !== "general_education" && patch.category_code !== "major_platform") {
+      return "is_interdisciplinary=1 仅允许在 通识教育 或 大类平台 上";
+    }
+  }
+  if (patch.assigned_to !== undefined && patch.assigned_to !== null && !VALID_ASSIGNMENTS.has(patch.assigned_to)) {
+    return "assigned_to 必须为 interdisciplinary 或 elective";
+  }
   return null;
 }
 
@@ -102,6 +115,20 @@ function isInterdisciplinaryFromRow(row: any): number {
   const sub = String(row.course_subcategory ?? row.course_category ?? "");
   const countTo = row.credit_count_to;
   return sub.includes("经法管融通") || countTo ? 1 : 0;
+}
+
+function visibleCourseNature(value: unknown): "必修" | "选修" | "跨专业" {
+  // v2 数据库要求经法管融通课程在 requirement_type 中存“经法管融通”，
+  // 但前端统计与展示仍把它作为一类选修课处理。
+  return value === "必修" || value === "跨专业" ? value : "选修";
+}
+
+function storedCustomRequirementType(courseNature: unknown, isInterdisciplinary: boolean): string {
+  return isInterdisciplinary ? "经法管融通" : visibleCourseNature(courseNature);
+}
+
+function interdisciplinarySubcategory(categoryCode: string): string {
+  return `${categoryNameOf(categoryCode)}（经法管融通）`;
 }
 
 function programActiveWhere(alias = "pc"): string {
@@ -146,10 +173,19 @@ function courseSelectSql(tableName: "plan_program_courses" | "plan_custom_course
       pre.course_name AS prerequisite_course_name,
       ${alias}.category_code,
       ${alias}.category_name,
-      ${alias}.requirement_type AS course_nature,
+      CASE WHEN ${alias}.requirement_type = '经法管融通' THEN '选修' ELSE ${alias}.requirement_type END AS course_nature,
       ${offeredExpr} AS offered_term,
       ${alias}.course_subcategory AS course_category,
       ${alias}.credit_count_to,
+      CASE
+        WHEN ${alias}.course_subcategory LIKE '%经法管融通%' OR ${alias}.credit_count_to IS NOT NULL THEN 1
+        ELSE 0
+      END AS is_interdisciplinary,
+      CASE
+        WHEN ${alias}.credit_count_to = '通识教育-选修' THEN 'elective'
+        WHEN ${alias}.credit_count_to IS NOT NULL THEN 'interdisciplinary'
+        ELSE NULL
+      END AS assigned_to,
       ${alias}.note,
       ${alias}.study_status,
       ${tableName === "plan_program_courses" ? `${alias}.planned_term` : `${alias}.term_number`} AS planned_term,
@@ -263,10 +299,18 @@ app.get("/api/semester-courses", (_req, res) => {
         pre.course_name AS prerequisite_course_name,
         pc.official_term AS offered_term,
         pc.category_code,
-        pc.requirement_type AS course_nature,
+        CASE WHEN pc.requirement_type = '经法管融通' THEN '选修' ELSE pc.requirement_type END AS course_nature,
         pc.note,
-        0 AS is_interdisciplinary,
-        NULL AS assigned_to
+        pc.credit_count_to,
+        CASE
+          WHEN pc.course_subcategory LIKE '%经法管融通%' OR pc.credit_count_to IS NOT NULL THEN 1
+          ELSE 0
+        END AS is_interdisciplinary,
+        CASE
+          WHEN pc.credit_count_to = '通识教育-选修' THEN 'elective'
+          WHEN pc.credit_count_to IS NOT NULL THEN 'interdisciplinary'
+          ELSE NULL
+        END AS assigned_to
       FROM plan_program_courses pc
       LEFT JOIN plan_program_courses pre ON pre.course_code = pc.prerequisite_course_code
       WHERE ${programActiveWhere("pc")}
@@ -295,15 +339,17 @@ app.get("/api/semester-courses", (_req, res) => {
         pre.course_name AS prerequisite_course_name,
         NULL AS offered_term,
         pc.category_code,
-        pc.requirement_type AS course_nature,
+        CASE WHEN pc.requirement_type = '经法管融通' THEN '选修' ELSE pc.requirement_type END AS course_nature,
         pc.note,
+        pc.credit_count_to,
         CASE
           WHEN pc.course_subcategory LIKE '%经法管融通%' OR pc.credit_count_to IS NOT NULL THEN 1
           ELSE 0
         END AS is_interdisciplinary,
         CASE
           WHEN pc.credit_count_to = '通识教育-选修' THEN 'elective'
-          ELSE 'interdisciplinary'
+          WHEN pc.credit_count_to IS NOT NULL THEN 'interdisciplinary'
+          ELSE NULL
         END AS assigned_to
       FROM plan_custom_courses pc
       LEFT JOIN plan_program_courses pre ON pre.course_code = pc.prerequisite_course_code
@@ -446,9 +492,21 @@ function validateManualBase(input: any, requireTerm: boolean): string | null {
   const creditErr = validateCredits(input.credits);
   if (creditErr) return creditErr;
   if (!isCategoryCode(input.category_code)) return `category_code 无效: ${input.category_code}`;
-  if (input.course_nature !== "必修" && input.course_nature !== "选修") return "course_nature 仅支持 必修/选修";
+  if (!VALID_REQUIREMENT_TYPES.has(input.course_nature)) return "course_nature 仅支持 必修/选修/跨专业";
+  for (const field of ["lecture_hours", "experiment_hours", "extra_hours"] as const) {
+    if (input[field] !== undefined) {
+      const err = validateNonNegativeNumber(input[field], field);
+      if (err) return err;
+    }
+  }
   const scoreErr = validateScore(input.score);
   if (scoreErr) return scoreErr;
+  if (input.prerequisite_course_code !== undefined && input.prerequisite_course_code !== null && typeof input.prerequisite_course_code !== "string") {
+    return "prerequisite_course_code 必须为字符串或 null";
+  }
+  if (input.note !== undefined && input.note !== null && typeof input.note !== "string") {
+    return "note 必须为字符串或 null";
+  }
   if (input.is_interdisciplinary !== undefined && input.is_interdisciplinary !== null) {
     const n = Number(input.is_interdisciplinary);
     if (n !== 0 && n !== 1) return "is_interdisciplinary 必须为 0 或 1";
@@ -466,6 +524,10 @@ function insertCustomCourse(input: any, mode: "record" | "plan") {
   const isInter = Number(input.is_interdisciplinary ?? 0) === 1;
   const assignedTo = (input.assigned_to ?? "interdisciplinary") as "interdisciplinary" | "elective";
   const score = input.score ?? null;
+  const lectureHours = Number(input.lecture_hours ?? 0);
+  const experimentHours = Number(input.experiment_hours ?? 0);
+  const extraHours = Number(input.extra_hours ?? 0);
+  const totalHours = Number(input.total_hours ?? (lectureHours + experimentHours + extraHours));
   const studyStatus = mode === "plan" ? "计划修读" : scoreToStudyStatus(score, "正在修读");
   const courseCode = typeof input.course_code === "string" && input.course_code.trim()
     ? input.course_code.trim()
@@ -500,18 +562,18 @@ function insertCustomCourse(input: any, mode: "record" | "plan") {
     .run(
       input.category_code,
       categoryNameOf(input.category_code),
-      input.course_nature,
-      isInter ? "大类平台（经法管融通）" : null,
+      storedCustomRequirementType(input.course_nature, isInter),
+      isInter ? interdisciplinarySubcategory(input.category_code) : null,
       courseCode,
       input.section_code ?? null,
       input.course_name.trim(),
       input.term_number ?? input.planned_term ?? null,
       input.credits,
-      input.total_hours ?? 0,
-      input.lecture_hours ?? 0,
-      input.experiment_hours ?? 0,
-      input.extra_hours ?? 0,
-      input.prerequisite_course_code ?? null,
+      totalHours,
+      lectureHours,
+      experimentHours,
+      extraHours,
+      typeof input.prerequisite_course_code === "string" ? input.prerequisite_course_code.trim() || null : input.prerequisite_course_code ?? null,
       studyStatus,
       score,
       isInter ? assignmentToCreditCountTo(assignedTo) : null,
@@ -553,7 +615,7 @@ app.patch("/api/semester-courses/manual/:id", (req: Request, res: Response) => {
     course_name: current.course_name,
     credits: current.credits,
     category_code: current.category_code,
-    course_nature: current.requirement_type,
+    course_nature: visibleCourseNature(current.requirement_type),
     score: current.score,
     note: current.note,
     is_interdisciplinary: isInterdisciplinaryFromRow(current),
@@ -587,13 +649,17 @@ app.patch("/api/semester-courses/manual/:id", (req: Request, res: Response) => {
     add("category_code", patch.category_code);
     add("category_name", categoryNameOf(patch.category_code));
   }
-  if (patch.course_nature !== undefined) add("requirement_type", patch.course_nature);
+  if (patch.course_nature !== undefined && patch.is_interdisciplinary === undefined && patch.assigned_to === undefined) {
+    const isInter = Number(next.is_interdisciplinary ?? 0) === 1;
+    add("requirement_type", storedCustomRequirementType(patch.course_nature, isInter));
+  }
   if (patch.score !== undefined) add("score", patch.score ?? null);
   if (patch.note !== undefined) add("note", patch.note ?? null);
 
   if (patch.is_interdisciplinary !== undefined || patch.assigned_to !== undefined) {
     const isInter = Number(next.is_interdisciplinary ?? 0) === 1;
-    add("course_subcategory", isInter ? "大类平台（经法管融通）" : null);
+    add("requirement_type", storedCustomRequirementType(next.course_nature, isInter));
+    add("course_subcategory", isInter ? interdisciplinarySubcategory(next.category_code) : null);
     add("credit_count_to", isInter ? assignmentToCreditCountTo(next.assigned_to) : null);
   }
 
@@ -677,6 +743,7 @@ app.patch("/api/plan-courses/program/:code", (req: Request, res: Response) => {
   if (patch.planned_term !== undefined) add("planned_term", patch.planned_term ?? null);
   if (patch.prerequisite_course_code !== undefined) add("prerequisite_course_code", String(patch.prerequisite_course_code ?? "").trim() || null);
   if (patch.score !== undefined) add("score", patch.score ?? null);
+  if (patch.note !== undefined) add("note", patch.note ?? null);
 
   if (patch.score !== undefined || patch.planned_term !== undefined) {
     const nextScore = patch.score !== undefined ? patch.score : current.score;
@@ -708,16 +775,33 @@ app.patch("/api/plan-courses/custom/:id", (req: Request, res: Response) => {
   const current: any = db.prepare("SELECT * FROM plan_custom_courses WHERE rowid = ? AND is_deleted = 0").get(id);
   if (!current) { res.status(404).json({ error: "未找到该自定义课程" }); return; }
 
+  const nextCategory = patch.category_code ?? current.category_code;
+  const currentIsInter = isInterdisciplinaryFromRow(current) === 1;
+  const requestedIsInter = patch.is_interdisciplinary !== undefined
+    ? Number(patch.is_interdisciplinary) === 1
+    : currentIsInter;
+  const nextIsInter = requestedIsInter && (nextCategory === "general_education" || nextCategory === "major_platform");
+  const nextAssignedTo = (patch.assigned_to ?? creditCountToToAssignment(current.credit_count_to)) as "interdisciplinary" | "elective";
+  const nextNature = nextIsInter ? "选修" : patch.course_nature ?? visibleCourseNature(current.requirement_type);
+  if (!VALID_REQUIREMENT_TYPES.has(nextNature)) {
+    res.status(400).json({ error: "course_nature 仅支持 必修/选修/跨专业" });
+    return;
+  }
+
   const sets: string[] = [];
   const params: any[] = [];
   const add = (column: string, value: unknown) => { sets.push(`${column} = ?`); params.push(value); };
 
   if (patch.course_name !== undefined) add("course_name", String(patch.course_name).trim());
   if (patch.category_code !== undefined) {
-    add("category_code", patch.category_code);
-    add("category_name", categoryNameOf(patch.category_code));
+    add("category_code", nextCategory);
+    add("category_name", categoryNameOf(nextCategory));
   }
-  if (patch.course_nature !== undefined) add("requirement_type", patch.course_nature);
+  if (patch.course_nature !== undefined || patch.category_code !== undefined || patch.is_interdisciplinary !== undefined || patch.assigned_to !== undefined) {
+    add("requirement_type", storedCustomRequirementType(nextNature, nextIsInter));
+    add("course_subcategory", nextIsInter ? interdisciplinarySubcategory(nextCategory) : null);
+    add("credit_count_to", nextIsInter ? assignmentToCreditCountTo(nextAssignedTo) : null);
+  }
   if (patch.credits !== undefined) add("credits", patch.credits);
   const nextLecture = patch.lecture_hours !== undefined ? patch.lecture_hours : current.lecture_hours;
   const nextExperiment = patch.experiment_hours !== undefined ? patch.experiment_hours : current.experiment_hours;
@@ -731,6 +815,7 @@ app.patch("/api/plan-courses/custom/:id", (req: Request, res: Response) => {
   if (patch.planned_term !== undefined) add("term_number", patch.planned_term ?? null);
   if (patch.prerequisite_course_code !== undefined) add("prerequisite_course_code", String(patch.prerequisite_course_code ?? "").trim() || null);
   if (patch.score !== undefined) add("score", patch.score ?? null);
+  if (patch.note !== undefined) add("note", patch.note ?? null);
 
   if (patch.score !== undefined || patch.planned_term !== undefined) {
     const nextScore = patch.score !== undefined ? patch.score : current.score;
@@ -771,13 +856,21 @@ app.get("/api/personal-plan", (_req, res) => {
         pre.course_name AS prerequisite_course_name,
         pc.category_code,
         pc.category_name,
-        pc.requirement_type AS course_nature,
+        CASE WHEN pc.requirement_type = '经法管融通' THEN '选修' ELSE pc.requirement_type END AS course_nature,
         pc.official_term AS offered_term,
         pc.course_subcategory AS course_category,
         pc.score,
         pc.note,
-        0 AS is_interdisciplinary,
-        NULL AS assigned_to
+        pc.credit_count_to,
+        CASE
+          WHEN pc.course_subcategory LIKE '%经法管融通%' OR pc.credit_count_to IS NOT NULL THEN 1
+          ELSE 0
+        END AS is_interdisciplinary,
+        CASE
+          WHEN pc.credit_count_to = '通识教育-选修' THEN 'elective'
+          WHEN pc.credit_count_to IS NOT NULL THEN 'interdisciplinary'
+          ELSE NULL
+        END AS assigned_to
       FROM plan_program_courses pc
       LEFT JOIN plan_program_courses pre ON pre.course_code = pc.prerequisite_course_code
       WHERE ${programActiveWhere("pc")}
@@ -809,18 +902,20 @@ app.get("/api/personal-plan", (_req, res) => {
         pre.course_name AS prerequisite_course_name,
         pc.category_code,
         pc.category_name,
-        pc.requirement_type AS course_nature,
+        CASE WHEN pc.requirement_type = '经法管融通' THEN '选修' ELSE pc.requirement_type END AS course_nature,
         NULL AS offered_term,
         pc.course_subcategory AS course_category,
         pc.score,
         pc.note,
+        pc.credit_count_to,
         CASE
           WHEN pc.course_subcategory LIKE '%经法管融通%' OR pc.credit_count_to IS NOT NULL THEN 1
           ELSE 0
         END AS is_interdisciplinary,
         CASE
           WHEN pc.credit_count_to = '通识教育-选修' THEN 'elective'
-          ELSE 'interdisciplinary'
+          WHEN pc.credit_count_to IS NOT NULL THEN 'interdisciplinary'
+          ELSE NULL
         END AS assigned_to
       FROM plan_custom_courses pc
       LEFT JOIN plan_program_courses pre ON pre.course_code = pc.prerequisite_course_code
@@ -983,7 +1078,10 @@ app.patch("/api/personal-plan/:id", (req: Request, res: Response) => {
     add("category_code", patch.category_code);
     add("category_name", categoryNameOf(patch.category_code));
   }
-  if (patch.course_nature !== undefined) add("requirement_type", patch.course_nature);
+  if (patch.course_nature !== undefined && patch.is_interdisciplinary === undefined && patch.assigned_to === undefined) {
+    const isInter = isInterdisciplinaryFromRow(current) === 1;
+    add("requirement_type", storedCustomRequirementType(patch.course_nature, isInter));
+  }
   if (patch.note !== undefined) add("note", patch.note ?? null);
 
   if (patch.is_interdisciplinary !== undefined || patch.assigned_to !== undefined) {
@@ -991,7 +1089,9 @@ app.patch("/api/personal-plan/:id", (req: Request, res: Response) => {
       ? Number(patch.is_interdisciplinary) === 1
       : isInterdisciplinaryFromRow(current) === 1;
     const assignedTo = (patch.assigned_to ?? creditCountToToAssignment(current.credit_count_to)) as "interdisciplinary" | "elective";
-    add("course_subcategory", isInter ? "大类平台（经法管融通）" : null);
+    const nextNature = patch.course_nature ?? visibleCourseNature(current.requirement_type);
+    add("requirement_type", storedCustomRequirementType(nextNature, isInter));
+    add("course_subcategory", isInter ? interdisciplinarySubcategory(patch.category_code ?? current.category_code) : null);
     add("credit_count_to", isInter ? assignmentToCreditCountTo(assignedTo) : null);
   }
 
@@ -1067,12 +1167,22 @@ app.get("/api/trash", (_req, res) => {
         pc.official_term AS offered_term,
         pc.category_code,
         pc.category_name,
-        pc.requirement_type AS course_nature,
+        CASE WHEN pc.requirement_type = '经法管融通' THEN '选修' ELSE pc.requirement_type END AS course_nature,
         pc.course_subcategory AS course_category,
         pc.planned_term,
         pc.actual_term,
         pc.score,
         pc.note,
+        pc.credit_count_to,
+        CASE
+          WHEN pc.course_subcategory LIKE '%经法管融通%' OR pc.credit_count_to IS NOT NULL THEN 1
+          ELSE 0
+        END AS is_interdisciplinary,
+        CASE
+          WHEN pc.credit_count_to = '通识教育-选修' THEN 'elective'
+          WHEN pc.credit_count_to IS NOT NULL THEN 'interdisciplinary'
+          ELSE NULL
+        END AS assigned_to,
         pc.deleted_at,
         pc.deleted_note
       FROM plan_program_courses pc
@@ -1097,12 +1207,22 @@ app.get("/api/trash", (_req, res) => {
         NULL AS offered_term,
         pc.category_code,
         pc.category_name,
-        pc.requirement_type AS course_nature,
+        CASE WHEN pc.requirement_type = '经法管融通' THEN '选修' ELSE pc.requirement_type END AS course_nature,
         pc.course_subcategory AS course_category,
         pc.term_number AS planned_term,
         pc.term_number AS actual_term,
         pc.score,
         pc.note,
+        pc.credit_count_to,
+        CASE
+          WHEN pc.course_subcategory LIKE '%经法管融通%' OR pc.credit_count_to IS NOT NULL THEN 1
+          ELSE 0
+        END AS is_interdisciplinary,
+        CASE
+          WHEN pc.credit_count_to = '通识教育-选修' THEN 'elective'
+          WHEN pc.credit_count_to IS NOT NULL THEN 'interdisciplinary'
+          ELSE NULL
+        END AS assigned_to,
         pc.deleted_at,
         pc.deleted_note
       FROM plan_custom_courses pc
