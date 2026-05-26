@@ -51,7 +51,7 @@ export function ManualCourseCard({
     >
       {displayOptions.showCourseCode && (
         <div className="text-[9px] text-sub/80 tabular-nums">
-          {label} · {TERM_LABEL[termNumber]}
+          {label} · {termNumber == null ? "待安排" : TERM_LABEL[termNumber]}
         </div>
       )}
 

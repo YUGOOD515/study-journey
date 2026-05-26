@@ -27,19 +27,43 @@ type DragPayload =
       kind: "official";
       courseCode: string;
       courseName: string;
+      /** null = 来自抽屉 */
       fromTerm: number | null;
     }
   | {
       kind: "manual";
       id: number;
       courseName: string;
-      fromTerm: number;
+      /** null = 来自抽屉 */
+      fromTerm: number | null;
     };
 
 interface PlannedOfficial {
   course: CourseWithCategory;
   plannedTerm: number | null;
   warning: string | null;
+}
+
+const DRAWER_OPEN_KEY = "study-journey:drawer-open";
+type DrawerState = { official: boolean; personal: boolean };
+
+function loadDrawerState(): DrawerState {
+  if (typeof window === "undefined") {
+    return { official: false, personal: true };
+  }
+  try {
+    const raw = window.localStorage.getItem(DRAWER_OPEN_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      return {
+        official: !!parsed.official,
+        personal: parsed.personal !== false,
+      };
+    }
+  } catch {
+    // ignore
+  }
+  return { official: false, personal: true };
 }
 
 export default function Timeline() {
@@ -53,9 +77,10 @@ export default function Timeline() {
   );
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
-  const [addTerm, setAddTerm] = useState<number | null>(null);
+  const [addTerm, setAddTerm] = useState<number | null | "drawer">(null);
   const [dragging, setDragging] = useState<DragPayload | null>(null);
   const [hint, setHint] = useState<string | null>(null);
+  const [drawerOpen, setDrawerOpen] = useState<DrawerState>(loadDrawerState);
 
   useEffect(() => {
     Promise.all([
@@ -78,6 +103,14 @@ export default function Timeline() {
     saveCourseCardDisplayOptions(displayOptions);
   }, [displayOptions]);
 
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(DRAWER_OPEN_KEY, JSON.stringify(drawerOpen));
+    } catch {
+      // ignore
+    }
+  }, [drawerOpen]);
+
   const refetchPlan = async () => {
     const p = await api.personalPlan();
     setPersonalPlan(p);
@@ -93,22 +126,24 @@ export default function Timeline() {
     return m;
   }, [done]);
 
+  // 官方视图：纯按 offered_term 分；灵活课进抽屉
   const officialBuckets = useMemo(() => {
     const byTerm = emptyTermBuckets<CourseWithCategory>();
-    const flexible: CourseWithCategory[] = [];
+    const drawer: CourseWithCategory[] = [];
     for (const c of courses) {
       const p = parseOfferedTerm(c.offered_term);
-      if (p.isFlexible || p.primary == null) flexible.push(c);
+      if (p.isFlexible || p.primary == null) drawer.push(c);
       else byTerm[p.primary].push(c);
     }
     for (const t of TERMS) sortOfficial(byTerm[t]);
-    sortOfficial(flexible);
-    return { byTerm, flexible };
+    sortOfficial(drawer);
+    return { byTerm, drawer };
   }, [courses]);
 
+  // 我的计划视图：plannedTerm==null 进抽屉
   const personalBuckets = useMemo(() => {
     const byTerm = emptyTermBuckets<PlannedOfficial>();
-    const flexible: PlannedOfficial[] = [];
+    const drawer: PlannedOfficial[] = [];
     const overrides = new Map(
       personalPlan
         .filter((p) => p.item_type === "official" && p.course_code)
@@ -117,7 +152,10 @@ export default function Timeline() {
 
     const plannedTermByCode = new Map<string, number | null>();
     for (const c of courses) {
-      const plannedTerm = overrides.get(c.course_code)?.planned_term ?? defaultTerm(c);
+      const override = overrides.get(c.course_code);
+      const plannedTerm = override
+        ? override.planned_term // 可能是 null（用户主动放入抽屉）
+        : defaultTerm(c);
       plannedTermByCode.set(c.course_code, plannedTerm);
     }
 
@@ -131,25 +169,28 @@ export default function Timeline() {
             ? null
             : placementWarning(c, plannedTerm, plannedTermByCode, courses),
       };
-      if (plannedTerm == null) flexible.push(item);
+      if (plannedTerm == null) drawer.push(item);
       else byTerm[plannedTerm].push(item);
     }
 
     for (const t of TERMS) sortPlanned(byTerm[t]);
-    sortPlanned(flexible);
-    return { byTerm, flexible };
+    sortPlanned(drawer);
+    return { byTerm, drawer };
   }, [courses, personalPlan]);
 
   const manualPlanByTerm = useMemo(() => {
     const byTerm = emptyTermBuckets<PersonalPlanItem>();
+    const drawer: PersonalPlanItem[] = [];
     for (const item of personalPlan) {
       if (item.item_type !== "manual") continue;
-      byTerm[item.planned_term].push(item);
+      if (item.planned_term == null) drawer.push(item);
+      else byTerm[item.planned_term].push(item);
     }
     for (const t of TERMS) {
       byTerm[t].sort((a, b) => a.course_name.localeCompare(b.course_name, "zh"));
     }
-    return byTerm;
+    drawer.sort((a, b) => a.course_name.localeCompare(b.course_name, "zh"));
+    return { byTerm, drawer };
   }, [personalPlan]);
 
   const totals = useMemo(() => {
@@ -205,37 +246,66 @@ export default function Timeline() {
 
   const dropOnTerm = async (term: number) => {
     if (!dragging || viewMode !== "personal") return;
-    if (dragging.kind === "official") {
-      const course = courses.find((c) => c.course_code === dragging.courseCode);
-      if (!course) return;
-      const defaultPlannedTerm = defaultTerm(course);
-      if (defaultPlannedTerm === term) {
-        await api.resetPersonalOfficial(dragging.courseCode);
-      } else {
-        await api.upsertPersonalOfficial({
-          course_code: dragging.courseCode,
-          planned_term: term,
-        });
-      }
-      const warning = placementWarning(
-        course,
-        term,
-        new Map([[dragging.courseCode, term]]),
-        courses
-      );
-      setHint(warning ? `已放入第 ${term} 学期：${warning}` : null);
-    } else if (dragging.fromTerm !== term) {
-      await api.patchPersonalPlan(dragging.id, { planned_term: term });
+    if (dragging.fromTerm === term) {
+      setDragging(null);
+      return;
     }
-    await refetchPlan();
-    setDragging(null);
+    try {
+      if (dragging.kind === "official") {
+        const course = courses.find((c) => c.course_code === dragging.courseCode);
+        if (!course) return;
+        const defaultPlannedTerm = defaultTerm(course);
+        if (defaultPlannedTerm === term) {
+          // 拖到默认学期 → 直接清掉个人 override，回到默认位置
+          await api.resetPersonalOfficial(dragging.courseCode);
+        } else {
+          await api.upsertPersonalOfficial({
+            course_code: dragging.courseCode,
+            planned_term: term,
+          });
+        }
+        const warning = placementWarning(
+          course,
+          term,
+          new Map([[dragging.courseCode, term]]),
+          courses
+        );
+        setHint(warning ? `已放入第 ${term} 学期：${warning}` : null);
+      } else {
+        await api.patchPersonalPlan(dragging.id, { planned_term: term });
+        setHint(null);
+      }
+      await refetchPlan();
+    } catch (e: any) {
+      setHint(String(e?.message ?? e));
+    } finally {
+      setDragging(null);
+    }
   };
 
-  const resetOfficialToFlexible = async () => {
-    if (!dragging || dragging.kind !== "official") return;
-    await api.resetPersonalOfficial(dragging.courseCode);
-    await refetchPlan();
-    setDragging(null);
+  const dropOnDrawer = async () => {
+    if (!dragging || viewMode !== "personal") return;
+    if (dragging.fromTerm == null) {
+      setDragging(null);
+      return;
+    }
+    try {
+      if (dragging.kind === "official") {
+        await api.upsertPersonalOfficial({
+          course_code: dragging.courseCode,
+          planned_term: null,
+        });
+        setHint(`已放入待安排：${dragging.courseName}`);
+      } else {
+        await api.patchPersonalPlan(dragging.id, { planned_term: null });
+        setHint(`已放入待安排：${dragging.courseName}`);
+      }
+      await refetchPlan();
+    } catch (e: any) {
+      setHint(String(e?.message ?? e));
+    } finally {
+      setDragging(null);
+    }
   };
 
   if (loading) {
@@ -252,6 +322,28 @@ export default function Timeline() {
       </div>
     );
   }
+
+  const isPersonal = viewMode === "personal";
+  const drawerIsOpen = isPersonal ? drawerOpen.personal : drawerOpen.official;
+  const toggleDrawer = () =>
+    setDrawerOpen((prev) =>
+      isPersonal
+        ? { ...prev, personal: !prev.personal }
+        : { ...prev, official: !prev.official }
+    );
+
+  const officialDrawerCount = officialBuckets.drawer.length;
+  const officialDrawerCredits = officialBuckets.drawer.reduce(
+    (s, c) => s + c.credits,
+    0
+  );
+  const personalOfficialDrawer = personalBuckets.drawer;
+  const personalManualDrawer = manualPlanByTerm.drawer;
+  const personalDrawerCount =
+    personalOfficialDrawer.length + personalManualDrawer.length;
+  const personalDrawerCredits =
+    personalOfficialDrawer.reduce((s, p) => s + p.course.credits, 0) +
+    personalManualDrawer.reduce((s, p) => s + p.credits, 0);
 
   return (
     <div className="min-h-screen px-8 py-6">
@@ -279,8 +371,8 @@ export default function Timeline() {
         <div className="flex items-center gap-6 text-xs pt-1">
           <Stat label="已修学分" value={totals.completedTotal} />
           <Stat
-            label={viewMode === "personal" ? "我的计划合计" : "官方计划合计"}
-            value={viewMode === "personal" ? totals.personalPlanTotal : totals.officialPlanTotal}
+            label={isPersonal ? "我的计划合计" : "官方计划合计"}
+            value={isPersonal ? totals.personalPlanTotal : totals.officialPlanTotal}
           />
           <Stat label="培养方案要求" value={totals.requiredTotal} />
         </div>
@@ -296,20 +388,12 @@ export default function Timeline() {
 
       <div className="flex gap-3 overflow-x-auto pb-4">
         {TERMS.map((term) =>
-          viewMode === "official" ? (
-            <OfficialTermColumn
-              key={term}
-              term={term}
-              courses={officialBuckets.byTerm[term]}
-              completedByCode={completedByCode}
-              displayOptions={displayOptions}
-            />
-          ) : (
+          isPersonal ? (
             <PersonalTermColumn
               key={term}
               term={term}
               officialItems={personalBuckets.byTerm[term]}
-              manualItems={manualPlanByTerm[term]}
+              manualItems={manualPlanByTerm.byTerm[term]}
               completedByCode={completedByCode}
               displayOptions={displayOptions}
               dragging={dragging}
@@ -323,29 +407,74 @@ export default function Timeline() {
                 await refetchPlan();
               }}
             />
+          ) : (
+            <OfficialTermColumn
+              key={term}
+              term={term}
+              courses={officialBuckets.byTerm[term]}
+              completedByCode={completedByCode}
+              displayOptions={displayOptions}
+            />
           )
-        )}
-
-        {viewMode === "official" ? (
-          <OfficialFlexibleColumn
-            courses={officialBuckets.flexible}
-            displayOptions={displayOptions}
-          />
-        ) : (
-          <PersonalFlexibleColumn
-            items={personalBuckets.flexible}
-            displayOptions={displayOptions}
-            dragging={dragging}
-            onDrop={resetOfficialToFlexible}
-            onStartOfficialDrag={startOfficialDrag}
-            onDragEnd={() => setDragging(null)}
-          />
         )}
       </div>
 
+      <Drawer
+        title="待安排"
+        subtitle={isPersonal ? "灵活课程 / 未安排课程" : "灵活课程（按 offered_term 推断）"}
+        countLabel={
+          isPersonal
+            ? `${personalDrawerCount} 门 · ${round1(personalDrawerCredits)} 学分`
+            : `${officialDrawerCount} 门 · ${round1(officialDrawerCredits)} 学分`
+        }
+        open={drawerIsOpen}
+        onToggle={toggleDrawer}
+        dropActive={isPersonal && dragging != null && dragging.fromTerm != null}
+        onDragOver={
+          isPersonal
+            ? (event) => {
+                if (!dragging || dragging.fromTerm == null) return;
+                event.preventDefault();
+                event.dataTransfer.dropEffect = "move";
+              }
+            : undefined
+        }
+        onDrop={
+          isPersonal
+            ? (event) => {
+                event.preventDefault();
+                void dropOnDrawer();
+              }
+            : undefined
+        }
+      >
+        {isPersonal ? (
+          <PersonalDrawerContent
+            officialItems={personalOfficialDrawer}
+            manualItems={personalManualDrawer}
+            completedByCode={completedByCode}
+            displayOptions={displayOptions}
+            onStartOfficialDrag={startOfficialDrag}
+            onStartManualDrag={startManualDrag}
+            onDragEnd={() => setDragging(null)}
+            onAdd={() => setAddTerm("drawer")}
+            onDeleteManual={async (id) => {
+              await api.deletePersonalPlan(id);
+              await refetchPlan();
+            }}
+          />
+        ) : (
+          <OfficialDrawerContent
+            courses={officialBuckets.drawer}
+            completedByCode={completedByCode}
+            displayOptions={displayOptions}
+          />
+        )}
+      </Drawer>
+
       {addTerm != null && (
         <ManualCourseDialog
-          termNumber={addTerm}
+          termNumber={addTerm === "drawer" ? null : addTerm}
           onClose={() => setAddTerm(null)}
           onSubmit={async (input) => {
             await api.createPersonalManual({
@@ -355,6 +484,7 @@ export default function Timeline() {
               category_code: input.category_code,
               course_nature: input.course_nature,
               note: input.note,
+              is_interdisciplinary: input.is_interdisciplinary,
             });
             await refetchPlan();
           }}
@@ -490,72 +620,177 @@ function PersonalTermColumn({
   );
 }
 
-function OfficialFlexibleColumn({
-  courses,
-  displayOptions,
+function Drawer({
+  title,
+  subtitle,
+  countLabel,
+  open,
+  onToggle,
+  dropActive,
+  onDragOver,
+  onDrop,
+  children,
 }: {
-  courses: CourseWithCategory[];
-  displayOptions: CourseCardDisplayOptions;
+  title: string;
+  subtitle: string;
+  countLabel: string;
+  open: boolean;
+  onToggle: () => void;
+  dropActive?: boolean;
+  onDragOver?: (event: React.DragEvent<HTMLDivElement>) => void;
+  onDrop?: (event: React.DragEvent<HTMLDivElement>) => void;
+  children: React.ReactNode;
 }) {
   return (
-    <SideColumn title="灵活" subtitle="任意学期" count={`${courses.length} 门`}>
-      {courses.map((course) => (
-        <CourseCard
-          key={`official-flex-${course.course_code}`}
-          course={course}
-          displayOptions={displayOptions}
-        />
-      ))}
-    </SideColumn>
+    <div
+      onDragOver={onDragOver}
+      onDrop={onDrop}
+      className={
+        "mt-2 rounded-lg border bg-card transition-colors " +
+        (dropActive
+          ? "border-brand bg-brand/5"
+          : "border-dashed border-sub/30")
+      }
+    >
+      <button
+        type="button"
+        onClick={onToggle}
+        className="w-full flex items-center justify-between px-4 py-2 text-left hover:bg-sub/5 transition-colors rounded-t-lg"
+      >
+        <div className="flex items-baseline gap-3">
+          <span className="text-sm text-ink flex items-center gap-1.5">
+            <span
+              className={
+                "inline-block transition-transform " +
+                (open ? "rotate-90" : "")
+              }
+              style={{ fontSize: 10 }}
+            >
+              ▶
+            </span>
+            {title}
+          </span>
+          <span className="text-[11px] text-sub">{subtitle}</span>
+        </div>
+        <span className="text-[11px] text-sub tabular-nums">{countLabel}</span>
+      </button>
+      {open && (
+        <div className="px-4 pb-4 pt-1 max-h-[280px] overflow-y-auto">
+          {children}
+        </div>
+      )}
+    </div>
   );
 }
 
-function PersonalFlexibleColumn({
-  items,
+function OfficialDrawerContent({
+  courses,
+  completedByCode,
   displayOptions,
-  dragging,
-  onDrop,
-  onStartOfficialDrag,
-  onDragEnd,
 }: {
-  items: PlannedOfficial[];
+  courses: CourseWithCategory[];
+  completedByCode: Map<string, number | null>;
   displayOptions: CourseCardDisplayOptions;
-  dragging: DragPayload | null;
-  onDrop: () => void;
+}) {
+  if (courses.length === 0) {
+    return (
+      <div className="text-[11px] text-sub/60 italic py-4 text-center">
+        没有灵活安排的课程
+      </div>
+    );
+  }
+  return (
+    <div
+      className="grid gap-1.5"
+      style={{ gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))" }}
+    >
+      {courses.map((course) => (
+        <CourseCard
+          key={`official-drawer-${course.course_code}`}
+          course={course}
+          completedScore={completedByCode.get(course.course_code)}
+          displayOptions={displayOptions}
+        />
+      ))}
+    </div>
+  );
+}
+
+function PersonalDrawerContent({
+  officialItems,
+  manualItems,
+  completedByCode,
+  displayOptions,
+  onStartOfficialDrag,
+  onStartManualDrag,
+  onDragEnd,
+  onAdd,
+  onDeleteManual,
+}: {
+  officialItems: PlannedOfficial[];
+  manualItems: PersonalPlanItem[];
+  completedByCode: Map<string, number | null>;
+  displayOptions: CourseCardDisplayOptions;
   onStartOfficialDrag: (
     event: React.DragEvent<HTMLDivElement>,
     item: PlannedOfficial
   ) => void;
+  onStartManualDrag: (
+    event: React.DragEvent<HTMLDivElement>,
+    item: PersonalPlanItem
+  ) => void;
   onDragEnd: () => void;
+  onAdd: () => void;
+  onDeleteManual: (id: number) => Promise<void>;
 }) {
-  const active = dragging?.kind === "official";
+  const empty = officialItems.length === 0 && manualItems.length === 0;
   return (
-    <SideColumn
-      title="待安排"
-      subtitle="灵活课程"
-      count={`${items.length} 门`}
-      active={active}
-      onDragOver={(event) => {
-        if (!active) return;
-        event.preventDefault();
-        event.dataTransfer.dropEffect = "move";
-      }}
-      onDrop={(event) => {
-        event.preventDefault();
-        if (active) void onDrop();
-      }}
-    >
-      {items.map((item) => (
-        <CourseCard
-          key={`personal-flex-${item.course.course_code}`}
-          course={item.course}
-          draggable
-          displayOptions={displayOptions}
-          onDragStart={(event) => onStartOfficialDrag(event, item)}
-          onDragEnd={onDragEnd}
-        />
-      ))}
-    </SideColumn>
+    <div className="flex flex-col gap-2">
+      {empty && (
+        <div className="text-[11px] text-sub/60 italic py-4 text-center border border-dashed border-sub/20 rounded-md">
+          把课程拖到这里 = 放入待安排；或点下方按钮直接添加
+        </div>
+      )}
+      {!empty && (
+        <div
+          className="grid gap-1.5"
+          style={{ gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))" }}
+        >
+          {officialItems.map((item) => (
+            <CourseCard
+              key={`personal-drawer-${item.course.course_code}`}
+              course={item.course}
+              completedScore={completedByCode.get(item.course.course_code)}
+              draggable
+              displayOptions={displayOptions}
+              onDragStart={(event) => onStartOfficialDrag(event, item)}
+              onDragEnd={onDragEnd}
+            />
+          ))}
+          {manualItems.map((item) => (
+            <ManualCourseCard
+              key={`drawer-manual-${item.id}`}
+              course={item}
+              draggable
+              displayOptions={displayOptions}
+              onDragStart={(event) => onStartManualDrag(event, item)}
+              onDragEnd={onDragEnd}
+              onDelete={async (id) => {
+                if (!window.confirm(`删除计划课程「${item.course_name}」？`)) return;
+                await onDeleteManual(id);
+              }}
+            />
+          ))}
+        </div>
+      )}
+      <button
+        type="button"
+        onClick={onAdd}
+        className="self-start h-8 px-3 rounded-md border border-dashed border-sub/25 text-[11px] text-sub hover:text-ink hover:border-sub/45 hover:bg-sub/5 transition-colors"
+      >
+        + 添加课程到待安排
+      </button>
+    </div>
   );
 }
 
@@ -601,44 +836,6 @@ function TermFrame({
           <div className="text-sm text-ink">{TERM_LABEL[term]}</div>
         </div>
         <div className="text-[11px] text-sub tabular-nums">{round1(credits)} 学分</div>
-      </div>
-      <div className="flex flex-col gap-1.5">{children}</div>
-    </div>
-  );
-}
-
-function SideColumn({
-  title,
-  subtitle,
-  count,
-  children,
-  active = false,
-  onDragOver,
-  onDrop,
-}: {
-  title: string;
-  subtitle: string;
-  count: string;
-  children: React.ReactNode;
-  active?: boolean;
-  onDragOver?: (event: React.DragEvent<HTMLDivElement>) => void;
-  onDrop?: (event: React.DragEvent<HTMLDivElement>) => void;
-}) {
-  return (
-    <div
-      onDragOver={onDragOver}
-      onDrop={onDrop}
-      className={
-        "flex-shrink-0 w-[200px] bg-card border border-dashed rounded-lg p-2.5 flex flex-col transition-colors " +
-        (active ? "border-brand bg-brand/5" : "border-sub/30")
-      }
-    >
-      <div className="flex items-baseline justify-between mb-2 px-0.5">
-        <div>
-          <div className="text-[11px] text-sub">{title}</div>
-          <div className="text-sm text-ink">{subtitle}</div>
-        </div>
-        <div className="text-[11px] text-sub tabular-nums">{count}</div>
       </div>
       <div className="flex flex-col gap-1.5">{children}</div>
     </div>

@@ -89,7 +89,9 @@ app.get("/api/semester-courses", (_req, res) => {
         credits,
         category_code,
         course_nature,
-        note
+        note,
+        is_interdisciplinary,
+        assigned_to
       FROM manual_courses
       `
     )
@@ -199,6 +201,28 @@ function categoryNameOf(code: string): string {
   return CATEGORY_TABLES[code as CategoryCode]?.name ?? code;
 }
 
+// 校验：is_interdisciplinary=1 仅允许在 通识/大类平台 上
+function validateInterdisciplinary(
+  isInter: unknown,
+  categoryCode: string
+): string | null {
+  if (isInter === undefined || isInter === null) return null;
+  const n = Number(isInter);
+  if (n !== 0 && n !== 1) return "is_interdisciplinary 必须为 0 或 1";
+  if (n === 1 && categoryCode !== "general_education" && categoryCode !== "major_platform") {
+    return "is_interdisciplinary=1 仅允许在 通识教育 或 大类平台 上";
+  }
+  return null;
+}
+
+function validateAssignedTo(assignedTo: unknown): string | null {
+  if (assignedTo === undefined || assignedTo === null) return null;
+  if (assignedTo !== "interdisciplinary" && assignedTo !== "elective") {
+    return "assigned_to 必须为 interdisciplinary 或 elective";
+  }
+  return null;
+}
+
 app.post("/api/semester-courses/manual", (req: Request, res: Response) => {
   const {
     term_number,
@@ -208,6 +232,8 @@ app.post("/api/semester-courses/manual", (req: Request, res: Response) => {
     course_nature,
     score,
     note,
+    is_interdisciplinary,
+    assigned_to,
   } = req.body ?? {};
 
   if (!Number.isInteger(term_number) || term_number < 1 || term_number > 8) {
@@ -230,13 +256,18 @@ app.post("/api/semester-courses/manual", (req: Request, res: Response) => {
     res.status(400).json({ error: "course_nature 仅支持 必修/选修" });
     return;
   }
+  const interErr = validateInterdisciplinary(is_interdisciplinary, category_code);
+  if (interErr) { res.status(400).json({ error: interErr }); return; }
+  const aErr = validateAssignedTo(assigned_to);
+  if (aErr) { res.status(400).json({ error: aErr }); return; }
 
   try {
     const info = db
       .prepare(
         `INSERT INTO manual_courses
-          (term_number, course_name, credits, category_code, course_nature, score, note)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`
+          (term_number, course_name, credits, category_code, course_nature, score, note,
+           is_interdisciplinary, assigned_to)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         term_number,
@@ -245,7 +276,9 @@ app.post("/api/semester-courses/manual", (req: Request, res: Response) => {
         category_code,
         course_nature,
         score ?? null,
-        note ?? null
+        note ?? null,
+        Number(is_interdisciplinary ?? 0),
+        assigned_to ?? "interdisciplinary"
       );
     res.json({ ok: true, id: info.lastInsertRowid });
   } catch (e: any) {
@@ -269,13 +302,19 @@ app.patch(
       "course_nature",
       "score",
       "note",
+      "is_interdisciplinary",
+      "assigned_to",
     ] as const;
+    const aErr = validateAssignedTo(req.body?.assigned_to);
+    if (aErr) { res.status(400).json({ error: aErr }); return; }
     const sets: string[] = [];
     const params: any[] = [];
     for (const k of allowed) {
       if (req.body?.[k] !== undefined) {
         sets.push(`${k} = ?`);
-        params.push(req.body[k]);
+        params.push(
+          k === "is_interdisciplinary" ? Number(req.body[k]) : req.body[k]
+        );
       }
     }
     if (sets.length === 0) {
@@ -385,7 +424,9 @@ app.get("/api/personal-plan", (_req, res) => {
         manual_course_nature AS course_nature,
         NULL AS offered_term,
         NULL AS course_category,
-        note
+        note,
+        is_interdisciplinary,
+        assigned_to
       FROM personal_plan
       WHERE item_type = 'manual'
       `
@@ -396,13 +437,27 @@ app.get("/api/personal-plan", (_req, res) => {
       category_name: categoryNameOf(row.category_code),
     }));
 
-  const rows = [...official, ...manual].sort(
-    (a: any, b: any) =>
-      a.planned_term - b.planned_term ||
+  const rows = [...official, ...manual].sort((a: any, b: any) => {
+    // planned_term IS NULL（"待安排"）排在最后
+    const at = a.planned_term ?? 99;
+    const bt = b.planned_term ?? 99;
+    return (
+      at - bt ||
       String(a.course_name).localeCompare(String(b.course_name), "zh-Hans-CN")
-  );
+    );
+  });
   res.json(rows);
 });
+
+// 内部工具：判定一门 official 课是否已修（score IS NOT NULL）
+function isOfficialCompleted(courseCode: string): boolean {
+  const row = db
+    .prepare(
+      "SELECT 1 FROM semester_courses WHERE course_code = ? AND score IS NOT NULL LIMIT 1"
+    )
+    .get(courseCode);
+  return !!row;
+}
 
 app.post("/api/personal-plan/official", (req: Request, res: Response) => {
   const { course_code, planned_term, note } = req.body ?? {};
@@ -410,10 +465,23 @@ app.post("/api/personal-plan/official", (req: Request, res: Response) => {
     res.status(400).json({ error: "course_code 必填" });
     return;
   }
-  if (!Number.isInteger(planned_term) || planned_term < 1 || planned_term > 8) {
-    res.status(400).json({ error: "planned_term 必须为 1-8 整数" });
+  // planned_term 允许 null（= 放进"待安排"抽屉）
+  const isNull = planned_term === null || planned_term === undefined;
+  if (
+    !isNull &&
+    (!Number.isInteger(planned_term) || planned_term < 1 || planned_term > 8)
+  ) {
+    res.status(400).json({ error: "planned_term 必须为 1-8 整数或 null" });
     return;
   }
+  // 已修课（semester_courses 有成绩）不允许扔进"待安排"
+  if (isNull && isOfficialCompleted(course_code.trim())) {
+    res
+      .status(400)
+      .json({ error: "该课已修（有成绩），无法放入待安排抽屉" });
+    return;
+  }
+  const termValue = isNull ? null : planned_term;
   try {
     const updated = db
       .prepare(
@@ -421,10 +489,10 @@ app.post("/api/personal-plan/official", (req: Request, res: Response) => {
          SET planned_term = ?, note = ?, updated_at = datetime('now')
          WHERE item_type = 'official' AND course_code = ?`
       )
-      .run(planned_term, note ?? null, course_code.trim());
+      .run(termValue, note ?? null, course_code.trim());
 
     if (updated.changes > 0) {
-      res.json({ ok: true, id: null, course_code, planned_term });
+      res.json({ ok: true, id: null, course_code, planned_term: termValue });
       return;
     }
 
@@ -433,8 +501,13 @@ app.post("/api/personal-plan/official", (req: Request, res: Response) => {
         `INSERT INTO personal_plan (item_type, course_code, planned_term, note)
          VALUES ('official', ?, ?, ?)`
       )
-      .run(course_code.trim(), planned_term, note ?? null);
-    res.json({ ok: true, id: inserted.lastInsertRowid, course_code, planned_term });
+      .run(course_code.trim(), termValue, note ?? null);
+    res.json({
+      ok: true,
+      id: inserted.lastInsertRowid,
+      course_code,
+      planned_term: termValue,
+    });
   } catch (e: any) {
     res.status(400).json({ error: String(e?.message ?? e) });
   }
@@ -457,10 +530,16 @@ app.post("/api/personal-plan/manual", (req: Request, res: Response) => {
     category_code,
     course_nature,
     note,
+    is_interdisciplinary,
+    assigned_to,
   } = req.body ?? {};
 
-  if (!Number.isInteger(planned_term) || planned_term < 1 || planned_term > 8) {
-    res.status(400).json({ error: "planned_term 必须为 1-8 整数" });
+  const isPlannedTermNull = planned_term === null || planned_term === undefined;
+  if (
+    !isPlannedTermNull &&
+    (!Number.isInteger(planned_term) || planned_term < 1 || planned_term > 8)
+  ) {
+    res.status(400).json({ error: "planned_term 必须为 1-8 整数或 null" });
     return;
   }
   if (typeof course_name !== "string" || !course_name.trim()) {
@@ -479,21 +558,28 @@ app.post("/api/personal-plan/manual", (req: Request, res: Response) => {
     res.status(400).json({ error: "course_nature 仅支持 必修/选修" });
     return;
   }
+  const interErr = validateInterdisciplinary(is_interdisciplinary, category_code);
+  if (interErr) { res.status(400).json({ error: interErr }); return; }
+  const aErr = validateAssignedTo(assigned_to);
+  if (aErr) { res.status(400).json({ error: aErr }); return; }
 
   try {
     const info = db
       .prepare(
         `INSERT INTO personal_plan
-          (item_type, planned_term, manual_course_name, manual_credits, manual_category_code, manual_course_nature, note)
-         VALUES ('manual', ?, ?, ?, ?, ?, ?)`
+          (item_type, planned_term, manual_course_name, manual_credits, manual_category_code, manual_course_nature, note,
+           is_interdisciplinary, assigned_to)
+         VALUES ('manual', ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
-        planned_term,
+        isPlannedTermNull ? null : planned_term,
         course_name.trim(),
         credits,
         category_code,
         course_nature,
-        note ?? null
+        note ?? null,
+        Number(is_interdisciplinary ?? 0),
+        assigned_to ?? "interdisciplinary"
       );
     res.json({ ok: true, id: info.lastInsertRowid });
   } catch (e: any) {
@@ -515,13 +601,49 @@ app.patch("/api/personal-plan/:id", (req: Request, res: Response) => {
     category_code: "manual_category_code",
     course_nature: "manual_course_nature",
     note: "note",
+    is_interdisciplinary: "is_interdisciplinary",
+    assigned_to: "assigned_to",
   };
+  const aErr = validateAssignedTo(req.body?.assigned_to);
+  if (aErr) { res.status(400).json({ error: aErr }); return; }
+
+  // planned_term 校验：允许 null，但若设为 null 且条目是已修 official 课 → 拒绝
+  if (req.body?.planned_term !== undefined) {
+    const pt = req.body.planned_term;
+    if (pt !== null && (!Number.isInteger(pt) || pt < 1 || pt > 8)) {
+      res.status(400).json({ error: "planned_term 必须为 1-8 整数或 null" });
+      return;
+    }
+    if (pt === null) {
+      const row: any = db
+        .prepare(
+          "SELECT item_type, course_code FROM personal_plan WHERE id = ?"
+        )
+        .get(id);
+      if (
+        row &&
+        row.item_type === "official" &&
+        row.course_code &&
+        isOfficialCompleted(String(row.course_code))
+      ) {
+        res
+          .status(400)
+          .json({ error: "该课已修（有成绩），无法放入待安排抽屉" });
+        return;
+      }
+    }
+  }
+
   const sets: string[] = [];
   const params: any[] = [];
   for (const [inputKey, column] of Object.entries(fieldMap)) {
     if (req.body?.[inputKey] !== undefined) {
       sets.push(`${column} = ?`);
-      params.push(req.body[inputKey]);
+      params.push(
+        inputKey === "is_interdisciplinary"
+          ? Number(req.body[inputKey])
+          : req.body[inputKey]
+      );
     }
   }
   if (sets.length === 0) {
@@ -552,6 +674,48 @@ app.delete("/api/personal-plan/:id", (req: Request, res: Response) => {
     return;
   }
   res.json({ ok: true });
+});
+
+// ─────────────────────────────────────────────
+// 学分归属（经法管融通课程的二选一覆盖）
+//   默认 = interdisciplinary（计入「大类平台·经法管融通」）
+//   override = elective（搬回该课原属板块的"选修"桶）
+// ─────────────────────────────────────────────
+app.get("/api/credit-assignments", (_req, res) => {
+  const rows = db
+    .prepare("SELECT course_code, assigned_to FROM credit_assignment")
+    .all();
+  res.json(rows);
+});
+
+app.put("/api/credit-assignments/:code", (req: Request, res: Response) => {
+  const code = String(req.params.code);
+  const { assigned_to } = req.body ?? {};
+  if (assigned_to !== "interdisciplinary" && assigned_to !== "elective") {
+    res
+      .status(400)
+      .json({ error: "assigned_to 必须为 interdisciplinary 或 elective" });
+    return;
+  }
+  try {
+    db.prepare(
+      `INSERT INTO credit_assignment (course_code, assigned_to, updated_at)
+       VALUES (?, ?, datetime('now'))
+       ON CONFLICT(course_code) DO UPDATE SET
+         assigned_to = excluded.assigned_to,
+         updated_at = excluded.updated_at`
+    ).run(code, assigned_to);
+    res.json({ ok: true, course_code: code, assigned_to });
+  } catch (e: any) {
+    res.status(400).json({ error: String(e?.message ?? e) });
+  }
+});
+
+app.delete("/api/credit-assignments/:code", (req: Request, res: Response) => {
+  const info = db
+    .prepare("DELETE FROM credit_assignment WHERE course_code = ?")
+    .run(String(req.params.code));
+  res.json({ ok: true, changes: info.changes });
 });
 
 // ─────────────────────────────────────────────

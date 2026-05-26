@@ -3,17 +3,21 @@ import { createPortal } from "react-dom";
 import { api } from "../lib/api";
 import { CATEGORY_STYLE } from "../lib/categoryStyle";
 import {
+  buildAssignmentMap,
   bundleByCategory,
   computeRequirementRows,
   type CategoryBundle,
+  type CreditAssignmentMap,
   type EarnedCourse,
   type PlannedCourse,
   type RequirementRow,
 } from "../lib/progress";
 import { TERM_LABEL } from "../lib/offeredTerm";
 import { ProgressBar } from "../components/ProgressBar";
+import { InterdisciplinaryFlow, type FlowItem } from "../components/InterdisciplinaryFlow";
 import type {
   CourseWithCategory,
+  CreditAssignment,
   PersonalPlanItem,
   ProgramRequirement,
   SemesterCourse,
@@ -24,6 +28,7 @@ export default function Trail() {
   const [reqs, setReqs] = useState<ProgramRequirement[]>([]);
   const [done, setDone] = useState<SemesterCourse[]>([]);
   const [personalPlan, setPersonalPlan] = useState<PersonalPlanItem[]>([]);
+  const [assignments, setAssignments] = useState<CreditAssignment[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -34,26 +39,41 @@ export default function Trail() {
       api.programRequirements(),
       api.semesterCourses(),
       api.personalPlan(),
+      api.creditAssignments(),
     ])
-      .then(([c, r, d, p]) => {
+      .then(([c, r, d, p, a]) => {
         setCourses(c);
         setReqs(r);
         setDone(d);
         setPersonalPlan(p);
+        setAssignments(a);
       })
       .catch((e) => setErr(String(e)))
       .finally(() => setLoading(false));
   }, []);
 
   const refetchTrailData = useCallback(async () => {
-    const [d, p] = await Promise.all([api.semesterCourses(), api.personalPlan()]);
+    const [d, p, a] = await Promise.all([
+      api.semesterCourses(),
+      api.personalPlan(),
+      api.creditAssignments(),
+    ]);
     setDone(d);
     setPersonalPlan(p);
+    setAssignments(a);
   }, []);
 
+  const assignmentMap: CreditAssignmentMap = useMemo(
+    () => buildAssignmentMap(assignments),
+    [assignments]
+  );
+
   const bundles = useMemo(
-    () => bundleByCategory(computeRequirementRows(reqs, courses, done, personalPlan)),
-    [reqs, courses, done, personalPlan]
+    () =>
+      bundleByCategory(
+        computeRequirementRows(reqs, courses, done, personalPlan, assignmentMap)
+      ),
+    [reqs, courses, done, personalPlan, assignmentMap]
   );
 
   const overall = useMemo(() => {
@@ -71,6 +91,117 @@ export default function Trail() {
       return next;
     });
   };
+
+  // 经法管融通 流向图 items —— 三种来源合一
+  // 注意：所有 hooks 必须在早 return 之前调用，否则违反 Rules of Hooks
+  const flowItems: FlowItem[] = useMemo(() => {
+    const list: FlowItem[] = [];
+
+    // 1) 培养方案内经法管融通课
+    const earnedOfficialCodes = new Set<string>();
+    for (const r of done) {
+      if (r.source === "official" && r.course_code && r.score != null) {
+        earnedOfficialCodes.add(r.course_code);
+      }
+    }
+    for (const c of courses) {
+      if (c.course_category?.includes("经法管融通")) {
+        list.push({
+          key: `official:${c.course_code}`,
+          courseName: c.course_name,
+          credits: c.credits,
+          categoryCode: c.category_code,
+          isEarned: earnedOfficialCodes.has(c.course_code),
+          assignment: assignmentMap.get(c.course_code) ?? "interdisciplinary",
+        });
+      }
+    }
+
+    // 2) 手动已修课带经法管融通旗标
+    for (const r of done) {
+      if (
+        r.source === "manual" &&
+        r.is_interdisciplinary === 1 &&
+        r.category_code &&
+        r.id != null
+      ) {
+        list.push({
+          key: `record:${r.id}`,
+          courseName: r.course_name,
+          credits: r.credits,
+          categoryCode: r.category_code,
+          isEarned: r.score != null,
+          assignment: (r.assigned_to ?? "interdisciplinary") as
+            | "interdisciplinary"
+            | "elective",
+        });
+      }
+    }
+
+    // 3) 计划课带经法管融通旗标
+    for (const p of personalPlan) {
+      if (p.item_type === "manual" && p.is_interdisciplinary === 1) {
+        list.push({
+          key: `plan:${p.id}`,
+          courseName: p.course_name,
+          credits: p.credits,
+          categoryCode: p.category_code,
+          isEarned: false,
+          assignment: (p.assigned_to ?? "interdisciplinary") as
+            | "interdisciplinary"
+            | "elective",
+        });
+      }
+    }
+    return list;
+  }, [courses, done, personalPlan, assignmentMap]);
+
+  const interdisciplinaryTotal = useMemo(() => {
+    for (const b of bundles) {
+      for (const row of b.rows) {
+        if (row.requirementType === "interdisciplinary") {
+          return { earned: row.earnedCredits, required: row.requiredCredits };
+        }
+      }
+    }
+    return { earned: 0, required: 0 };
+  }, [bundles]);
+
+  const electiveTotalByCategory = useMemo(() => {
+    const m = new Map<string, { earned: number; required: number }>();
+    for (const b of bundles) {
+      for (const row of b.rows) {
+        if (row.requirementType === "elective") {
+          m.set(b.code, {
+            earned: row.earnedCredits,
+            required: row.requiredCredits,
+          });
+        }
+      }
+    }
+    return m;
+  }, [bundles]);
+
+  const toggleItem = useCallback(
+    async (item: FlowItem) => {
+      const next =
+        item.assignment === "interdisciplinary" ? "elective" : "interdisciplinary";
+      try {
+        const [kind, raw] = item.key.split(":");
+        if (kind === "official") {
+          await api.setCreditAssignment(raw, next);
+        } else if (kind === "record") {
+          await api.patchManual(Number(raw), { assigned_to: next });
+        } else if (kind === "plan") {
+          await api.patchPersonalPlan(Number(raw), { assigned_to: next });
+        }
+        await refetchTrailData();
+      } catch (e) {
+        console.error(e);
+      }
+    },
+    [refetchTrailData]
+  );
 
   if (loading) {
     return (
@@ -129,6 +260,24 @@ export default function Trail() {
           planned={overall.planned}
         />
       </section>
+
+      {/* 经法管融通学分流向（仅当有该类课程时显示） */}
+      {flowItems.length > 0 && (
+        <section className="bg-card border border-sub/15 rounded-xl p-4 mb-6 inline-block">
+          <div className="mb-2">
+            <h2 className="text-xs text-ink">学分流向 · 经法管融通</h2>
+            <div className="text-[10px] text-sub mt-0.5">
+              点击课程或连线，切换归属
+            </div>
+          </div>
+          <InterdisciplinaryFlow
+            items={flowItems}
+            onToggle={toggleItem}
+            interdisciplinaryTotal={interdisciplinaryTotal}
+            electiveTotalByCategory={electiveTotalByCategory}
+          />
+        </section>
+      )}
 
       {/* 5 个板块 */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -398,7 +547,7 @@ function PlannedCoursePill({
         <span>{course.courseName}</span>
         <span className="text-sub/70 tabular-nums">{course.credits}</span>
         <span className="text-sub/55 tabular-nums">
-          {TERM_LABEL[course.plannedTerm]}
+          {course.plannedTerm == null ? "待安排" : TERM_LABEL[course.plannedTerm]}
         </span>
         <span className="ml-1 pl-1.5 border-l border-sub/25 tabular-nums text-[10px] text-sub/70">
           填成绩
@@ -467,11 +616,19 @@ function ScorePopover({
       setErr("计划课程需要填写成绩后才会计入已修");
       return;
     }
+    if (isPlanned && course.plannedTerm == null) {
+      setErr("「待安排」的课程需先拖到某个学期后才能填成绩");
+      return;
+    }
 
     setBusy(true);
     setErr(null);
     try {
       if (isPlanned) {
+        if (course.plannedTerm == null) {
+          throw new Error("plannedTerm 不应为 null（已在前面拦截）");
+        }
+        const plannedTerm = course.plannedTerm;
         if (course.source === "manual") {
           const courseNature =
             course.courseNature === "跨专业" ? "选修" : course.courseNature;
@@ -480,13 +637,15 @@ function ScorePopover({
             await api.patchManual(course.id, { score: newScore });
           } else {
             const created = await api.createManual({
-              term_number: course.plannedTerm,
+              term_number: plannedTerm,
               course_name: course.courseName,
               credits: course.credits,
               category_code: course.categoryCode,
               course_nature: courseNature,
               score: newScore,
               note: "由计划转为已修",
+              is_interdisciplinary: course.isInterdisciplinary ? 1 : 0,
+              assigned_to: course.assignedTo ?? "interdisciplinary",
             });
             if (!created.ok) throw new Error("手动课写入失败");
             if (course.id != null) {
@@ -496,7 +655,7 @@ function ScorePopover({
         } else {
           if (!course.courseCode) throw new Error("官方课缺少课程号");
           await api.upsertOfficial({
-            term_number: course.plannedTerm,
+            term_number: plannedTerm,
             course_code: course.courseCode,
             score: newScore,
           });

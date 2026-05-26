@@ -1,11 +1,27 @@
 import type {
   CategoryCode,
   CourseWithCategory,
+  CreditAssignment,
   PersonalPlanItem,
   ProgramRequirement,
   SemesterCourse,
 } from "../types";
 import { parseOfferedTerm } from "./offeredTerm";
+
+export type CreditAssignmentMap = Map<string, "interdisciplinary" | "elective">;
+
+export function buildAssignmentMap(
+  assignments: CreditAssignment[] = []
+): CreditAssignmentMap {
+  return new Map(assignments.map((a) => [a.course_code, a.assigned_to]));
+}
+
+function assignmentOf(
+  c: CourseWithCategory,
+  map?: CreditAssignmentMap
+): "interdisciplinary" | "elective" {
+  return map?.get(c.course_code) ?? "interdisciplinary";
+}
 
 export interface EarnedCourse {
   source: "official" | "manual";
@@ -25,9 +41,12 @@ export interface PlannedCourse {
   courseCode: string | null;
   courseName: string;
   credits: number;
-  plannedTerm: number;
+  /** null = 显式放进"待安排"抽屉 */
+  plannedTerm: number | null;
   categoryCode: CategoryCode;
   courseNature: "必修" | "选修" | "跨专业";
+  isInterdisciplinary?: boolean;
+  assignedTo?: "interdisciplinary" | "elective";
 }
 
 /**
@@ -53,7 +72,8 @@ export function computeRequirementRows(
   requirements: ProgramRequirement[],
   courses: CourseWithCategory[],
   semesterCourses: SemesterCourse[],
-  personalPlan: PersonalPlanItem[] = []
+  personalPlan: PersonalPlanItem[] = [],
+  assignments: CreditAssignmentMap = new Map()
 ): RequirementRow[] {
   const officialRecordsByCode = new Map(
     semesterCourses
@@ -81,7 +101,7 @@ export function computeRequirementRows(
   );
 
   return requirements.map((req) => {
-    const officialMatched = matchCourses(req, courses)
+    const officialMatched = matchCourses(req, courses, assignments)
       .filter((c) => earnedOfficialByCode.has(c.course_code))
       .map((c): EarnedCourse => {
         const record = earnedOfficialByCode.get(c.course_code);
@@ -115,24 +135,31 @@ export function computeRequirementRows(
       matched.reduce((s, c) => s + (c.credits ?? 0), 0)
     );
 
-    const plannedOfficial = matchCourses(req, courses)
+    const plannedOfficial = matchCourses(req, courses, assignments)
       .filter((c) => !completedOfficialCodes.has(c.course_code))
-      .map(
-        (c): PlannedCourse => ({
+      .map((c): PlannedCourse => {
+        const override = plannedOfficialOverrides.get(c.course_code);
+        const hasOverride = override !== undefined;
+        // 三态：
+        //  - semester_courses 已有 record（无成绩）→ 跟随该 term
+        //  - personal_plan 有 override → planned_term 可能是数字、也可能是 null（"待安排"抽屉）
+        //  - 都没有 → 走 offered_term 默认（灵活课返回 null）
+        const recordTerm = officialRecordsByCode.get(c.course_code)?.term_number;
+        const plannedTerm: number | null =
+          recordTerm ??
+          (hasOverride ? override!.planned_term : defaultPlannedTerm(c));
+        return {
           source: "official",
           origin: officialRecordsByCode.has(c.course_code) ? "record" : "plan",
           id: null,
           courseCode: c.course_code,
           courseName: c.course_name,
           credits: c.credits,
-          plannedTerm:
-            officialRecordsByCode.get(c.course_code)?.term_number ??
-            plannedOfficialOverrides.get(c.course_code)?.planned_term ??
-            defaultPlannedTerm(c),
+          plannedTerm,
           categoryCode: c.category_code,
           courseNature: c.course_nature,
-        })
-      );
+        };
+      });
     const plannedManualFromRecords = plannedManualRecords
       .filter((c) => matchManualCourse(req, c))
       .map(
@@ -146,6 +173,10 @@ export function computeRequirementRows(
           plannedTerm: c.term_number,
           categoryCode: c.category_code as CategoryCode,
           courseNature: c.course_nature as "必修" | "选修",
+          isInterdisciplinary: c.is_interdisciplinary === 1,
+          assignedTo: (c.assigned_to ?? "interdisciplinary") as
+            | "interdisciplinary"
+            | "elective",
         })
       );
     const plannedManual = plannedManualCourses
@@ -161,6 +192,10 @@ export function computeRequirementRows(
           plannedTerm: c.planned_term,
           categoryCode: c.category_code,
           courseNature: c.course_nature as "必修" | "选修",
+          isInterdisciplinary: c.is_interdisciplinary === 1,
+          assignedTo: (c.assigned_to ?? "interdisciplinary") as
+            | "interdisciplinary"
+            | "elective",
         })
       );
     const plannedCourses = [
@@ -187,18 +222,23 @@ export function computeRequirementRows(
 }
 
 /**
- * 根据要求行筛选课程归属。
+ * 根据要求行筛选课程归属，并尊重用户的"二选一"覆盖：
  *  - required → 该 category 下 course_nature='必修'
- *  - elective → 该 category 下 course_nature='选修' 或 '跨专业'（跨专业课按选修计入所在板块）
- *               并排除标记为"经法管融通"的课（避免与 interdisciplinary 行重复计分）
- *  - interdisciplinary → 任意板块下 course_category 含"经法管融通"的课（独占归属）
+ *  - elective → 该 category 下选修/跨专业；默认排除经法管融通课，
+ *               但若用户把某门经法管融通课的 assignment 显式设为 'elective'，
+ *               则把它纳入"原属板块·选修"
+ *  - interdisciplinary → 所有 isInterdisciplinary 的课，
+ *               但 assignment='elective' 的会被排除（已搬到选修桶）
  */
 function matchCourses(
   req: ProgramRequirement,
-  courses: CourseWithCategory[]
+  courses: CourseWithCategory[],
+  assignments: CreditAssignmentMap
 ): CourseWithCategory[] {
   if (req.requirement_type === "interdisciplinary") {
-    return courses.filter((c) => isInterdisciplinary(c));
+    return courses.filter(
+      (c) => isInterdisciplinary(c) && assignmentOf(c, assignments) !== "elective"
+    );
   }
   if (req.requirement_type === "required") {
     return courses.filter(
@@ -206,42 +246,67 @@ function matchCourses(
         c.category_code === req.category_code && c.course_nature === "必修"
     );
   }
-  // elective：把"选修"和"跨专业"都归入；同时排除经法管融通（已被独立要求承接）
-  return courses.filter(
-    (c) =>
-      c.category_code === req.category_code &&
-      (c.course_nature === "选修" || c.course_nature === "跨专业") &&
-      !isInterdisciplinary(c)
-  );
+  // elective
+  return courses.filter((c) => {
+    if (c.category_code !== req.category_code) return false;
+    const isElectiveLike =
+      c.course_nature === "选修" || c.course_nature === "跨专业";
+    if (!isElectiveLike) return false;
+    if (isInterdisciplinary(c)) {
+      // 仅当用户明确把这门课切到 elective 时才纳入
+      return assignmentOf(c, assignments) === "elective";
+    }
+    return true;
+  });
 }
 
 function matchManualCourse(req: ProgramRequirement, c: SemesterCourse): boolean {
   if (!c.category_code || !c.course_nature) return false;
-  if (req.requirement_type === "interdisciplinary") return false;
+  const isInter = c.is_interdisciplinary === 1;
+  const inter = c.assigned_to ?? "interdisciplinary";
+
+  if (req.requirement_type === "interdisciplinary") {
+    // 经法管融通桶：仅收 is_interdisciplinary=1 且 assigned_to != elective 的手动课
+    return isInter && inter !== "elective";
+  }
   if (req.requirement_type === "required") {
     return c.category_code === req.category_code && c.course_nature === "必修";
   }
-  return c.category_code === req.category_code && c.course_nature === "选修";
+  // elective
+  if (c.category_code !== req.category_code) return false;
+  if (c.course_nature !== "选修") return false;
+  if (isInter) return inter === "elective"; // 经融课仅在被切到 elective 时入选修桶
+  return true;
 }
 
 function matchPersonalPlanManual(
   req: ProgramRequirement,
   c: PersonalPlanItem
 ): boolean {
-  if (req.requirement_type === "interdisciplinary") return false;
+  const isInter = c.is_interdisciplinary === 1;
+  const inter = c.assigned_to ?? "interdisciplinary";
+
+  if (req.requirement_type === "interdisciplinary") {
+    return isInter && inter !== "elective";
+  }
   if (req.requirement_type === "required") {
     return c.category_code === req.category_code && c.course_nature === "必修";
   }
-  return c.category_code === req.category_code && c.course_nature === "选修";
+  if (c.category_code !== req.category_code) return false;
+  if (c.course_nature !== "选修") return false;
+  if (isInter) return inter === "elective";
+  return true;
 }
 
 function isInterdisciplinary(c: CourseWithCategory): boolean {
   return !!(c.course_category && c.course_category.includes("经法管融通"));
 }
 
-function defaultPlannedTerm(c: CourseWithCategory): number {
+function defaultPlannedTerm(c: CourseWithCategory): number | null {
   const parsed = parseOfferedTerm(c.offered_term);
-  return parsed.primary ?? 8;
+  // 灵活课（A/null/1-8）→ null = 归入"待安排"
+  if (parsed.isFlexible) return null;
+  return parsed.primary;
 }
 
 function round1(n: number) {
