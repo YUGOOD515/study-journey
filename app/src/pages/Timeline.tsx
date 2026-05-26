@@ -13,6 +13,7 @@ import type {
   PersonalPlanItem,
   ProgramRequirement,
   SemesterCourse,
+  TrashItem,
 } from "../types";
 import { CourseCard } from "../components/CourseCard";
 import { ManualCourseCard } from "../components/ManualCourseCard";
@@ -44,27 +45,7 @@ interface PlannedOfficial {
   warning: string | null;
 }
 
-const DRAWER_OPEN_KEY = "study-journey:drawer-open";
-type DrawerState = { official: boolean; personal: boolean };
-
-function loadDrawerState(): DrawerState {
-  if (typeof window === "undefined") {
-    return { official: false, personal: true };
-  }
-  try {
-    const raw = window.localStorage.getItem(DRAWER_OPEN_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      return {
-        official: !!parsed.official,
-        personal: parsed.personal !== false,
-      };
-    }
-  } catch {
-    // ignore
-  }
-  return { official: false, personal: true };
-}
+type ActiveDrawer = "pending" | "trash" | null;
 
 export default function Timeline() {
   const [courses, setCourses] = useState<CourseWithCategory[]>([]);
@@ -80,7 +61,8 @@ export default function Timeline() {
   const [addTerm, setAddTerm] = useState<number | null | "drawer">(null);
   const [dragging, setDragging] = useState<DragPayload | null>(null);
   const [hint, setHint] = useState<string | null>(null);
-  const [drawerOpen, setDrawerOpen] = useState<DrawerState>(loadDrawerState);
+  const [trashItems, setTrashItems] = useState<TrashItem[]>([]);
+  const [activeDrawer, setActiveDrawer] = useState<ActiveDrawer>(null);
 
   useEffect(() => {
     Promise.all([
@@ -88,12 +70,14 @@ export default function Timeline() {
       api.programRequirements(),
       api.semesterCourses(),
       api.personalPlan(),
+      api.trash(),
     ])
-      .then(([c, r, d, p]) => {
+      .then(([c, r, d, p, t]) => {
         setCourses(c);
         setReqs(r);
         setDone(d);
         setPersonalPlan(p);
+        setTrashItems(t);
       })
       .catch((e) => setErr(String(e)))
       .finally(() => setLoading(false));
@@ -103,17 +87,24 @@ export default function Timeline() {
     saveCourseCardDisplayOptions(displayOptions);
   }, [displayOptions]);
 
-  useEffect(() => {
-    try {
-      window.localStorage.setItem(DRAWER_OPEN_KEY, JSON.stringify(drawerOpen));
-    } catch {
-      // ignore
-    }
-  }, [drawerOpen]);
 
   const refetchPlan = async () => {
-    const p = await api.personalPlan();
+    const [p, t] = await Promise.all([api.personalPlan(), api.trash()]);
     setPersonalPlan(p);
+    setTrashItems(t);
+  };
+
+  const refetchTimelineData = async () => {
+    const [c, d, p, t] = await Promise.all([
+      api.coursesWithCategory(),
+      api.semesterCourses(),
+      api.personalPlan(),
+      api.trash(),
+    ]);
+    setCourses(c);
+    setDone(d);
+    setPersonalPlan(p);
+    setTrashItems(t);
   };
 
   const completedByCode = useMemo(() => {
@@ -330,13 +321,10 @@ export default function Timeline() {
   }
 
   const isPersonal = viewMode === "personal";
-  const drawerIsOpen = isPersonal ? drawerOpen.personal : drawerOpen.official;
-  const toggleDrawer = () =>
-    setDrawerOpen((prev) =>
-      isPersonal
-        ? { ...prev, personal: !prev.personal }
-        : { ...prev, official: !prev.official }
-    );
+  const pendingIsOpen = activeDrawer === "pending";
+  const trashIsOpen = activeDrawer === "trash";
+  const toggleActiveDrawer = (drawer: Exclude<ActiveDrawer, null>) =>
+    setActiveDrawer((current) => (current === drawer ? null : drawer));
 
   const officialDrawerCount = officialBuckets.drawer.length;
   const officialDrawerCredits = officialBuckets.drawer.reduce(
@@ -350,9 +338,44 @@ export default function Timeline() {
   const personalDrawerCredits =
     personalOfficialDrawer.reduce((s, p) => s + p.course.credits, 0) +
     personalManualDrawer.reduce((s, p) => s + p.credits, 0);
+  const trashCount = trashItems.length;
+  const trashCredits = trashItems.reduce((s, item) => s + item.credits, 0);
+
+  const moveOfficialToTrash = async (course: CourseWithCategory) => {
+    if (!window.confirm(`将「${course.course_name}」移入垃圾篓？`)) return;
+    try {
+      await api.trashOfficial(course.course_code);
+      await refetchTimelineData();
+      setHint(`已移入垃圾篓：${course.course_name}`);
+    } catch (e: any) {
+      setHint(String(e?.message ?? e));
+    }
+  };
+
+  const restoreTrashItem = async (item: TrashItem) => {
+    try {
+      await api.restoreTrashItem(item);
+      await refetchTimelineData();
+      setHint(`已恢复：${item.course_name}`);
+    } catch (e: any) {
+      setHint(String(e?.message ?? e));
+    }
+  };
+
+  const permanentlyDeleteTrashItem = async (item: TrashItem) => {
+    const label = item.source === "program" ? "从我的计划中永久移除" : "永久删除";
+    if (!window.confirm(`${label}「${item.course_name}」？此操作无法从垃圾篓恢复。`)) return;
+    try {
+      await api.permanentlyDeleteTrashItem(item);
+      await refetchTimelineData();
+      setHint(`${label}：${item.course_name}`);
+    } catch (e: any) {
+      setHint(String(e?.message ?? e));
+    }
+  };
 
   return (
-    <div className="min-h-screen px-8 py-6">
+    <div className="min-h-screen px-8 py-6 pb-28">
       <header className="flex items-start justify-between gap-6 mb-6">
         <div>
           <h1 className="text-lg text-ink">时间轴</h1>
@@ -408,6 +431,7 @@ export default function Timeline() {
               onStartManualDrag={startManualDrag}
               onDragEnd={() => setDragging(null)}
               onAdd={() => setAddTerm(term)}
+              onDeleteOfficial={moveOfficialToTrash}
               onDeleteManual={async (id) => {
                 await api.deletePersonalPlan(id);
                 await refetchPlan();
@@ -425,58 +449,73 @@ export default function Timeline() {
         )}
       </div>
 
-      <Drawer
-        title="待安排"
-        subtitle={isPersonal ? "灵活课程 / 未安排课程" : "灵活课程（按 offered_term 推断）"}
-        countLabel={
-          isPersonal
-            ? `${personalDrawerCount} 门 · ${round1(personalDrawerCredits)} 学分`
-            : `${officialDrawerCount} 门 · ${round1(officialDrawerCredits)} 学分`
-        }
-        open={drawerIsOpen}
-        onToggle={toggleDrawer}
-        dropActive={isPersonal && dragging != null && dragging.fromTerm != null}
-        onDragOver={
-          isPersonal
-            ? (event) => {
-                if (!dragging || dragging.fromTerm == null) return;
-                event.preventDefault();
-                event.dataTransfer.dropEffect = "move";
-              }
-            : undefined
-        }
-        onDrop={
-          isPersonal
-            ? (event) => {
-                event.preventDefault();
-                void dropOnDrawer();
-              }
-            : undefined
-        }
-      >
-        {isPersonal ? (
-          <PersonalDrawerContent
-            officialItems={personalOfficialDrawer}
-            manualItems={personalManualDrawer}
-            completedByCode={completedByCode}
-            displayOptions={displayOptions}
-            onStartOfficialDrag={startOfficialDrag}
-            onStartManualDrag={startManualDrag}
-            onDragEnd={() => setDragging(null)}
-            onAdd={() => setAddTerm("drawer")}
-            onDeleteManual={async (id) => {
-              await api.deletePersonalPlan(id);
-              await refetchPlan();
-            }}
-          />
-        ) : (
+      {isPersonal ? (
+        <DualDrawer
+          active={activeDrawer}
+          onToggle={toggleActiveDrawer}
+          pendingCountLabel={`${personalDrawerCount} 门 · ${round1(personalDrawerCredits)} 学分`}
+          trashCountLabel={`${trashCount} 门 · ${round1(trashCredits)} 学分`}
+          pendingDropActive={dragging != null && dragging.fromTerm != null}
+          onPendingDragOver={(event) => {
+            if (!dragging || dragging.fromTerm == null) return;
+            event.preventDefault();
+            event.dataTransfer.dropEffect = "move";
+          }}
+          onPendingDrop={(event) => {
+            event.preventDefault();
+            void dropOnDrawer();
+          }}
+          pendingContent={
+            <PersonalDrawerContent
+              officialItems={personalOfficialDrawer}
+              manualItems={personalManualDrawer}
+              completedByCode={completedByCode}
+              displayOptions={displayOptions}
+              onStartOfficialDrag={startOfficialDrag}
+              onStartManualDrag={startManualDrag}
+              onDragEnd={() => setDragging(null)}
+              onAdd={() => setAddTerm("drawer")}
+              onDeleteOfficial={moveOfficialToTrash}
+              onDeleteManual={async (id) => {
+                await api.deletePersonalPlan(id);
+                await refetchPlan();
+              }}
+            />
+          }
+          trashContent={
+            <TrashDrawerContent
+              items={trashItems}
+              onRestore={restoreTrashItem}
+              onPermanentDelete={permanentlyDeleteTrashItem}
+              onRestoreAll={async () => {
+                await api.restoreAllTrash();
+                await refetchTimelineData();
+                setHint("已恢复垃圾篓中的全部课程");
+              }}
+              onEmpty={async () => {
+                if (!window.confirm("清空垃圾篓？官方课程会从我的计划中永久移除，自定义课程会被永久删除。")) return;
+                await api.emptyTrash();
+                await refetchTimelineData();
+                setHint("垃圾篓已清空");
+              }}
+            />
+          }
+        />
+      ) : (
+        <Drawer
+          title="待安排"
+          subtitle="灵活课程（按 offered_term 推断）"
+          countLabel={`${officialDrawerCount} 门 · ${round1(officialDrawerCredits)} 学分`}
+          open={pendingIsOpen}
+          onToggle={() => toggleActiveDrawer("pending")}
+        >
           <OfficialDrawerContent
             courses={officialBuckets.drawer}
             completedByCode={completedByCode}
             displayOptions={displayOptions}
           />
-        )}
-      </Drawer>
+        </Drawer>
+      )}
 
       {addTerm != null && (
         <ManualCourseDialog
@@ -539,6 +578,7 @@ function PersonalTermColumn({
   onStartManualDrag,
   onDragEnd,
   onAdd,
+  onDeleteOfficial,
   onDeleteManual,
 }: {
   term: number;
@@ -558,6 +598,7 @@ function PersonalTermColumn({
   ) => void;
   onDragEnd: () => void;
   onAdd: () => void;
+  onDeleteOfficial: (course: CourseWithCategory) => Promise<void>;
   onDeleteManual: (id: number) => Promise<void>;
 }) {
   const credits =
@@ -591,6 +632,7 @@ function PersonalTermColumn({
           displayOptions={displayOptions}
           onDragStart={(event) => onStartOfficialDrag(event, item)}
           onDragEnd={onDragEnd}
+          onDelete={() => { void onDeleteOfficial(item.course); }}
         />
       ))}
 
@@ -605,7 +647,7 @@ function PersonalTermColumn({
               onDragStart={(event) => onStartManualDrag(event, item)}
               onDragEnd={onDragEnd}
               onDelete={async (id) => {
-                if (!window.confirm(`删除计划课程「${item.course_name}」？`)) return;
+                if (!window.confirm(`将「${item.course_name}」移入垃圾篓？`)) return;
                 await onDeleteManual(id);
               }}
             />
@@ -647,46 +689,347 @@ function Drawer({
   onDrop?: (event: React.DragEvent<HTMLDivElement>) => void;
   children: React.ReactNode;
 }) {
+  const transition =
+    "transform-gpu transition-[opacity,transform,border-color,background-color,box-shadow] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]";
+  const panelClass =
+    "absolute inset-x-0 bottom-14 max-h-[30vh] overflow-hidden rounded-2xl border bg-card/95 backdrop-blur-xl " +
+    transition +
+    " " +
+    (open
+      ? "pointer-events-auto translate-y-0 scale-100 opacity-100"
+      : "pointer-events-none translate-y-4 scale-[0.985] opacity-0") +
+    " " +
+    (dropActive ? "border-brand bg-brand/10" : "border-sub/15");
+
   return (
-    <div
+    <div className="fixed inset-x-6 bottom-5 z-50 pointer-events-none sm:inset-x-8">
+      <div className="relative mx-auto w-full max-w-[1280px]">
+        <div
+          onDragOver={onDragOver}
+          onDrop={onDrop}
+          className={panelClass}
+          style={{
+            boxShadow:
+              "0 24px 70px rgb(var(--shadow-rgb) / var(--shadow-strong)), 0 6px 18px rgb(var(--shadow-rgb) / var(--shadow-soft))",
+          }}
+        >
+          <button
+            type="button"
+            onClick={onToggle}
+            className="flex h-12 w-full items-center justify-between gap-4 border-b border-sub/10 px-4 text-left transition-colors hover:bg-sub/5"
+            aria-expanded={open}
+          >
+            <div className="flex min-w-0 items-center gap-3">
+              <span className="h-1 w-8 rounded-full bg-sub/25" />
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-ink">{title}</span>
+                  <span className="hidden truncate text-[11px] text-sub sm:inline">
+                    {subtitle}
+                  </span>
+                </div>
+                <div className="mt-0.5 text-[10px] text-sub/65">
+                  灵活开课课程暂存在这里；点击标题栏收起
+                </div>
+              </div>
+            </div>
+            <span className="shrink-0 rounded-full border border-sub/10 bg-sub/5 px-2.5 py-1 text-[11px] text-sub tabular-nums">
+              {countLabel}
+            </span>
+          </button>
+          <div className="max-h-[calc(30vh_-_48px)] overflow-y-auto px-3 pb-3 pt-2">
+            {children}
+          </div>
+        </div>
+
+        <div
+          className="absolute bottom-0 left-1/2 flex w-full max-w-[560px] -translate-x-1/2 items-center gap-2 rounded-2xl border border-sub/15 bg-card/95 p-1 backdrop-blur-xl"
+          style={{ boxShadow: "0 16px 40px rgb(var(--shadow-rgb) / var(--shadow-soft))" }}
+        >
+          <DockButton
+            active={open}
+            title={title}
+            countLabel={countLabel}
+            dropActive={dropActive}
+            onClick={onToggle}
+            onDragOver={onDragOver}
+            onDrop={onDrop}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DualDrawer({
+  active,
+  onToggle,
+  pendingCountLabel,
+  trashCountLabel,
+  pendingDropActive,
+  onPendingDragOver,
+  onPendingDrop,
+  pendingContent,
+  trashContent,
+}: {
+  active: ActiveDrawer;
+  onToggle: (drawer: Exclude<ActiveDrawer, null>) => void;
+  pendingCountLabel: string;
+  trashCountLabel: string;
+  pendingDropActive?: boolean;
+  onPendingDragOver?: React.DragEventHandler;
+  onPendingDrop?: React.DragEventHandler;
+  pendingContent: React.ReactNode;
+  trashContent: React.ReactNode;
+}) {
+  const isPending = active === "pending";
+  const isTrash = active === "trash";
+  const isOpen = active != null;
+  const transition =
+    "transform-gpu transition-[opacity,transform,border-color,background-color,box-shadow] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]";
+  const panelClass =
+    "absolute inset-x-0 bottom-14 max-h-[30vh] overflow-hidden rounded-2xl border bg-card/95 backdrop-blur-xl " +
+    transition +
+    " " +
+    (isOpen
+      ? "pointer-events-auto translate-y-0 scale-100 opacity-100"
+      : "pointer-events-none translate-y-4 scale-[0.985] opacity-0") +
+    " " +
+    (pendingDropActive && isPending ? "border-brand bg-brand/10" : "border-sub/15");
+
+  const title = isTrash ? "垃圾篓" : "待安排";
+  const subtitle = isTrash
+    ? "可恢复，也可永久删除"
+    : "灵活课程 / 未安排课程";
+  const countLabel = isTrash ? trashCountLabel : pendingCountLabel;
+
+  return (
+    <div className="fixed inset-x-6 bottom-5 z-50 pointer-events-none sm:inset-x-8">
+      <div className="relative mx-auto w-full max-w-[1280px]">
+        <div
+          onDragOver={isPending ? onPendingDragOver : undefined}
+          onDrop={isPending ? onPendingDrop : undefined}
+          className={panelClass}
+          style={{
+            boxShadow:
+              "0 24px 70px rgb(var(--shadow-rgb) / var(--shadow-strong)), 0 6px 18px rgb(var(--shadow-rgb) / var(--shadow-soft))",
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => onToggle(isTrash ? "trash" : "pending")}
+            className="flex h-12 w-full items-center justify-between gap-4 border-b border-sub/10 px-4 text-left transition-colors hover:bg-sub/5"
+            aria-expanded={isOpen}
+          >
+            <div className="flex min-w-0 items-center gap-3">
+              <span className="h-1 w-8 rounded-full bg-sub/25" />
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-ink">{title}</span>
+                  <span className="hidden truncate text-[11px] text-sub sm:inline">
+                    {subtitle}
+                  </span>
+                </div>
+                <div className="mt-0.5 text-[10px] text-sub/65">
+                  {isTrash ? "恢复后回到原位置；官方课永久删除为永久隐藏" : "拖入此处可暂存；点击标题栏收起"}
+                </div>
+              </div>
+            </div>
+            <span className="shrink-0 rounded-full border border-sub/10 bg-sub/5 px-2.5 py-1 text-[11px] text-sub tabular-nums">
+              {countLabel}
+            </span>
+          </button>
+          <div className="max-h-[calc(30vh_-_48px)] overflow-y-auto px-3 pb-3 pt-2">
+            {isTrash ? trashContent : pendingContent}
+          </div>
+        </div>
+
+        <div
+          className="absolute bottom-0 left-1/2 flex w-full max-w-[560px] -translate-x-1/2 items-center gap-2 rounded-2xl border border-sub/15 bg-card/95 p-1 backdrop-blur-xl"
+          style={{ boxShadow: "0 16px 40px rgb(var(--shadow-rgb) / var(--shadow-soft))" }}
+        >
+          <DockButton
+            active={isPending}
+            title="待安排"
+            countLabel={pendingCountLabel}
+            dropActive={pendingDropActive}
+            onClick={() => onToggle("pending")}
+            onDragOver={onPendingDragOver}
+            onDrop={onPendingDrop}
+          />
+          <DockButton
+            active={isTrash}
+            title="垃圾篓"
+            countLabel={trashCountLabel}
+            onClick={() => onToggle("trash")}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DockButton({
+  active,
+  title,
+  countLabel,
+  dropActive,
+  onClick,
+  onDragOver,
+  onDrop,
+}: {
+  active: boolean;
+  title: string;
+  countLabel: string;
+  dropActive?: boolean;
+  onClick: () => void;
+  onDragOver?: React.DragEventHandler;
+  onDrop?: React.DragEventHandler;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
       onDragOver={onDragOver}
       onDrop={onDrop}
       className={
-        "mt-2 rounded-lg border bg-card transition-colors " +
-        (dropActive
-          ? "border-brand bg-brand/5"
-          : "border-dashed border-sub/30")
+        "pointer-events-auto flex h-9 min-w-0 flex-1 items-center justify-between gap-2 rounded-xl px-3 text-left text-xs transition-[background-color,border-color,color,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] hover:-translate-y-0.5 " +
+        (active
+          ? "bg-sub/10 text-ink"
+          : dropActive
+          ? "bg-brand/10 text-brand"
+          : "text-sub hover:bg-sub/5 hover:text-ink")
       }
+      aria-pressed={active}
     >
-      <button
-        type="button"
-        onClick={onToggle}
-        className="w-full flex items-center justify-between px-4 py-2 text-left hover:bg-sub/5 transition-colors rounded-t-lg"
-      >
-        <div className="flex items-baseline gap-3">
-          <span className="text-sm text-ink flex items-center gap-1.5">
-            <span
-              className={
-                "inline-block transition-transform " +
-                (open ? "rotate-90" : "")
-              }
-              style={{ fontSize: 10 }}
-            >
-              ▶
-            </span>
-            {title}
-          </span>
-          <span className="text-[11px] text-sub">{subtitle}</span>
+      <span className="flex min-w-0 items-center gap-2">
+        <span className="h-1 w-6 rounded-full bg-sub/25" />
+        <span className="shrink-0 text-sm text-ink">{title}</span>
+      </span>
+      <span className="truncate text-[11px] tabular-nums">{countLabel}</span>
+    </button>
+  );
+}
+
+function TrashDrawerContent({
+  items,
+  onRestore,
+  onPermanentDelete,
+  onRestoreAll,
+  onEmpty,
+}: {
+  items: TrashItem[];
+  onRestore: (item: TrashItem) => Promise<void>;
+  onPermanentDelete: (item: TrashItem) => Promise<void>;
+  onRestoreAll: () => Promise<void>;
+  onEmpty: () => Promise<void>;
+}) {
+  if (items.length === 0) {
+    return (
+      <div className="rounded-lg border border-dashed border-sub/20 px-3 py-3 text-center text-[11px] italic text-sub/60">
+        垃圾篓为空
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center justify-between gap-3">
+        <div className="text-[11px] text-sub">
+          删除的课程暂存在这里。恢复后会回到原计划学期或待安排状态。
         </div>
-        <span className="text-[11px] text-sub tabular-nums">{countLabel}</span>
-      </button>
-      {open && (
-        <div className="px-4 pb-4 pt-1 max-h-[280px] overflow-y-auto">
-          {children}
+        <div className="flex shrink-0 items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => { void onRestoreAll(); }}
+            className="h-7 rounded-md border border-sub/15 px-2.5 text-[11px] text-sub transition-colors hover:border-sub/35 hover:bg-sub/5 hover:text-ink"
+          >
+            全部恢复
+          </button>
+          <button
+            type="button"
+            onClick={() => { void onEmpty(); }}
+            className="h-7 rounded-md border border-sub/15 px-2.5 text-[11px] text-sub transition-colors hover:border-brand/35 hover:bg-brand/10 hover:text-brand"
+          >
+            清空
+          </button>
         </div>
-      )}
+      </div>
+      <DrawerCourseGrid>
+        {items.map((item) => (
+          <DrawerCourseItem key={`${item.source}-${item.id}-${item.course_code ?? "custom"}`}>
+            <TrashCourseCard
+              item={item}
+              onRestore={() => onRestore(item)}
+              onPermanentDelete={() => onPermanentDelete(item)}
+            />
+          </DrawerCourseItem>
+        ))}
+      </DrawerCourseGrid>
     </div>
   );
+}
+
+function TrashCourseCard({
+  item,
+  onRestore,
+  onPermanentDelete,
+}: {
+  item: TrashItem;
+  onRestore: () => Promise<void>;
+  onPermanentDelete: () => Promise<void>;
+}) {
+  const style = CATEGORY_STYLE[item.category_code];
+  const isRequired = item.course_nature === "必修";
+  return (
+    <div
+      className="rounded-md px-2.5 py-2 text-[11px] leading-tight"
+      style={{
+        backgroundColor: isRequired ? style.bgSoft : style.bgGhost,
+        border: `1px dashed ${style.border}`,
+      }}
+    >
+      <div className="text-[9px] text-sub/80 tabular-nums">
+        {item.source === "program" ? item.course_code : "自定义"}
+      </div>
+      <div className="mt-0.5 font-medium" style={{ color: style.text }}>
+        {item.course_name}
+      </div>
+      <div className="mt-1 flex items-center justify-between text-[10px]">
+        <span className="tabular-nums" style={{ color: style.text }}>
+          {item.credits} 学分
+        </span>
+        <span className="text-sub">{item.course_nature}</span>
+      </div>
+      <div className="mt-1 text-[10px] text-sub/70">
+        {item.planned_term == null ? "原位置：待安排" : `原位置：第 ${item.planned_term} 学期`}
+      </div>
+      <div className="mt-2 flex gap-1.5">
+        <button
+          type="button"
+          onClick={() => { void onRestore(); }}
+          className="h-6 flex-1 rounded-md border border-sub/15 bg-card/70 text-[10px] text-sub transition-colors hover:border-sub/35 hover:text-ink"
+        >
+          恢复
+        </button>
+        <button
+          type="button"
+          onClick={() => { void onPermanentDelete(); }}
+          className="h-6 flex-1 rounded-md border border-sub/15 bg-card/70 text-[10px] text-sub transition-colors hover:border-brand/35 hover:text-brand"
+        >
+          永久删除
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function DrawerCourseGrid({ children }: { children: React.ReactNode }) {
+  return <div className="flex flex-wrap content-start gap-1.5">{children}</div>;
+}
+
+function DrawerCourseItem({ children }: { children: React.ReactNode }) {
+  return <div className="w-[180px] shrink-0">{children}</div>;
 }
 
 function OfficialDrawerContent({
@@ -706,19 +1049,17 @@ function OfficialDrawerContent({
     );
   }
   return (
-    <div
-      className="grid gap-1.5"
-      style={{ gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))" }}
-    >
+    <DrawerCourseGrid>
       {courses.map((course) => (
-        <CourseCard
-          key={`official-drawer-${course.course_code}`}
-          course={course}
-          completedScore={completedByCode.get(course.course_code)}
-          displayOptions={displayOptions}
-        />
+        <DrawerCourseItem key={`official-drawer-${course.course_code}`}>
+          <CourseCard
+            course={course}
+            completedScore={completedByCode.get(course.course_code)}
+            displayOptions={displayOptions}
+          />
+        </DrawerCourseItem>
       ))}
-    </div>
+    </DrawerCourseGrid>
   );
 }
 
@@ -731,6 +1072,7 @@ function PersonalDrawerContent({
   onStartManualDrag,
   onDragEnd,
   onAdd,
+  onDeleteOfficial,
   onDeleteManual,
 }: {
   officialItems: PlannedOfficial[];
@@ -747,52 +1089,53 @@ function PersonalDrawerContent({
   ) => void;
   onDragEnd: () => void;
   onAdd: () => void;
+  onDeleteOfficial: (course: CourseWithCategory) => Promise<void>;
   onDeleteManual: (id: number) => Promise<void>;
 }) {
   const empty = officialItems.length === 0 && manualItems.length === 0;
   return (
     <div className="flex flex-col gap-2">
       {empty && (
-        <div className="text-[11px] text-sub/60 italic py-4 text-center border border-dashed border-sub/20 rounded-md">
+        <div className="rounded-lg border border-dashed border-sub/20 px-3 py-3 text-center text-[11px] italic text-sub/60">
           把课程拖到这里 = 放入待安排；或点下方按钮直接添加
         </div>
       )}
       {!empty && (
-        <div
-          className="grid gap-1.5"
-          style={{ gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))" }}
-        >
+        <DrawerCourseGrid>
           {officialItems.map((item) => (
-            <CourseCard
-              key={`personal-drawer-${item.course.course_code}`}
-              course={item.course}
-              completedScore={completedByCode.get(item.course.course_code)}
-              draggable
-              displayOptions={displayOptions}
-              onDragStart={(event) => onStartOfficialDrag(event, item)}
-              onDragEnd={onDragEnd}
-            />
+            <DrawerCourseItem key={`personal-drawer-${item.course.course_code}`}>
+              <CourseCard
+                course={item.course}
+                completedScore={completedByCode.get(item.course.course_code)}
+                draggable
+                displayOptions={displayOptions}
+                onDragStart={(event) => onStartOfficialDrag(event, item)}
+                onDragEnd={onDragEnd}
+                onDelete={() => { void onDeleteOfficial(item.course); }}
+              />
+            </DrawerCourseItem>
           ))}
           {manualItems.map((item) => (
-            <ManualCourseCard
-              key={`drawer-manual-${item.id}`}
-              course={item}
-              draggable
-              displayOptions={displayOptions}
-              onDragStart={(event) => onStartManualDrag(event, item)}
-              onDragEnd={onDragEnd}
-              onDelete={async (id) => {
-                if (!window.confirm(`删除计划课程「${item.course_name}」？`)) return;
-                await onDeleteManual(id);
-              }}
-            />
+            <DrawerCourseItem key={`drawer-manual-${item.id}`}>
+              <ManualCourseCard
+                course={item}
+                draggable
+                displayOptions={displayOptions}
+                onDragStart={(event) => onStartManualDrag(event, item)}
+                onDragEnd={onDragEnd}
+                onDelete={async (id) => {
+                  if (!window.confirm(`将「${item.course_name}」移入垃圾篓？`)) return;
+                  await onDeleteManual(id);
+                }}
+              />
+            </DrawerCourseItem>
           ))}
-        </div>
+        </DrawerCourseGrid>
       )}
       <button
         type="button"
         onClick={onAdd}
-        className="self-start h-8 px-3 rounded-md border border-dashed border-sub/25 text-[11px] text-sub hover:text-ink hover:border-sub/45 hover:bg-sub/5 transition-colors"
+        className="h-7 self-start rounded-md border border-dashed border-sub/25 px-3 text-[11px] text-sub transition-colors hover:border-sub/45 hover:bg-sub/5 hover:text-ink"
       >
         + 添加课程到待安排
       </button>

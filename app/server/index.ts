@@ -64,6 +64,18 @@ function isInterdisciplinaryFromRow(row: any): number {
   return sub.includes("经法管融通") || countTo ? 1 : 0;
 }
 
+function programActiveWhere(alias = "pc"): string {
+  return `${alias}.is_deleted = 0 AND ${alias}.is_permanently_deleted = 0`;
+}
+
+function customActiveWhere(alias = "pc"): string {
+  return `${alias}.is_deleted = 0`;
+}
+
+function nowSql(): string {
+  return "datetime('now', 'localtime')";
+}
+
 function buildCustomCode(): string {
   const now = new Date();
   const y = now.getFullYear();
@@ -102,7 +114,10 @@ function courseSelectSql(tableName: "plan_program_courses" | "plan_custom_course
       ${alias}.study_status,
       ${tableName === "plan_program_courses" ? `${alias}.planned_term` : `${alias}.term_number`} AS planned_term,
       ${tableName === "plan_program_courses" ? `${alias}.actual_term` : `${alias}.term_number`} AS actual_term,
-      ${alias}.score
+      ${alias}.score,
+      ${alias}.is_deleted,
+      ${tableName === "plan_program_courses" ? `${alias}.is_permanently_deleted` : "0"} AS is_permanently_deleted,
+      ${alias}.deleted_at
     FROM ${tableName} ${alias}
     LEFT JOIN plan_program_courses pre ON pre.course_code = ${alias}.prerequisite_course_code
   `;
@@ -132,13 +147,15 @@ app.get("/api/health", (_req, res) => {
 // 课程基础信息：v2 中培养方案课程来自 plan_program_courses
 // ─────────────────────────────────────────────
 app.get("/api/courses", (_req, res) => {
-  const rows = db.prepare(`${courseSelectSql("plan_program_courses")} ORDER BY pc.course_code`).all();
+  const rows = db
+    .prepare(`${courseSelectSql("plan_program_courses")} WHERE ${programActiveWhere("pc")} ORDER BY pc.course_code`)
+    .all();
   res.json(rows);
 });
 
 app.get("/api/courses/:code", (req: Request, res: Response) => {
   const row = db
-    .prepare(`${courseSelectSql("plan_program_courses")} WHERE pc.course_code = ?`)
+    .prepare(`${courseSelectSql("plan_program_courses")} WHERE pc.course_code = ? AND ${programActiveWhere("pc")}`)
     .get(String(req.params.code));
   if (!row) {
     res.status(404).json({ error: "未找到该课程" });
@@ -205,9 +222,10 @@ app.get("/api/semester-courses", (_req, res) => {
         0 AS is_interdisciplinary,
         NULL AS assigned_to
       FROM plan_program_courses pc
-      WHERE pc.actual_term IS NOT NULL
+      WHERE ${programActiveWhere("pc")}
+        AND (pc.actual_term IS NOT NULL
          OR pc.score IS NOT NULL
-         OR pc.study_status IN ('正在修读', '已修读', '未通过')
+         OR pc.study_status IN ('正在修读', '已修读', '未通过'))
       `
     )
     .all();
@@ -235,8 +253,9 @@ app.get("/api/semester-courses", (_req, res) => {
           ELSE 'interdisciplinary'
         END AS assigned_to
       FROM plan_custom_courses pc
-      WHERE pc.study_status IN ('正在修读', '已修读', '未通过')
-         OR pc.score IS NOT NULL
+      WHERE ${customActiveWhere("pc")}
+        AND (pc.study_status IN ('正在修读', '已修读', '未通过')
+         OR pc.score IS NOT NULL)
       `
     )
     .all();
@@ -274,7 +293,7 @@ app.post("/api/semester-courses/official", (req: Request, res: Response) => {
         SET actual_term = ?,
             score = ?,
             study_status = ?
-        WHERE course_code = ?
+        WHERE course_code = ? AND is_deleted = 0 AND is_permanently_deleted = 0
         `
       )
       .run(term_number, score ?? null, status, code);
@@ -291,7 +310,7 @@ app.post("/api/semester-courses/official", (req: Request, res: Response) => {
 app.patch("/api/semester-courses/official/:code", (req: Request, res: Response) => {
   const code = String(req.params.code);
   const current: any = db
-    .prepare("SELECT actual_term, planned_term, score FROM plan_program_courses WHERE course_code = ?")
+    .prepare("SELECT actual_term, planned_term, score FROM plan_program_courses WHERE course_code = ? AND is_deleted = 0 AND is_permanently_deleted = 0")
     .get(code);
   if (!current) {
     res.status(404).json({ error: "未找到该培养方案课程" });
@@ -325,7 +344,7 @@ app.patch("/api/semester-courses/official/:code", (req: Request, res: Response) 
         SET actual_term = ?,
             score = ?,
             study_status = ?
-        WHERE course_code = ?
+        WHERE course_code = ? AND is_deleted = 0 AND is_permanently_deleted = 0
         `
       )
       .run(nextActualTerm, nextScore ?? null, status, code);
@@ -339,7 +358,7 @@ app.delete("/api/semester-courses/official/:code", (req: Request, res: Response)
   const code = String(req.params.code);
   try {
     const row: any = db
-      .prepare("SELECT planned_term FROM plan_program_courses WHERE course_code = ?")
+      .prepare("SELECT planned_term FROM plan_program_courses WHERE course_code = ? AND is_deleted = 0 AND is_permanently_deleted = 0")
       .get(code);
     if (!row) {
       res.status(404).json({ error: "未找到该培养方案课程" });
@@ -353,7 +372,7 @@ app.delete("/api/semester-courses/official/:code", (req: Request, res: Response)
         SET actual_term = NULL,
             score = NULL,
             study_status = ?
-        WHERE course_code = ?
+        WHERE course_code = ? AND is_deleted = 0 AND is_permanently_deleted = 0
         `
       )
       .run(status, code);
@@ -468,7 +487,7 @@ app.patch("/api/semester-courses/manual/:id", (req: Request, res: Response) => {
     return;
   }
 
-  const current: any = db.prepare("SELECT * FROM plan_custom_courses WHERE rowid = ?").get(id);
+  const current: any = db.prepare("SELECT * FROM plan_custom_courses WHERE rowid = ? AND is_deleted = 0").get(id);
   if (!current) {
     res.status(404).json({ error: "未找到该自定义课程" });
     return;
@@ -537,7 +556,7 @@ app.patch("/api/semester-courses/manual/:id", (req: Request, res: Response) => {
 
   try {
     const info = db
-      .prepare(`UPDATE plan_custom_courses SET ${sets.join(", ")} WHERE rowid = ?`)
+      .prepare(`UPDATE plan_custom_courses SET ${sets.join(", ")} WHERE rowid = ? AND is_deleted = 0`)
       .run(...params);
     res.json({ ok: true, id, changes: info.changes });
   } catch (e) {
@@ -547,7 +566,15 @@ app.patch("/api/semester-courses/manual/:id", (req: Request, res: Response) => {
 
 app.delete("/api/semester-courses/manual/:id", (req: Request, res: Response) => {
   const id = Number(req.params.id);
-  const info = db.prepare("DELETE FROM plan_custom_courses WHERE rowid = ?").run(id);
+  const info = db
+    .prepare(`
+      UPDATE plan_custom_courses
+      SET is_deleted = 1,
+          deleted_at = ${nowSql()},
+          deleted_note = '已修记录移入垃圾篓'
+      WHERE rowid = ? AND is_deleted = 0
+    `)
+    .run(id);
   if (info.changes === 0) {
     res.status(404).json({ error: "未找到该自定义课程" });
     return;
@@ -584,13 +611,14 @@ app.get("/api/personal-plan", (_req, res) => {
         NULL AS assigned_to
       FROM plan_program_courses pc
       LEFT JOIN plan_program_courses pre ON pre.course_code = pc.prerequisite_course_code
-      WHERE pc.planned_term IS NOT NULL
+      WHERE ${programActiveWhere("pc")}
+        AND (pc.planned_term IS NOT NULL
          OR (
           pc.planned_term IS NULL
           AND pc.actual_term IS NULL
           AND pc.score IS NULL
           AND pc.study_status = '计划修读'
-         )
+         ))
       `
     )
     .all();
@@ -601,7 +629,7 @@ app.get("/api/personal-plan", (_req, res) => {
       SELECT
         pc.rowid AS id,
         'manual' AS item_type,
-        NULL AS course_code,
+        pc.course_code,
         pc.term_number AS planned_term,
         pc.course_name,
         pc.credits,
@@ -626,7 +654,8 @@ app.get("/api/personal-plan", (_req, res) => {
         END AS assigned_to
       FROM plan_custom_courses pc
       LEFT JOIN plan_program_courses pre ON pre.course_code = pc.prerequisite_course_code
-      WHERE pc.study_status = '计划修读'
+      WHERE ${customActiveWhere("pc")}
+        AND pc.study_status = '计划修读'
       `
     )
     .all();
@@ -641,7 +670,7 @@ app.get("/api/personal-plan", (_req, res) => {
 
 function isOfficialCompleted(courseCode: string): boolean {
   const row = db
-    .prepare("SELECT 1 FROM plan_program_courses WHERE course_code = ? AND score IS NOT NULL LIMIT 1")
+    .prepare("SELECT 1 FROM plan_program_courses WHERE course_code = ? AND score IS NOT NULL AND is_deleted = 0 AND is_permanently_deleted = 0 LIMIT 1")
     .get(courseCode);
   return !!row;
 }
@@ -663,7 +692,7 @@ app.post("/api/personal-plan/official", (req: Request, res: Response) => {
   const code = course_code.trim();
   try {
     const current: any = db
-      .prepare("SELECT rowid AS id, actual_term, score FROM plan_program_courses WHERE course_code = ?")
+      .prepare("SELECT rowid AS id, actual_term, score FROM plan_program_courses WHERE course_code = ? AND is_deleted = 0 AND is_permanently_deleted = 0")
       .get(code);
     if (!current) {
       res.status(404).json({ error: "未找到该培养方案课程" });
@@ -681,7 +710,7 @@ app.post("/api/personal-plan/official", (req: Request, res: Response) => {
         SET planned_term = ?,
             note = ?,
             study_status = ?
-        WHERE course_code = ?
+        WHERE course_code = ? AND is_deleted = 0 AND is_permanently_deleted = 0
         `
       )
       .run(isNull ? null : planned_term, note ?? null, status, code);
@@ -695,7 +724,7 @@ app.delete("/api/personal-plan/official/:code", (req: Request, res: Response) =>
   const code = String(req.params.code);
   try {
     const current: any = db
-      .prepare("SELECT actual_term, score FROM plan_program_courses WHERE course_code = ?")
+      .prepare("SELECT actual_term, score FROM plan_program_courses WHERE course_code = ? AND is_deleted = 0 AND is_permanently_deleted = 0")
       .get(code);
     if (!current) {
       res.status(404).json({ error: "未找到该培养方案课程" });
@@ -713,7 +742,7 @@ app.delete("/api/personal-plan/official/:code", (req: Request, res: Response) =>
         SET planned_term = NULL,
             study_status = ?,
             note = NULL
-        WHERE course_code = ?
+        WHERE course_code = ? AND is_deleted = 0 AND is_permanently_deleted = 0
         `
       )
       .run(status, code);
@@ -745,7 +774,7 @@ app.patch("/api/personal-plan/:id", (req: Request, res: Response) => {
     return;
   }
 
-  const current: any = db.prepare("SELECT * FROM plan_custom_courses WHERE rowid = ?").get(id);
+  const current: any = db.prepare("SELECT * FROM plan_custom_courses WHERE rowid = ? AND is_deleted = 0").get(id);
   if (!current) {
     res.status(404).json({ error: "未找到该计划记录；官方课程计划请使用 /api/personal-plan/official" });
     return;
@@ -804,7 +833,7 @@ app.patch("/api/personal-plan/:id", (req: Request, res: Response) => {
 
   try {
     const info = db
-      .prepare(`UPDATE plan_custom_courses SET ${sets.join(", ")} WHERE rowid = ?`)
+      .prepare(`UPDATE plan_custom_courses SET ${sets.join(", ")} WHERE rowid = ? AND is_deleted = 0`)
       .run(...params);
     res.json({ ok: true, id, changes: info.changes });
   } catch (e) {
@@ -815,13 +844,192 @@ app.patch("/api/personal-plan/:id", (req: Request, res: Response) => {
 app.delete("/api/personal-plan/:id", (req: Request, res: Response) => {
   const id = Number(req.params.id);
   const info = db
-    .prepare("DELETE FROM plan_custom_courses WHERE rowid = ? AND study_status = '计划修读'")
+    .prepare(`
+      UPDATE plan_custom_courses
+      SET is_deleted = 1,
+          deleted_at = ${nowSql()},
+          deleted_note = '计划课程移入垃圾篓'
+      WHERE rowid = ? AND is_deleted = 0
+    `)
     .run(id);
   if (info.changes === 0) {
     res.status(404).json({ error: "未找到该计划记录" });
     return;
   }
   res.json({ ok: true, changes: info.changes });
+});
+
+// ─────────────────────────────────────────────
+// 垃圾篓：官方课程软删除，自定义课程软删除后可物理删除
+// ─────────────────────────────────────────────
+app.delete("/api/personal-plan/official/:code/trash", (req: Request, res: Response) => {
+  const code = String(req.params.code).trim();
+  const info = db
+    .prepare(`
+      UPDATE plan_program_courses
+      SET is_deleted = 1,
+          deleted_at = ${nowSql()},
+          deleted_note = '培养方案课程移入垃圾篓'
+      WHERE course_code = ? AND is_deleted = 0 AND is_permanently_deleted = 0
+    `)
+    .run(code);
+  if (info.changes === 0) {
+    res.status(404).json({ error: "未找到该培养方案课程" });
+    return;
+  }
+  res.json({ ok: true, changes: info.changes });
+});
+
+app.get("/api/trash", (_req, res) => {
+  const program = db
+    .prepare(`
+      SELECT
+        'program' AS source,
+        pc.rowid AS id,
+        pc.course_code,
+        pc.course_name,
+        pc.credits,
+        pc.category_code,
+        pc.category_name,
+        pc.requirement_type AS course_nature,
+        pc.course_subcategory AS course_category,
+        pc.planned_term,
+        pc.actual_term,
+        pc.score,
+        pc.note,
+        pc.deleted_at,
+        pc.deleted_note
+      FROM plan_program_courses pc
+      WHERE pc.is_deleted = 1 AND pc.is_permanently_deleted = 0
+    `)
+    .all();
+
+  const custom = db
+    .prepare(`
+      SELECT
+        'custom' AS source,
+        pc.rowid AS id,
+        pc.course_code,
+        pc.course_name,
+        pc.credits,
+        pc.category_code,
+        pc.category_name,
+        pc.requirement_type AS course_nature,
+        pc.course_subcategory AS course_category,
+        pc.term_number AS planned_term,
+        pc.term_number AS actual_term,
+        pc.score,
+        pc.note,
+        pc.deleted_at,
+        pc.deleted_note
+      FROM plan_custom_courses pc
+      WHERE pc.is_deleted = 1
+    `)
+    .all();
+
+  const rows = [...program, ...custom].sort((a: any, b: any) => {
+    const ad = String(a.deleted_at ?? "");
+    const bd = String(b.deleted_at ?? "");
+    return bd.localeCompare(ad) || String(a.course_name).localeCompare(String(b.course_name), "zh-Hans-CN");
+  });
+  res.json(rows);
+});
+
+app.post("/api/trash/program/:code/restore", (req: Request, res: Response) => {
+  const code = String(req.params.code).trim();
+  const info = db
+    .prepare(`
+      UPDATE plan_program_courses
+      SET is_deleted = 0,
+          deleted_at = NULL,
+          deleted_note = NULL
+      WHERE course_code = ? AND is_deleted = 1 AND is_permanently_deleted = 0
+    `)
+    .run(code);
+  if (info.changes === 0) {
+    res.status(404).json({ error: "未找到垃圾篓中的培养方案课程" });
+    return;
+  }
+  res.json({ ok: true, changes: info.changes });
+});
+
+app.post("/api/trash/custom/:id/restore", (req: Request, res: Response) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) { res.status(400).json({ error: "id 必须为整数" }); return; }
+  const info = db
+    .prepare(`
+      UPDATE plan_custom_courses
+      SET is_deleted = 0,
+          deleted_at = NULL,
+          deleted_note = NULL
+      WHERE rowid = ? AND is_deleted = 1
+    `)
+    .run(id);
+  if (info.changes === 0) {
+    res.status(404).json({ error: "未找到垃圾篓中的自定义课程" });
+    return;
+  }
+  res.json({ ok: true, changes: info.changes });
+});
+
+app.delete("/api/trash/program/:code", (req: Request, res: Response) => {
+  const code = String(req.params.code).trim();
+  const info = db
+    .prepare(`
+      UPDATE plan_program_courses
+      SET is_deleted = 0,
+          is_permanently_deleted = 1,
+          deleted_at = NULL,
+          deleted_note = NULL
+      WHERE course_code = ? AND is_deleted = 1 AND is_permanently_deleted = 0
+    `)
+    .run(code);
+  if (info.changes === 0) {
+    res.status(404).json({ error: "未找到垃圾篓中的培养方案课程" });
+    return;
+  }
+  res.json({ ok: true, changes: info.changes });
+});
+
+app.delete("/api/trash/custom/:id", (req: Request, res: Response) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) { res.status(400).json({ error: "id 必须为整数" }); return; }
+  const info = db.prepare("DELETE FROM plan_custom_courses WHERE rowid = ? AND is_deleted = 1").run(id);
+  if (info.changes === 0) {
+    res.status(404).json({ error: "未找到垃圾篓中的自定义课程" });
+    return;
+  }
+  res.json({ ok: true, changes: info.changes });
+});
+
+app.post("/api/trash/restore-all", (_req, res) => {
+  const program = db
+    .prepare(`
+      UPDATE plan_program_courses
+      SET is_deleted = 0, deleted_at = NULL, deleted_note = NULL
+      WHERE is_deleted = 1 AND is_permanently_deleted = 0
+    `)
+    .run();
+  const custom = db
+    .prepare(`
+      UPDATE plan_custom_courses
+      SET is_deleted = 0, deleted_at = NULL, deleted_note = NULL
+      WHERE is_deleted = 1
+    `)
+    .run();
+  res.json({ ok: true, changes: Number(program.changes) + Number(custom.changes) });
+});
+
+app.delete("/api/trash/empty", (_req, res) => {
+  const program = db
+    .prepare(`
+      UPDATE plan_program_courses
+      SET is_deleted = 0, is_permanently_deleted = 1, deleted_at = NULL, deleted_note = NULL
+      WHERE is_deleted = 1 AND is_permanently_deleted = 0
+    `)
+    .run();
+  const custom = db.prepare("DELETE FROM plan_custom_courses WHERE is_deleted = 1").run();
+  res.json({ ok: true, changes: Number(program.changes) + Number(custom.changes) });
 });
 
 // ─────────────────────────────────────────────
@@ -836,8 +1044,10 @@ app.get("/api/credit-assignments", (_req, res) => {
         course_code,
         CASE WHEN credit_count_to = '通识教育-选修' THEN 'elective' ELSE 'interdisciplinary' END AS assigned_to
       FROM plan_program_courses
-      WHERE course_subcategory LIKE '%经法管融通%'
-         OR credit_count_to IS NOT NULL
+      WHERE is_deleted = 0
+        AND is_permanently_deleted = 0
+        AND (course_subcategory LIKE '%经法管融通%'
+         OR credit_count_to IS NOT NULL)
       `
     )
     .all();
@@ -854,11 +1064,11 @@ app.put("/api/credit-assignments/:code", (req: Request, res: Response) => {
   const value = assignmentToCreditCountTo(assigned_to);
   try {
     const official = db
-      .prepare("UPDATE plan_program_courses SET credit_count_to = ? WHERE course_code = ?")
+      .prepare("UPDATE plan_program_courses SET credit_count_to = ? WHERE course_code = ? AND is_deleted = 0 AND is_permanently_deleted = 0")
       .run(value, code);
     if (official.changes === 0) {
       const custom = db
-        .prepare("UPDATE plan_custom_courses SET credit_count_to = ? WHERE course_code = ?")
+        .prepare("UPDATE plan_custom_courses SET credit_count_to = ? WHERE course_code = ? AND is_deleted = 0")
         .run(value, code);
       if (custom.changes === 0) {
         res.status(404).json({ error: "未找到该课程" });
@@ -873,8 +1083,8 @@ app.put("/api/credit-assignments/:code", (req: Request, res: Response) => {
 
 app.delete("/api/credit-assignments/:code", (req: Request, res: Response) => {
   const code = String(req.params.code);
-  const official = db.prepare("UPDATE plan_program_courses SET credit_count_to = NULL WHERE course_code = ?").run(code);
-  const custom = db.prepare("UPDATE plan_custom_courses SET credit_count_to = NULL WHERE course_code = ?").run(code);
+  const official = db.prepare("UPDATE plan_program_courses SET credit_count_to = NULL WHERE course_code = ? AND is_deleted = 0 AND is_permanently_deleted = 0").run(code);
+  const custom = db.prepare("UPDATE plan_custom_courses SET credit_count_to = NULL WHERE course_code = ? AND is_deleted = 0").run(code);
   res.json({ ok: true, changes: Number(official.changes) + Number(custom.changes) });
 });
 
@@ -895,7 +1105,7 @@ app.get("/api/categories/:code/courses", (req: Request, res: Response) => {
     .prepare(
       `
       ${courseSelectSql("plan_program_courses")}
-      WHERE pc.category_code = ?
+      WHERE pc.category_code = ? AND ${programActiveWhere("pc")}
       ORDER BY
         CASE pc.requirement_type WHEN '必修' THEN 1 WHEN '选修' THEN 2 WHEN '跨专业' THEN 3 ELSE 9 END,
         pc.course_code
@@ -910,6 +1120,7 @@ app.get("/api/courses-with-category", (_req, res) => {
     .prepare(
       `
       ${courseSelectSql("plan_program_courses")}
+      WHERE ${programActiveWhere("pc")}
       ORDER BY
         CASE pc.category_code
           WHEN 'general_education' THEN 1

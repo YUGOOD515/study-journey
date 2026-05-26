@@ -14,6 +14,8 @@ interface Props {
   displayOptions?: CourseCardDisplayOptions;
   onDragStart?: (event: React.DragEvent<HTMLDivElement>) => void;
   onDragEnd?: () => void;
+  onDelete?: () => void;
+  deleteTitle?: string;
 }
 
 export function CourseCard({
@@ -25,6 +27,8 @@ export function CourseCard({
   displayOptions = DEFAULT_COURSE_CARD_DISPLAY_OPTIONS,
   onDragStart,
   onDragEnd,
+  onDelete,
+  deleteTitle = "移入垃圾篓",
 }: Props) {
   const style = CATEGORY_STYLE[course.category_code];
   const isRequired = course.course_nature === "必修";
@@ -55,7 +59,7 @@ export function CourseCard({
         onMouseEnter={showTip}
         onMouseLeave={() => setTip(null)}
         className={
-          "rounded-md px-2.5 py-2 text-[11px] leading-tight transition-all hover:-translate-y-0.5 hover:shadow-sm " +
+          "relative rounded-md px-2.5 py-2 text-[11px] leading-tight transition-all hover:-translate-y-0.5 hover:shadow-sm " +
           (draggable ? "cursor-grab active:cursor-grabbing" : "cursor-default")
         }
         style={{
@@ -104,6 +108,22 @@ export function CourseCard({
           <div className="mt-1 text-[10px] text-brand leading-snug">
             {warning}
           </div>
+        )}
+        {onDelete && (
+          <button
+            type="button"
+            onMouseDown={(event) => event.stopPropagation()}
+            onClick={(event) => {
+              event.stopPropagation();
+              setTip(null);
+              onDelete();
+            }}
+            className="absolute -right-1.5 -top-1.5 h-4 w-4 rounded-full border border-sub/25 bg-card text-[10px] leading-none text-sub transition-colors hover:border-sub/50 hover:text-ink"
+            title={deleteTitle}
+            aria-label={deleteTitle}
+          >
+            ×
+          </button>
         )}
       </div>
 

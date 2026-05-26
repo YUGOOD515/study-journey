@@ -69,6 +69,44 @@ if (missingTables.length > 0) {
   );
 }
 
+function tableColumns(tableName: string): Set<string> {
+  return new Set(
+    db
+      .prepare(`PRAGMA table_info(${tableName})`)
+      .all()
+      .map((row: any) => String(row.name))
+  );
+}
+
+function addColumnIfMissing(tableName: string, columnName: string, definition: string) {
+  const columns = tableColumns(tableName);
+  if (!columns.has(columnName)) {
+    db.exec(`ALTER TABLE ${tableName} ADD COLUMN ${definition};`);
+  }
+}
+
+function ensureTrashColumns() {
+  for (const table of ["plan_program_courses", "plan_custom_courses"] as const) {
+    addColumnIfMissing(table, "is_deleted", "is_deleted INTEGER NOT NULL DEFAULT 0 CHECK (is_deleted IN (0, 1))");
+    addColumnIfMissing(table, "deleted_at", "deleted_at TEXT");
+    addColumnIfMissing(table, "deleted_note", "deleted_note TEXT");
+  }
+  addColumnIfMissing(
+    "plan_program_courses",
+    "is_permanently_deleted",
+    "is_permanently_deleted INTEGER NOT NULL DEFAULT 0 CHECK (is_permanently_deleted IN (0, 1))"
+  );
+
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_plan_program_courses_trash
+      ON plan_program_courses(is_deleted, is_permanently_deleted, deleted_at);
+    CREATE INDEX IF NOT EXISTS idx_plan_custom_courses_trash
+      ON plan_custom_courses(is_deleted, deleted_at);
+  `);
+}
+
+ensureTrashColumns();
+
 for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"] as const) {
   process.on(sig, () => {
     try {

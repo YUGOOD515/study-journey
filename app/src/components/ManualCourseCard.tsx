@@ -85,7 +85,7 @@ export function ManualCourseCard({
           type="button"
           onClick={() => onDelete(course.id as number)}
           className="absolute -right-1.5 -top-1.5 w-4 h-4 rounded-full bg-card border border-sub/25 text-sub hover:text-ink hover:border-sub/50 transition-colors text-[10px] leading-none"
-          title="删除手动课"
+          title="移入垃圾篓"
         >
           ×
         </button>

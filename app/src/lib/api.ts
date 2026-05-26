@@ -5,6 +5,7 @@ import type {
   PersonalPlanItem,
   ProgramRequirement,
   SemesterCourse,
+  TrashItem,
 } from "../types";
 
 async function getJSON<T>(path: string): Promise<T> {
@@ -39,6 +40,7 @@ export const api = {
     getJSON<SemesterCourse[]>("/api/semester-courses"),
   personalPlan: () =>
     getJSON<PersonalPlanItem[]>("/api/personal-plan"),
+  trash: () => getJSON<TrashItem[]>("/api/trash"),
 
   // ── 官方课（培养方案内）────────────
   upsertOfficial: (input: {
@@ -120,6 +122,12 @@ export const api = {
       "DELETE"
     ),
 
+  trashOfficial: (course_code: string) =>
+    send<{ ok: true; changes: number }>(
+      `/api/personal-plan/official/${encodeURIComponent(course_code)}/trash`,
+      "DELETE"
+    ),
+
   createPersonalManual: (input: {
     /** null = 放进"待安排"抽屉 */
     planned_term: number | null;
@@ -154,6 +162,35 @@ export const api = {
 
   deletePersonalPlan: (id: number) =>
     send<{ ok: true }>(`/api/personal-plan/${id}`, "DELETE"),
+
+  // ── 垃圾篓 ────────────
+  restoreTrashItem: (item: TrashItem) =>
+    item.source === "program" && item.course_code
+      ? send<{ ok: true; changes: number }>(
+          `/api/trash/program/${encodeURIComponent(item.course_code)}/restore`,
+          "POST"
+        )
+      : send<{ ok: true; changes: number }>(
+          `/api/trash/custom/${encodeURIComponent(String(item.id))}/restore`,
+          "POST"
+        ),
+
+  permanentlyDeleteTrashItem: (item: TrashItem) =>
+    item.source === "program" && item.course_code
+      ? send<{ ok: true; changes: number }>(
+          `/api/trash/program/${encodeURIComponent(item.course_code)}`,
+          "DELETE"
+        )
+      : send<{ ok: true; changes: number }>(
+          `/api/trash/custom/${encodeURIComponent(String(item.id))}`,
+          "DELETE"
+        ),
+
+  restoreAllTrash: () =>
+    send<{ ok: true; changes: number }>("/api/trash/restore-all", "POST"),
+
+  emptyTrash: () =>
+    send<{ ok: true; changes: number }>("/api/trash/empty", "DELETE"),
 
   // ── 经法管融通学分归属覆盖 ────────────
   creditAssignments: () =>

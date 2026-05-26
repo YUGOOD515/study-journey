@@ -636,21 +636,13 @@ function ScorePopover({
             if (course.id == null) throw new Error("手动课缺少 id");
             await api.patchManual(course.id, { score: newScore });
           } else {
-            const created = await api.createManual({
+            if (course.id == null) throw new Error("计划课程缺少 id");
+            await api.patchManual(course.id, {
               term_number: plannedTerm,
-              course_name: course.courseName,
-              credits: course.credits,
-              category_code: course.categoryCode,
-              course_nature: courseNature,
               score: newScore,
               note: "由计划转为已修",
-              is_interdisciplinary: course.isInterdisciplinary ? 1 : 0,
-              assigned_to: course.assignedTo ?? "interdisciplinary",
+              course_nature: courseNature,
             });
-            if (!created.ok) throw new Error("手动课写入失败");
-            if (course.id != null) {
-              await api.deletePersonalPlan(course.id);
-            }
           }
         } else {
           if (!course.courseCode) throw new Error("官方课缺少课程号");

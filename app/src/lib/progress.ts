@@ -198,11 +198,13 @@ export function computeRequirementRows(
             | "elective",
         })
       );
+    // 旅迹页只统计真正放在“我的计划”时间轴上的课程。
+    // plannedTerm === null 表示还在“待安排”抽屉，不计入预计学分。
     const plannedCourses = [
       ...plannedOfficial,
       ...plannedManualFromRecords,
       ...plannedManual,
-    ];
+    ].filter((c) => c.plannedTerm != null);
     const plannedCredits = round1(
       plannedCourses.reduce((s, c) => s + c.credits, 0)
     );

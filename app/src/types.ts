@@ -19,6 +19,9 @@ export interface CourseWithCategory {
   course_nature: "必修" | "选修" | "跨专业";
   offered_term: string | null;
   course_category: string | null;
+  is_deleted?: number;
+  is_permanently_deleted?: number;
+  deleted_at?: string | null;
 }
 
 export interface ProgramRequirement {
@@ -74,6 +77,24 @@ export interface PersonalPlanItem {
   /** 仅 item_type='manual' 有效 */
   is_interdisciplinary?: number | null;
   assigned_to?: "interdisciplinary" | "elective" | null;
+}
+
+export interface TrashItem {
+  source: "program" | "custom";
+  id: number;
+  course_code: string | null;
+  course_name: string;
+  credits: number;
+  category_code: CategoryCode;
+  category_name: string;
+  course_nature: "必修" | "选修" | "跨专业";
+  course_category: string | null;
+  planned_term: number | null;
+  actual_term: number | null;
+  score: number | null;
+  note: string | null;
+  deleted_at: string | null;
+  deleted_note: string | null;
 }
 
 export interface CourseCardDisplayOptions {
