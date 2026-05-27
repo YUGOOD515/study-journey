@@ -1,6 +1,6 @@
 # 学旅 app 修改汇总说明
 
-本文用于替代 `app` 目录下分散的多个 `README_*.md`。当前版本以 v2 数据库为基础，前端默认端口为 `6173`，后端默认端口为 `6174`。
+当前版本以 v2 数据库为基础，前端默认端口为 `6173`，后端默认端口为 `6174`。
 
 ## 1. 运行方式
 
@@ -34,20 +34,6 @@ npm run dev
 ../db/course_planner_v2.sqlite
 ```
 
-如果数据库放在其他位置，可以用环境变量覆盖。
-
-Windows PowerShell：
-
-```powershell
-$env:DB_PATH="C:\\path\\to\\course_planner_v2.sqlite"
-npm run dev
-```
-
-macOS / Linux：
-
-```bash
-DB_PATH=/path/to/course_planner_v2.sqlite npm run dev
-```
 
 ## 2. 数据库适配
 
@@ -364,34 +350,4 @@ src/components/CustomSelect.tsx
 ```text
 src/hooks/useHoverIntentTriangle.ts
 src/lib/courseOptions.ts
-```
-
-## 12. 清理建议
-
-如果要减少 `app` 目录下 README 文件数量，可以保留本文件作为汇总说明，并删除历史阶段性说明文件：
-
-```text
-README_BACKEND_V2.md
-README_TRASH_AND_TRAIL.md
-README_HOVER_EDIT.md
-README_HOVER_EDIT_HOTFIX.md
-README_HOVER_BOUNDARY_HOTFIX.md
-README_INTERDISCIPLINARY_ADD_HOTFIX.md
-README_COURSE_EDIT_UNIFIED.md
-README_CUSTOM_DROPDOWN_HOTFIX.md
-README_FLOATING_HINT_TOAST.md
-README_DRAWER_*.md
-README_FLOATING_HINT_STACK_HOTFIX.md
-```
-
-建议最终保留：
-
-```text
-README.md
-```
-
-或者将本文改名为：
-
-```text
-app/README.md
 ```

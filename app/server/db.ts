@@ -107,6 +107,46 @@ function ensureTrashColumns() {
 
 ensureTrashColumns();
 
+function ensureRawExtensionTables() {
+  addColumnIfMissing("raw_term_course_sections", "classroom", "classroom TEXT");
+  addColumnIfMissing("raw_term_course_sections", "group_name", "group_name TEXT");
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS raw_course_catalog_previews (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        academic_year TEXT NOT NULL CHECK (academic_year GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9]'),
+        semester TEXT NOT NULL CHECK (semester IN ('spring', 'fall')),
+        source_file TEXT NOT NULL CHECK (TRIM(source_file) <> ''),
+        source_format TEXT CHECK (source_format IN ('xlsx', 'xls')),
+        source_sheet TEXT,
+        source_row INTEGER NOT NULL CHECK (source_row > 0),
+        ordinal INTEGER,
+        department TEXT,
+        course_code TEXT NOT NULL CHECK (TRIM(course_code) <> ''),
+        course_name TEXT NOT NULL CHECK (TRIM(course_name) <> ''),
+        module_2022 TEXT,
+        module_2024 TEXT,
+        course_category TEXT,
+        course_attribute TEXT,
+        hours REAL CHECK (hours IS NULL OR hours >= 0),
+        credits REAL CHECK (credits IS NULL OR credits >= 0),
+        imported_at TEXT NOT NULL DEFAULT (datetime('now')),
+        note TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_raw_catalog_preview_course_code
+      ON raw_course_catalog_previews(course_code);
+
+    CREATE INDEX IF NOT EXISTS idx_raw_catalog_preview_batch
+      ON raw_course_catalog_previews(academic_year, semester);
+
+    CREATE INDEX IF NOT EXISTS idx_raw_catalog_preview_module_2024
+      ON raw_course_catalog_previews(module_2024);
+  `);
+}
+
+ensureRawExtensionTables();
+
 for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"] as const) {
   process.on(sig, () => {
     try {
