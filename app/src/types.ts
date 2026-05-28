@@ -169,3 +169,30 @@ export interface CreditAssignment {
   course_code: string;
   assigned_to: CreditAssignmentTarget;
 }
+
+export interface ActualCourseMeeting {
+  id: number;
+  batch_id: number;
+  term: number;
+  course_code: string;
+  section_code: string;
+  meeting_no: number;
+  start_week: number;
+  end_week: number;
+  weekday: number;
+  start_period: number;
+  end_period: number;
+  location_text: string | null;
+  course_name: string;
+  teacher: string | null;
+  class_group: string | null;
+  course_nature: string | null;
+  course_attribute: string | null;
+  class_time_raw: string | null;
+  location_raw: string | null;
+  source_sheet: string | null;
+  source_row: number;
+  academic_year: string;
+  semester: string;
+  phase: string;
+}
