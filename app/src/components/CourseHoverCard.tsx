@@ -4,6 +4,7 @@ import { createPortal } from "react-dom";
 import type { CategoryCode, CourseEditDraft, CourseNature, CreditAssignmentTarget, PlanCoursePatch } from "../types";
 import { CATEGORY_STYLE } from "../lib/categoryStyle";
 import { assignmentLabel, canUseInterdisciplinary, categoryNameOf } from "../lib/courseOptions";
+import { formatCredits } from "../lib/credits";
 import { parseOfferedTerm } from "../lib/offeredTerm";
 import { CourseEditFields } from "./CourseEditFields";
 
@@ -220,7 +221,7 @@ export function CourseHoverCard({
             </Row>
           )}
           <Row label="学分">
-            <span className="tabular-nums">{item.credits}</span>
+            <span className="tabular-nums">{formatCredits(item.credits)}</span>
           </Row>
           <Row label="学时">
             <span className="tabular-nums text-sub">

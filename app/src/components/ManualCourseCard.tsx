@@ -6,6 +6,7 @@ import type {
 } from "../types";
 import { CATEGORY_STYLE } from "../lib/categoryStyle";
 import { DEFAULT_COURSE_CARD_DISPLAY_OPTIONS } from "../lib/courseCardDisplay";
+import { formatCredits } from "../lib/credits";
 import { TERM_LABEL } from "../lib/offeredTerm";
 import { CourseHoverCard, type CourseHoverInfo } from "./CourseHoverCard";
 import { useHoverIntentTriangle } from "../hooks/useHoverIntentTriangle";
@@ -104,7 +105,7 @@ export function ManualCourseCard({
           <div className="flex items-center justify-between mt-1 text-[10px]">
             {displayOptions.showCredits ? (
               <span className="tabular-nums" style={{ color: style.text }}>
-                {course.credits} 学分
+                {formatCredits(course.credits)} 学分
               </span>
             ) : (
               <span />

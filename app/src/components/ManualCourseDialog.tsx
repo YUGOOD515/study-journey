@@ -12,6 +12,7 @@ interface Props {
   onSubmit: (input: {
     /** null = 添加到"待安排"抽屉 */
     term_number: number | null;
+    course_code?: string | null;
     course_name: string;
     credits: number;
     category_code: CategoryCode;
@@ -47,6 +48,7 @@ export function ManualCourseDialog({
     score: "",
     note: "我的计划",
   }));
+  const [courseCode, setCourseCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -63,6 +65,7 @@ export function ManualCourseDialog({
     setErr(null);
 
     const courseName = draft.course_name.trim();
+    const normalizedCourseCode = courseCode.trim();
     const credits = Number(draft.credits);
     const lectureHours = Number(draft.lecture_hours);
     const experimentHours = Number(draft.experiment_hours);
@@ -73,6 +76,13 @@ export function ManualCourseDialog({
 
     if (!courseName) {
       setErr("课程名不能为空");
+      return;
+    }
+    if (
+      normalizedCourseCode &&
+      !/^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/.test(normalizedCourseCode)
+    ) {
+      setErr("课程号只能包含英文字母、数字、下划线、短横线和点号，且长度不超过 64");
       return;
     }
     for (const [label, value] of [
@@ -95,6 +105,7 @@ export function ManualCourseDialog({
     try {
       await onSubmit({
         term_number: draft.planned_term,
+        course_code: normalizedCourseCode || null,
         course_name: courseName,
         credits,
         category_code: draft.category_code,
@@ -145,6 +156,16 @@ export function ManualCourseDialog({
         </div>
 
         <form onSubmit={submit} className="space-y-3">
+          <label className="block">
+            <div className="mb-1 text-[11px] text-sub">课程号</div>
+            <input
+              value={courseCode}
+              onChange={(event) => setCourseCode(event.currentTarget.value)}
+              placeholder="不填则自动生成；例如 B0480240"
+              className="w-full rounded-md border border-sub/20 bg-bg px-2.5 py-2 text-xs text-ink outline-none transition-colors placeholder:text-sub/45 focus:border-brand"
+            />
+          </label>
+
           <CourseEditFields
             draft={draft}
             onChange={setDraft}

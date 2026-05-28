@@ -1,7 +1,9 @@
 import type {
   CategoryCode,
+  CourseNature,
   CourseWithCategory,
   CreditAssignment,
+  CreditAssignmentTarget,
   PersonalPlanItem,
   PlanCoursePatch,
   ProgramRequirement,
@@ -9,10 +11,100 @@ import type {
   TrashItem,
 } from "../types";
 
-async function getJSON<T>(path: string): Promise<T> {
-  const r = await fetch(path);
-  if (!r.ok) throw new Error(`${path} → HTTP ${r.status}`);
-  return r.json() as Promise<T>;
+type CourseSource = "program" | "custom";
+type RequirementType = CourseNature | "经法管融通";
+type StudyStatus = "未修读" | "计划修读" | "正在修读" | "已修读" | "未通过";
+type CreditCountTo = "通识教育-选修" | "大类平台-选修";
+type LegacyManualPatch = PlanCoursePatch & { term_number?: number | null };
+
+interface ApiEnvelope<T> {
+  ok: true;
+  data: T;
+  meta?: Record<string, unknown>;
+}
+
+interface ApiErrorEnvelope {
+  ok: false;
+  error: {
+    code: string;
+    message: string;
+    details?: unknown;
+  };
+}
+
+interface CourseDto {
+  source: CourseSource;
+  courseCode: string;
+  sectionCode: string | null;
+  courseName: string;
+  categoryCode: CategoryCode;
+  categoryName: string;
+  requirementType: RequirementType;
+  courseSubcategory: string | null;
+  credits: number;
+  totalHours: number;
+  lectureHours: number;
+  experimentHours: number;
+  extraHours: number;
+  plannedTerm: number | null;
+  actualTerm: number | null;
+  officialTerm: string | null;
+  studyStatus: StudyStatus;
+  score: number | null;
+  creditCountTo: CreditCountTo | null;
+  prerequisiteCourseCode: string | null;
+  prerequisiteCourseName: string | null;
+  isDeleted: boolean;
+  isPermanentlyDeleted: boolean;
+  deletedAt: string | null;
+  deletedNote: string | null;
+  preferenceLevel: number | null;
+  note: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface RequirementDto {
+  categoryCode: string;
+  categoryName: string;
+  requirementTypeCode: "required" | "elective" | "interdisciplinary";
+  requirementName: string;
+  requiredCredits: number;
+  source: string | null;
+  note: string | null;
+}
+
+const customIdByCode = new Map<string, number>();
+const customCodeById = new Map<number, string>();
+const courseCacheByCode = new Map<string, CourseDto>();
+let nextSyntheticCustomId = 1;
+
+async function request<T>(
+  path: string,
+  options: RequestInit = {}
+): Promise<T> {
+  const r = await fetch(path, options);
+  const text = await r.text();
+  const body = text ? JSON.parse(text) : null;
+
+  if (!r.ok) {
+    const err = body as ApiErrorEnvelope | null;
+    const message =
+      err && err.ok === false
+        ? `${err.error.code}: ${err.error.message}`
+        : `${options.method ?? "GET"} ${path} → HTTP ${r.status} ${text}`;
+    throw new Error(message);
+  }
+
+  if (body && typeof body === "object" && "ok" in body) {
+    const envelope = body as ApiEnvelope<T>;
+    return envelope.data;
+  }
+  return body as T;
+}
+
+function getJSON<T>(path: string): Promise<T> {
+  return request<T>(path);
 }
 
 async function send<T>(
@@ -20,59 +112,433 @@ async function send<T>(
   method: "POST" | "PUT" | "PATCH" | "DELETE",
   body?: unknown
 ): Promise<T> {
-  const r = await fetch(path, {
+  return request<T>(path, {
     method,
     headers: body !== undefined ? { "Content-Type": "application/json" } : undefined,
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
-  if (!r.ok) {
-    const text = await r.text().catch(() => "");
-    throw new Error(`${method} ${path} → HTTP ${r.status} ${text}`);
+}
+
+function rememberCourse(course: CourseDto): CourseDto {
+  courseCacheByCode.set(course.courseCode, course);
+  if (course.source === "custom") rememberCustomCode(course.courseCode);
+  return course;
+}
+
+function rememberCourses(courses: CourseDto[]): CourseDto[] {
+  courses.forEach(rememberCourse);
+  return courses;
+}
+
+function rememberCustomCode(code: string): number {
+  const existing = customIdByCode.get(code);
+  if (existing != null) return existing;
+  const id = nextSyntheticCustomId++;
+  customIdByCode.set(code, id);
+  customCodeById.set(id, code);
+  return id;
+}
+
+async function customCodeFromId(id: number): Promise<string> {
+  const cached = customCodeById.get(id);
+  if (cached) return cached;
+
+  const courses = await fetchCourses("source=custom&inTrash=true&limit=1000");
+  for (const course of courses) rememberCourse(course);
+
+  const resolved = customCodeById.get(id);
+  if (!resolved) throw new Error(`找不到自定义课程映射 id=${id}`);
+  return resolved;
+}
+
+async function fetchCourses(query = "limit=1000"): Promise<CourseDto[]> {
+  const data = await getJSON<CourseDto[]>(`/api/courses?${query}`);
+  return rememberCourses(data);
+}
+
+async function getCourse(code: string): Promise<CourseDto> {
+  const cached = courseCacheByCode.get(code);
+  if (cached) return cached;
+  const course = await getJSON<CourseDto>(`/api/courses/${encodeURIComponent(code)}`);
+  return rememberCourse(course);
+}
+
+function visibleNature(requirementType: RequirementType): CourseNature {
+  return requirementType === "经法管融通" ? "选修" : requirementType;
+}
+
+function assignmentToCreditCountTo(
+  assignedTo: CreditAssignmentTarget | undefined | null
+): CreditCountTo {
+  return assignedTo === "elective" ? "通识教育-选修" : "大类平台-选修";
+}
+
+function creditCountToToAssignment(
+  creditCountTo: CreditCountTo | null | undefined
+): CreditAssignmentTarget | null {
+  if (creditCountTo === "通识教育-选修") return "elective";
+  if (creditCountTo === "大类平台-选修") return "interdisciplinary";
+  return null;
+}
+
+function isInterdisciplinary(course: CourseDto): 0 | 1 {
+  return course.requirementType === "经法管融通" ||
+    Boolean(course.courseSubcategory?.includes("经法管融通")) ||
+    Boolean(course.creditCountTo)
+    ? 1
+    : 0;
+}
+
+function toCourseWithCategory(course: CourseDto): CourseWithCategory {
+  rememberCourse(course);
+  return {
+    course_code: course.courseCode,
+    course_name: course.courseName,
+    credits: course.credits,
+    lecture_hours: course.lectureHours,
+    experiment_hours: course.experimentHours,
+    extra_hours: course.extraHours,
+    prerequisite_course_code: course.prerequisiteCourseCode,
+    prerequisite_course_name: course.prerequisiteCourseName,
+    category_code: course.categoryCode,
+    category_name: course.categoryName,
+    course_nature: visibleNature(course.requirementType),
+    offered_term: course.officialTerm,
+    course_category: course.courseSubcategory,
+    planned_term: course.plannedTerm,
+    actual_term: course.actualTerm,
+    study_status: course.studyStatus,
+    score: course.score,
+    note: course.note,
+    credit_count_to: course.creditCountTo,
+    is_interdisciplinary: isInterdisciplinary(course),
+    assigned_to: creditCountToToAssignment(course.creditCountTo),
+    is_deleted: course.isDeleted ? 1 : 0,
+    is_permanently_deleted: course.isPermanentlyDeleted ? 1 : 0,
+    deleted_at: course.deletedAt,
+  };
+}
+
+function toSemesterCourse(course: CourseDto): SemesterCourse | null {
+  const term = course.actualTerm ?? course.plannedTerm;
+  if (term == null) return null;
+  if (
+    course.studyStatus !== "正在修读" &&
+    course.studyStatus !== "已修读" &&
+    course.studyStatus !== "未通过"
+  ) {
+    return null;
   }
-  return r.json() as Promise<T>;
+  return {
+    source: course.source === "program" ? "official" : "manual",
+    id: course.source === "custom" ? rememberCustomCode(course.courseCode) : null,
+    term_number: term,
+    course_code: course.source === "program" ? course.courseCode : course.courseCode,
+    score: course.score,
+    course_name: course.courseName,
+    credits: course.credits,
+    category_code: course.categoryCode,
+    course_nature: visibleNature(course.requirementType),
+    note: course.note,
+    is_interdisciplinary: isInterdisciplinary(course),
+    assigned_to: creditCountToToAssignment(course.creditCountTo),
+    credit_count_to: course.creditCountTo,
+  };
+}
+
+function toPersonalPlanItem(course: CourseDto): PersonalPlanItem | null {
+  if (course.studyStatus !== "计划修读") return null;
+  return {
+    id: course.source === "custom" ? rememberCustomCode(course.courseCode) : stableProgramId(course.courseCode),
+    item_type: course.source === "program" ? "official" : "manual",
+    course_code: course.source === "program" ? course.courseCode : course.courseCode,
+    planned_term: course.plannedTerm,
+    course_name: course.courseName,
+    credits: course.credits,
+    lecture_hours: course.lectureHours,
+    experiment_hours: course.experimentHours,
+    extra_hours: course.extraHours,
+    prerequisite_course_code: course.prerequisiteCourseCode,
+    prerequisite_course_name: course.prerequisiteCourseName,
+    category_code: course.categoryCode,
+    category_name: course.categoryName,
+    course_nature: visibleNature(course.requirementType),
+    offered_term: course.officialTerm,
+    course_category: course.courseSubcategory,
+    score: course.score,
+    note: course.note,
+    is_interdisciplinary: isInterdisciplinary(course),
+    assigned_to: creditCountToToAssignment(course.creditCountTo),
+    credit_count_to: course.creditCountTo,
+  };
+}
+
+function toTrashItem(course: CourseDto): TrashItem {
+  return {
+    source: course.source,
+    id: course.source === "custom" ? rememberCustomCode(course.courseCode) : stableProgramId(course.courseCode),
+    course_code: course.courseCode,
+    course_name: course.courseName,
+    credits: course.credits,
+    category_code: course.categoryCode,
+    category_name: course.categoryName,
+    course_nature: visibleNature(course.requirementType),
+    course_category: course.courseSubcategory,
+    planned_term: course.plannedTerm,
+    actual_term: course.actualTerm,
+    score: course.score,
+    note: course.note,
+    lecture_hours: course.lectureHours,
+    experiment_hours: course.experimentHours,
+    extra_hours: course.extraHours,
+    prerequisite_course_code: course.prerequisiteCourseCode,
+    prerequisite_course_name: course.prerequisiteCourseName,
+    offered_term: course.officialTerm,
+    deleted_at: course.deletedAt,
+    deleted_note: course.deletedNote,
+    is_interdisciplinary: isInterdisciplinary(course),
+    assigned_to: creditCountToToAssignment(course.creditCountTo),
+    credit_count_to: course.creditCountTo,
+  };
+}
+
+function toLegacyRequirement(req: RequirementDto): ProgramRequirement {
+  return {
+    category_code: req.categoryCode,
+    category_name: req.categoryName,
+    requirement_type: req.requirementTypeCode,
+    requirement_name: req.requirementName,
+    required_credits: req.requiredCredits,
+    source: req.source,
+  };
+}
+
+function stableProgramId(code: string): number {
+  let hash = 0;
+  for (let i = 0; i < code.length; i += 1) {
+    hash = (hash * 31 + code.charCodeAt(i)) | 0;
+  }
+  return Math.abs(hash);
+}
+
+function toCreateCustomBody(input: {
+  course_code?: string | null;
+  planned_term?: number | null;
+  term_number?: number | null;
+  course_name: string;
+  credits: number;
+  category_code: CategoryCode;
+  course_nature: CourseNature;
+  lecture_hours?: number;
+  experiment_hours?: number;
+  extra_hours?: number;
+  prerequisite_course_code?: string | null;
+  note?: string | null;
+  is_interdisciplinary?: 0 | 1;
+  assigned_to?: CreditAssignmentTarget;
+}) {
+  const lectureHours = input.lecture_hours ?? 0;
+  const experimentHours = input.experiment_hours ?? 0;
+  const extraHours = input.extra_hours ?? 0;
+  const isInter = input.is_interdisciplinary === 1;
+  return {
+    courseCode: input.course_code?.trim() || null,
+    courseName: input.course_name,
+    categoryCode: input.category_code,
+    requirementType: (isInter ? "经法管融通" : input.course_nature) as RequirementType,
+    courseSubcategory: isInter ? `${categoryName(input.category_code)}（经法管融通）` : null,
+    credits: input.credits,
+    totalHours: lectureHours + experimentHours + extraHours,
+    lectureHours,
+    experimentHours,
+    extraHours,
+    plannedTerm: input.planned_term ?? input.term_number ?? null,
+    creditCountTo: isInter ? assignmentToCreditCountTo(input.assigned_to) : null,
+    prerequisiteCourseCode: input.prerequisite_course_code ?? null,
+    note: input.note ?? null,
+  };
+}
+
+function categoryName(code: CategoryCode): string {
+  const names: Record<CategoryCode, string> = {
+    general_education: "通识教育",
+    major_platform: "大类平台",
+    professional_education: "专业教育",
+    quality_education: "素质教育",
+    practice_education: "实践教育",
+  };
+  return names[code];
+}
+
+function toCoursePatch(patch: PlanCoursePatch, existing?: CourseDto): Record<string, unknown> {
+  const body: Record<string, unknown> = {};
+  if (patch.course_name !== undefined) body.courseName = patch.course_name;
+  if (patch.category_code !== undefined) body.categoryCode = patch.category_code;
+  if (patch.course_nature !== undefined || patch.is_interdisciplinary !== undefined) {
+    const isInter = patch.is_interdisciplinary === 1;
+    body.requirementType = isInter ? "经法管融通" : patch.course_nature ?? visibleNature(existing?.requirementType ?? "选修");
+    body.courseSubcategory = isInter
+      ? `${categoryName((patch.category_code ?? existing?.categoryCode ?? "general_education") as CategoryCode)}（经法管融通）`
+      : null;
+    body.creditCountTo = isInter ? assignmentToCreditCountTo(patch.assigned_to) : null;
+  } else if (patch.assigned_to !== undefined && existing?.requirementType === "经法管融通") {
+    body.creditCountTo = assignmentToCreditCountTo(patch.assigned_to);
+  }
+  if (patch.credits !== undefined) body.credits = patch.credits;
+
+  const hasHours =
+    patch.lecture_hours !== undefined ||
+    patch.experiment_hours !== undefined ||
+    patch.extra_hours !== undefined;
+  if (hasHours) {
+    const lectureHours = patch.lecture_hours ?? existing?.lectureHours ?? 0;
+    const experimentHours = patch.experiment_hours ?? existing?.experimentHours ?? 0;
+    const extraHours = patch.extra_hours ?? existing?.extraHours ?? 0;
+    body.lectureHours = lectureHours;
+    body.experimentHours = experimentHours;
+    body.extraHours = extraHours;
+    body.totalHours = lectureHours + experimentHours + extraHours;
+  }
+
+  if (patch.prerequisite_course_code !== undefined) {
+    body.prerequisiteCourseCode = patch.prerequisite_course_code;
+  }
+  if (patch.note !== undefined) body.note = patch.note;
+  return body;
+}
+
+function hasFieldPatch(body: Record<string, unknown>) {
+  return Object.keys(body).length > 0;
+}
+
+async function applyStatePatch(code: string, patch: PlanCoursePatch): Promise<CourseDto | null> {
+  if (patch.score === undefined && patch.planned_term === undefined) return null;
+
+  const course = await getCourse(code);
+  const term = patch.planned_term !== undefined
+    ? patch.planned_term
+    : course.actualTerm ?? course.plannedTerm;
+
+  if (patch.score !== undefined) {
+    if (term == null) {
+      throw new Error("填写或修改成绩前，需要先设置课程学期");
+    }
+    const studyStatus: StudyStatus =
+      patch.score == null ? "正在修读" : patch.score >= 60 ? "已修读" : "未通过";
+    const updated = await send<CourseDto>(
+      `/api/courses/${encodeURIComponent(code)}/study-record`,
+      "POST",
+      { studyStatus, term, score: patch.score ?? null }
+    );
+    return rememberCourse(updated);
+  }
+
+  const updated = await send<CourseDto>(
+    course.studyStatus === "正在修读" ||
+      course.studyStatus === "已修读" ||
+      course.studyStatus === "未通过"
+      ? `/api/courses/${encodeURIComponent(code)}/study-record`
+      : `/api/courses/${encodeURIComponent(code)}/plan`,
+    "POST",
+    course.studyStatus === "正在修读" ||
+      course.studyStatus === "已修读" ||
+      course.studyStatus === "未通过"
+      ? { studyStatus: course.studyStatus, term, score: course.score }
+      : { term }
+  );
+  return rememberCourse(updated);
+}
+
+async function updateCourse(code: string, patch: PlanCoursePatch): Promise<CourseDto> {
+  const existing = await getCourse(code);
+  const fieldPatch = toCoursePatch(patch, existing);
+  let latest = existing;
+  if (hasFieldPatch(fieldPatch)) {
+    latest = rememberCourse(
+      await send<CourseDto>(`/api/courses/${encodeURIComponent(code)}`, "PATCH", fieldPatch)
+    );
+  }
+  const stateUpdated = await applyStatePatch(code, patch);
+  return stateUpdated ?? latest;
 }
 
 export const api = {
-  coursesWithCategory: () =>
-    getJSON<CourseWithCategory[]>("/api/courses-with-category"),
-  programRequirements: () =>
-    getJSON<ProgramRequirement[]>("/api/program-requirements"),
-  semesterCourses: () =>
-    getJSON<SemesterCourse[]>("/api/semester-courses"),
-  personalPlan: () =>
-    getJSON<PersonalPlanItem[]>("/api/personal-plan"),
-  trash: () => getJSON<TrashItem[]>("/api/trash"),
+  coursesWithCategory: async () => {
+    const courses = await fetchCourses("source=program&limit=1000");
+    return courses.map(toCourseWithCategory);
+  },
 
-  // ── 官方课（培养方案内）────────────
-  upsertOfficial: (input: {
+  programRequirements: async () => {
+    const reqs = await getJSON<RequirementDto[]>("/api/requirements");
+    return reqs.map(toLegacyRequirement);
+  },
+
+  semesterCourses: async () => {
+    const courses = await fetchCourses("status=正在修读,已修读,未通过&limit=1000");
+    return courses.map(toSemesterCourse).filter((x): x is SemesterCourse => x !== null);
+  },
+
+  personalPlan: async () => {
+    const courses = await fetchCourses("status=计划修读&limit=1000");
+    return courses.map(toPersonalPlanItem).filter((x): x is PersonalPlanItem => x !== null);
+  },
+
+  trash: async () => {
+    const courses = await getJSON<CourseDto[]>("/api/trash");
+    return rememberCourses(courses).map(toTrashItem);
+  },
+
+  upsertOfficial: async (input: {
     term_number: number;
     course_code: string;
     score?: number | null;
-  }) => send<{ ok: true }>("/api/semester-courses/official", "POST", input),
+  }) => {
+    const studyStatus: StudyStatus =
+      input.score == null ? "正在修读" : input.score >= 60 ? "已修读" : "未通过";
+    const course = await send<CourseDto>(
+      `/api/courses/${encodeURIComponent(input.course_code)}/study-record`,
+      "POST",
+      { studyStatus, term: input.term_number, score: input.score ?? null }
+    );
+    rememberCourse(course);
+    return { ok: true as const };
+  },
 
-  patchOfficial: (
+  patchOfficial: async (
     course_code: string,
     patch: { term_number?: number; score?: number | null }
-  ) =>
-    send<{ ok: true }>(
-      `/api/semester-courses/official/${encodeURIComponent(course_code)}`,
-      "PATCH",
-      patch
-    ),
+  ) => {
+    const course = await getCourse(course_code);
+    const term = patch.term_number ?? course.actualTerm ?? course.plannedTerm;
+    if (term == null) throw new Error("修改修读记录前，需要先设置课程学期");
+    const score = patch.score !== undefined ? patch.score : course.score;
+    const studyStatus: StudyStatus =
+      score == null ? "正在修读" : score >= 60 ? "已修读" : "未通过";
+    const updated = await send<CourseDto>(
+      `/api/courses/${encodeURIComponent(course_code)}/study-record`,
+      "POST",
+      { studyStatus, term, score: score ?? null }
+    );
+    rememberCourse(updated);
+    return { ok: true as const };
+  },
 
-  deleteOfficial: (course_code: string) =>
-    send<{ ok: true }>(
-      `/api/semester-courses/official/${encodeURIComponent(course_code)}`,
+  deleteOfficial: async (course_code: string) => {
+    const course = await send<CourseDto>(
+      `/api/courses/${encodeURIComponent(course_code)}/study-record?fallback=plan`,
       "DELETE"
-    ),
+    );
+    rememberCourse(course);
+    return { ok: true as const };
+  },
 
-  // ── 手动课（培养方案外）────────────
-  createManual: (input: {
+  createManual: async (input: {
     term_number: number;
+    course_code?: string | null;
     course_name: string;
     credits: number;
     category_code: CategoryCode;
-    course_nature: "必修" | "选修" | "跨专业";
+    course_nature: CourseNature;
     lecture_hours?: number;
     experiment_hours?: number;
     extra_hours?: number;
@@ -80,70 +546,85 @@ export const api = {
     score?: number | null;
     note?: string | null;
     is_interdisciplinary?: 0 | 1;
-    assigned_to?: "interdisciplinary" | "elective";
-  }) =>
-    send<{ ok: true; id: number }>(
-      "/api/semester-courses/manual",
-      "POST",
-      input
-    ),
+    assigned_to?: CreditAssignmentTarget;
+  }) => {
+    const created = rememberCourse(await send<CourseDto>("/api/courses", "POST", toCreateCustomBody(input)));
+    const score = input.score ?? null;
+    const studyStatus: StudyStatus = score == null ? "正在修读" : score >= 60 ? "已修读" : "未通过";
+    rememberCourse(
+      await send<CourseDto>(
+        `/api/courses/${encodeURIComponent(created.courseCode)}/study-record`,
+        "POST",
+        { studyStatus, term: input.term_number, score }
+      )
+    );
+    return { ok: true as const, id: rememberCustomCode(created.courseCode) };
+  },
 
-  patchManual: (
-    id: number,
-    patch: Partial<{
-      term_number: number;
-      course_name: string;
-      credits: number;
-      category_code: CategoryCode;
-      course_nature: "必修" | "选修" | "跨专业";
-      lecture_hours: number;
-      experiment_hours: number;
-      extra_hours: number;
-      prerequisite_course_code: string | null;
-      score: number | null;
-      note: string | null;
-      is_interdisciplinary: 0 | 1;
-      assigned_to: "interdisciplinary" | "elective";
-    }>
-  ) =>
-    send<{ ok: true }>(`/api/semester-courses/manual/${id}`, "PATCH", patch),
+  patchManual: async (id: number, patch: LegacyManualPatch) => {
+    const code = await customCodeFromId(id);
+    await updateCourse(code, {
+      ...patch,
+      planned_term: patch.planned_term ?? patch.term_number,
+    });
+    return { ok: true as const };
+  },
 
-  deleteManual: (id: number) =>
-    send<{ ok: true }>(`/api/semester-courses/manual/${id}`, "DELETE"),
+  deleteManual: async (id: number) => {
+    const code = await customCodeFromId(id);
+    rememberCourse(
+      await send<CourseDto>(`/api/courses/${encodeURIComponent(code)}/trash`, "POST", {
+        note: "手动课程移入垃圾篓",
+      })
+    );
+    return { ok: true as const };
+  },
 
-  // ── 我的计划（不等于已修记录）────────────
-  upsertPersonalOfficial: (input: {
+  upsertPersonalOfficial: async (input: {
     course_code: string;
-    /** null = 放进"待安排"抽屉 */
     planned_term: number | null;
     note?: string | null;
-  }) =>
-    send<{
-      ok: true;
-      id: number | null;
-      course_code: string;
-      planned_term: number | null;
-    }>("/api/personal-plan/official", "POST", input),
+  }) => {
+    const course = await send<CourseDto>(
+      `/api/courses/${encodeURIComponent(input.course_code)}/plan`,
+      "POST",
+      { term: input.planned_term, note: input.note ?? null }
+    );
+    rememberCourse(course);
+    return {
+      ok: true as const,
+      id: null,
+      course_code: input.course_code,
+      planned_term: input.planned_term,
+    };
+  },
 
-  resetPersonalOfficial: (course_code: string) =>
-    send<{ ok: true; changes: number }>(
-      `/api/personal-plan/official/${encodeURIComponent(course_code)}`,
+  resetPersonalOfficial: async (course_code: string) => {
+    const course = await send<CourseDto>(
+      `/api/courses/${encodeURIComponent(course_code)}/plan`,
       "DELETE"
-    ),
+    );
+    rememberCourse(course);
+    return { ok: true as const, changes: 1 };
+  },
 
-  trashOfficial: (course_code: string) =>
-    send<{ ok: true; changes: number }>(
-      `/api/personal-plan/official/${encodeURIComponent(course_code)}/trash`,
-      "DELETE"
-    ),
+  trashOfficial: async (course_code: string) => {
+    const course = await send<CourseDto>(
+      `/api/courses/${encodeURIComponent(course_code)}/trash`,
+      "POST",
+      { note: "培养方案课程移入垃圾篓" }
+    );
+    rememberCourse(course);
+    return { ok: true as const, changes: 1 };
+  },
 
-  createPersonalManual: (input: {
-    /** null = 放进"待安排"抽屉 */
+  createPersonalManual: async (input: {
     planned_term: number | null;
+    course_code?: string | null;
     course_name: string;
     credits: number;
     category_code: CategoryCode;
-    course_nature: "必修" | "选修" | "跨专业";
+    course_nature: CourseNature;
     lecture_hours?: number;
     experiment_hours?: number;
     extra_hours?: number;
@@ -151,99 +632,119 @@ export const api = {
     score?: number | null;
     note?: string | null;
     is_interdisciplinary?: 0 | 1;
-    assigned_to?: "interdisciplinary" | "elective";
-  }) =>
-    send<{ ok: true; id: number }>(
-      "/api/personal-plan/manual",
-      "POST",
-      input
-    ),
-
-  patchPersonalPlan: (
-    id: number,
-    patch: Partial<{
-      /** null = 放进"待安排"抽屉 */
-      planned_term: number | null;
-      course_name: string;
-      credits: number;
-      category_code: CategoryCode;
-      course_nature: "必修" | "选修" | "跨专业";
-      lecture_hours: number;
-      experiment_hours: number;
-      extra_hours: number;
-      prerequisite_course_code: string | null;
-      score: number | null;
-      note: string | null;
-      is_interdisciplinary: 0 | 1;
-      assigned_to: "interdisciplinary" | "elective";
-    }>
-  ) => send<{ ok: true; id: number }>(`/api/personal-plan/${id}`, "PATCH", patch),
-
-  deletePersonalPlan: (id: number) =>
-    send<{ ok: true }>(`/api/personal-plan/${id}`, "DELETE"),
-
-  // ── 垃圾篓 ────────────
-  restoreTrashItem: (item: TrashItem) =>
-    item.source === "program" && item.course_code
-      ? send<{ ok: true; changes: number }>(
-          `/api/trash/program/${encodeURIComponent(item.course_code)}/restore`,
-          "POST"
+    assigned_to?: CreditAssignmentTarget;
+  }) => {
+    const created = rememberCourse(await send<CourseDto>("/api/courses", "POST", toCreateCustomBody(input)));
+    if (input.score != null) {
+      const term = input.planned_term;
+      if (term == null) throw new Error("填写成绩的手动课程必须设置学期");
+      rememberCourse(
+        await send<CourseDto>(
+          `/api/courses/${encodeURIComponent(created.courseCode)}/study-record`,
+          "POST",
+          { studyStatus: input.score >= 60 ? "已修读" : "未通过", term, score: input.score }
         )
-      : send<{ ok: true; changes: number }>(
-          `/api/trash/custom/${encodeURIComponent(String(item.id))}/restore`,
-          "POST"
-        ),
-
-  permanentlyDeleteTrashItem: (item: TrashItem) =>
-    item.source === "program" && item.course_code
-      ? send<{ ok: true; changes: number }>(
-          `/api/trash/program/${encodeURIComponent(item.course_code)}`,
-          "DELETE"
+      );
+    } else {
+      rememberCourse(
+        await send<CourseDto>(
+          `/api/courses/${encodeURIComponent(created.courseCode)}/plan`,
+          "POST",
+          { term: input.planned_term }
         )
-      : send<{ ok: true; changes: number }>(
-          `/api/trash/custom/${encodeURIComponent(String(item.id))}`,
-          "DELETE"
-        ),
+      );
+    }
+    return { ok: true as const, id: rememberCustomCode(created.courseCode) };
+  },
 
-  restoreAllTrash: () =>
-    send<{ ok: true; changes: number }>("/api/trash/restore-all", "POST"),
+  patchPersonalPlan: async (id: number, patch: PlanCoursePatch) => {
+    const code = await customCodeFromId(id);
+    await updateCourse(code, patch);
+    return { ok: true as const, id };
+  },
 
-  emptyTrash: () =>
-    send<{ ok: true; changes: number }>("/api/trash/empty", "DELETE"),
+  deletePersonalPlan: async (id: number) => {
+    const code = await customCodeFromId(id);
+    rememberCourse(
+      await send<CourseDto>(`/api/courses/${encodeURIComponent(code)}/trash`, "POST", {
+        note: "计划课程移入垃圾篓",
+      })
+    );
+    return { ok: true as const };
+  },
 
+  restoreTrashItem: async (item: TrashItem) => {
+    const code = item.course_code ?? (await customCodeFromId(item.id));
+    const course = await send<CourseDto>(
+      `/api/trash/${encodeURIComponent(code)}/restore`,
+      "POST"
+    );
+    rememberCourse(course);
+    return { ok: true as const, changes: 1 };
+  },
 
-  // ── 课程悬浮卡片轻量编辑 ─────────────
-  updateProgramCourse: (course_code: string, patch: PlanCoursePatch) =>
-    send<{ ok: true; changes: number }>(
-      `/api/plan-courses/program/${encodeURIComponent(course_code)}`,
-      "PATCH",
-      patch
-    ),
-
-  updateCustomCourse: (id: number, patch: PlanCoursePatch) =>
-    send<{ ok: true; changes: number }>(
-      `/api/plan-courses/custom/${encodeURIComponent(String(id))}`,
-      "PATCH",
-      patch
-    ),
-
-  // ── 经法管融通学分归属覆盖 ────────────
-  creditAssignments: () =>
-    getJSON<CreditAssignment[]>("/api/credit-assignments"),
-
-  setCreditAssignment: (
-    course_code: string,
-    assigned_to: "interdisciplinary" | "elective"
-  ) =>
-    send<{ ok: true }>(
-      `/api/credit-assignments/${encodeURIComponent(course_code)}`,
-      "PUT",
-      { assigned_to }
-    ),
-
-  resetCreditAssignment: (course_code: string) =>
-    send<{ ok: true }>(
-      `/api/credit-assignments/${encodeURIComponent(course_code)}`,
+  permanentlyDeleteTrashItem: async (item: TrashItem) => {
+    const code = item.course_code ?? (await customCodeFromId(item.id));
+    await send<{ courseCode: string; source: string; status: string }>(
+      `/api/trash/${encodeURIComponent(code)}`,
       "DELETE"
-    ),
+    );
+    return { ok: true as const, changes: 1 };
+  },
+
+  restoreAllTrash: async () => {
+    const result = await send<{ restored: number }>("/api/trash:restore-all", "POST");
+    return { ok: true as const, changes: result.restored };
+  },
+
+  emptyTrash: async () => {
+    const result = await send<{ purged: number }>("/api/trash:empty", "DELETE");
+    return { ok: true as const, changes: result.purged };
+  },
+
+  updateProgramCourse: async (course_code: string, patch: PlanCoursePatch) => {
+    await updateCourse(course_code, patch);
+    return { ok: true as const, changes: 1 };
+  },
+
+  updateCustomCourse: async (id: number, patch: PlanCoursePatch) => {
+    const code = await customCodeFromId(id);
+    await updateCourse(code, patch);
+    return { ok: true as const, changes: 1 };
+  },
+
+  creditAssignments: async () => {
+    const courses = await fetchCourses("requirementType=经法管融通&limit=1000");
+    return courses.map(
+      (course): CreditAssignment => ({
+        course_code: course.courseCode,
+        assigned_to: creditCountToToAssignment(course.creditCountTo) ?? "interdisciplinary",
+      })
+    );
+  },
+
+  setCreditAssignment: async (
+    course_code: string,
+    assigned_to: CreditAssignmentTarget
+  ) => {
+    const code = customIdByCode.has(course_code)
+      ? course_code
+      : customCodeById.get(Number(course_code)) ?? course_code;
+    const course = await send<CourseDto>(
+      `/api/courses/${encodeURIComponent(code)}/credit-assignment`,
+      "POST",
+      { creditCountTo: assignmentToCreditCountTo(assigned_to) }
+    );
+    rememberCourse(course);
+    return { ok: true as const };
+  },
+
+  resetCreditAssignment: async (course_code: string) => {
+    const course = await send<CourseDto>(
+      `/api/courses/${encodeURIComponent(course_code)}/credit-assignment`,
+      "DELETE"
+    );
+    rememberCourse(course);
+    return { ok: true as const };
+  },
 };

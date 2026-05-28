@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { api } from "../lib/api";
 import { CATEGORY_STYLE } from "../lib/categoryStyle";
+import { formatCredits, roundCredits } from "../lib/credits";
 import {
   buildAssignmentMap,
   bundleByCategory,
@@ -80,7 +81,11 @@ export default function Trail() {
     const required = bundles.reduce((s, b) => s + b.totalRequired, 0);
     const earned = bundles.reduce((s, b) => s + b.totalEarned, 0);
     const planned = bundles.reduce((s, b) => s + b.totalPlanned, 0);
-    return { required: round1(required), earned: round1(earned), planned: round1(planned) };
+    return {
+      required: roundCredits(required),
+      earned: roundCredits(earned),
+      planned: roundCredits(planned),
+    };
   }, [bundles]);
 
   const toggle = (key: string) => {
@@ -236,10 +241,10 @@ export default function Trail() {
           <div className="text-sm text-sub">总进度</div>
           <div className="flex items-baseline gap-2">
             <span className="text-3xl text-ink tabular-nums">
-              {overall.earned}
+              {formatCredits(overall.earned)}
             </span>
             <span className="text-sub tabular-nums">
-              / {overall.required} 学分
+              / {formatCredits(overall.required)} 学分
             </span>
             <span className="ml-3 text-xs text-sub tabular-nums">
               ({overallPct.toFixed(1)}%)
@@ -249,7 +254,7 @@ export default function Trail() {
         <div className="flex items-center justify-between mb-2 text-[11px] text-sub">
           <span>我的计划预览</span>
           <span className="tabular-nums">
-            + {overall.planned} 学分，预计 {round1(overall.earned + overall.planned)}
+            + {formatCredits(overall.planned)} 学分，预计 {formatCredits(overall.earned + overall.planned)}
           </span>
         </div>
         <ProgressBar
@@ -323,12 +328,12 @@ function CategoryCard({
           <h2 className="text-base text-ink">{bundle.name}</h2>
         </div>
         <div className="text-xs text-sub tabular-nums">
-          <span className="text-ink text-base mr-1">{bundle.totalEarned}</span>
-          / {bundle.totalRequired} 学分 · {pct.toFixed(1)}%
+          <span className="text-ink text-base mr-1">{formatCredits(bundle.totalEarned)}</span>
+          / {formatCredits(bundle.totalRequired)} 学分 · {pct.toFixed(1)}%
         </div>
       </div>
       <div className="mb-3 text-[11px] text-sub tabular-nums">
-        我的计划预览 + {bundle.totalPlanned} 学分
+        我的计划预览 + {formatCredits(bundle.totalPlanned)} 学分
       </div>
 
       <div className="space-y-3">
@@ -355,14 +360,14 @@ function CategoryCard({
                     </span>
                   </div>
                   <div className="tabular-nums" style={{ color: style.text }}>
-                    {row.earnedCredits}
+                    {formatCredits(row.earnedCredits)}
                     {row.plannedCredits > 0 && (
                       <span className="text-sub/70 ml-1">
-                        +{row.plannedCredits}
+                        +{formatCredits(row.plannedCredits)}
                       </span>
                     )}
                     <span className="text-sub mx-0.5">/</span>
-                    {row.requiredCredits}
+                    {formatCredits(row.requiredCredits)}
                     <span className="text-sub/60 ml-1.5 text-[10px]">
                       {rowPct.toFixed(0)}%
                     </span>
@@ -490,7 +495,7 @@ function ScorePill({
           <span className="px-1 rounded-sm bg-sub/10 text-[9px] text-sub">自</span>
         )}
         <span>{course.courseName}</span>
-        <span className="text-sub/70 tabular-nums">{course.credits}</span>
+        <span className="text-sub/70 tabular-nums">{formatCredits(course.credits)}</span>
         <span
           className="ml-1 pl-1.5 border-l border-sub/25 tabular-nums text-[10px]"
           style={{ color: hasScore ? color : "rgb(var(--sub) / 0.55)" }}
@@ -545,7 +550,7 @@ function PlannedCoursePill({
         title={course.source === "official" ? course.courseCode ?? "" : "计划课程"}
       >
         <span>{course.courseName}</span>
-        <span className="text-sub/70 tabular-nums">{course.credits}</span>
+        <span className="text-sub/70 tabular-nums">{formatCredits(course.credits)}</span>
         <span className="text-sub/55 tabular-nums">
           {course.plannedTerm == null ? "待安排" : TERM_LABEL[course.plannedTerm]}
         </span>
@@ -704,7 +709,7 @@ function ScorePopover({
           {course.courseName}
         </div>
         <div className="text-[10px] text-sub tabular-nums shrink-0">
-          {course.credits} 学分
+          {formatCredits(course.credits)} 学分
         </div>
       </div>
 
@@ -755,8 +760,4 @@ function ScorePopover({
 
 function isPlannedCourse(course: ScoreEditableCourse): course is PlannedCourse {
   return !("score" in course);
-}
-
-function round1(n: number) {
-  return Math.round(n * 10) / 10;
 }
