@@ -8,6 +8,7 @@
  */
 import { useMemo } from "react";
 import { CATEGORY_STYLE } from "../lib/categoryStyle";
+import { formatCredits } from "../lib/credits";
 import type { CategoryCode } from "../types";
 
 export type Assignment = "interdisciplinary" | "elective";
@@ -131,7 +132,7 @@ export function InterdisciplinaryFlow({
             }
           >
             <title>
-              {it.courseName} · {it.credits} 学分 →{" "}
+              {it.courseName} · {formatCredits(it.credits)} 学分 →{" "}
               {it.assignment === "interdisciplinary"
                 ? "经法管融通"
                 : `${CATEGORY_STYLE[it.categoryCode]?.name ?? it.categoryCode}·选修`}
@@ -168,7 +169,7 @@ export function InterdisciplinaryFlow({
               fill={it.isEarned ? "white" : color}
               style={{ pointerEvents: "none" }}
             >
-              {truncate(it.courseName, 6)} · {it.credits}
+              {truncate(it.courseName, 6)} · {formatCredits(it.credits)}
               {it.isEarned ? " ✓" : ""}
             </text>
           </g>
@@ -182,7 +183,7 @@ export function InterdisciplinaryFlow({
         w={BUCKET_W}
         h={BUCKET_H}
         title="大类·经法管融通"
-        subtitle={`${interdisciplinaryTotal.earned}/${interdisciplinaryTotal.required}`}
+        subtitle={`${formatCredits(interdisciplinaryTotal.earned)}/${formatCredits(interdisciplinaryTotal.required)}`}
         active={items.some((it) => it.assignment === "interdisciplinary")}
       />
 
@@ -199,7 +200,7 @@ export function InterdisciplinaryFlow({
             w={BUCKET_W}
             h={BUCKET_H}
             title={b.name}
-            subtitle={`${b.total.earned}/${b.total.required}`}
+            subtitle={`${formatCredits(b.total.earned)}/${formatCredits(b.total.required)}`}
             active={active}
             color={CATEGORY_STYLE[b.code]?.color}
           />

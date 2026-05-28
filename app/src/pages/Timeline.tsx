@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../lib/api";
+import { formatCredits } from "../lib/credits";
 import { parseOfferedTerm, TERM_LABEL } from "../lib/offeredTerm";
 import { CATEGORY_STYLE } from "../lib/categoryStyle";
 import {
@@ -151,7 +152,7 @@ export default function Timeline() {
       const override = overrides.get(c.course_code);
       const plannedTerm = override
         ? override.planned_term // 可能是 null（用户主动放入抽屉）
-        : defaultTerm(c);
+        : c.actual_term ?? c.planned_term ?? defaultTerm(c);
       plannedTermByCode.set(c.course_code, plannedTerm);
     }
 
@@ -177,17 +178,60 @@ export default function Timeline() {
   const manualPlanByTerm = useMemo(() => {
     const byTerm = emptyTermBuckets<PersonalPlanItem>();
     const drawer: PersonalPlanItem[] = [];
+    const seenIds = new Set<number>();
+
     for (const item of personalPlan) {
       if (item.item_type !== "manual") continue;
+      seenIds.add(item.id);
       if (item.planned_term == null) drawer.push(item);
       else byTerm[item.planned_term].push(item);
     }
+
+    // 自定义课程不只存在于“计划修读”里；已修读/正在修读的 custom 课也应该出现在
+    // “我的计划”时间轴上，否则时间轴合计和旅迹页口径会断开。
+    for (const item of done) {
+      if (
+        item.source !== "manual" ||
+        item.id == null ||
+        item.category_code == null ||
+        item.course_nature == null ||
+        seenIds.has(item.id)
+      ) {
+        continue;
+      }
+      const normalized: PersonalPlanItem = {
+        id: item.id,
+        item_type: "manual",
+        course_code: item.course_code,
+        planned_term: item.term_number,
+        course_name: item.course_name,
+        credits: item.credits,
+        lecture_hours: 0,
+        experiment_hours: 0,
+        extra_hours: 0,
+        prerequisite_course_code: null,
+        prerequisite_course_name: null,
+        category_code: item.category_code,
+        category_name: CATEGORY_STYLE[item.category_code]?.name ?? item.category_code,
+        course_nature: item.course_nature,
+        offered_term: null,
+        course_category: null,
+        score: item.score,
+        note: item.note,
+        is_interdisciplinary: item.is_interdisciplinary,
+        assigned_to: item.assigned_to,
+        credit_count_to: item.credit_count_to,
+      };
+      if (normalized.planned_term == null) drawer.push(normalized);
+      else byTerm[normalized.planned_term].push(normalized);
+    }
+
     for (const t of TERMS) {
       byTerm[t].sort((a, b) => a.course_name.localeCompare(b.course_name, "zh"));
     }
     drawer.sort((a, b) => a.course_name.localeCompare(b.course_name, "zh"));
     return { byTerm, drawer };
-  }, [personalPlan]);
+  }, [personalPlan, done]);
 
   const totals = useMemo(() => {
     const requiredTotal = reqs.reduce((s, r) => s + r.required_credits, 0);
@@ -346,8 +390,12 @@ export default function Timeline() {
   const trashCount = trashItems.length;
   const trashCredits = trashItems.reduce((s, item) => s + item.credits, 0);
   const pendingItemCount = isPersonal ? personalDrawerCount : officialDrawerCount;
-  const pendingPanelWidth = getDrawerPanelWidth(pendingItemCount, viewportWidth);
-  const trashPanelWidth = getDrawerPanelWidth(trashCount, viewportWidth);
+  const pendingPanelWidth = getDrawerPanelWidth(
+    pendingItemCount,
+    viewportWidth,
+    isPersonal ? DRAWER_MIN_PANEL_WIDTH : DRAWER_EMPTY_PANEL_WIDTH
+  );
+  const trashPanelWidth = getDrawerPanelWidth(trashCount, viewportWidth, TRASH_DRAWER_MIN_PANEL_WIDTH);
   const pendingDrawerColumns = getDrawerColumns(pendingItemCount, viewportWidth);
   const trashDrawerColumns = getDrawerColumns(trashCount, viewportWidth);
   const anyDrawerOpen = isPersonal ? activeDrawer != null : pendingIsOpen;
@@ -360,6 +408,24 @@ export default function Timeline() {
       setHint(`已移入垃圾篓：${course.course_name}`);
     } catch (e: any) {
       setHint(String(e?.message ?? e));
+    }
+  };
+
+  const dropOnTrash = async () => {
+    if (!dragging || viewMode !== "personal") return;
+    try {
+      if (dragging.kind === "official") {
+        await api.trashOfficial(dragging.courseCode);
+      } else {
+        await api.deletePersonalPlan(dragging.id);
+      }
+      await refetchTimelineData();
+      setActiveDrawer("trash");
+      setHint(`宸茬Щ鍏ュ瀮鍦剧瘬锛?{dragging.courseName}`);
+    } catch (e: any) {
+      setHint(String(e?.message ?? e));
+    } finally {
+      setDragging(null);
     }
   };
 
@@ -475,11 +541,12 @@ export default function Timeline() {
         <DualDrawer
           active={activeDrawer}
           onToggle={toggleActiveDrawer}
-          pendingCountLabel={`${personalDrawerCount} 门 · ${round1(personalDrawerCredits)} 学分`}
-          trashCountLabel={`${trashCount} 门 · ${round1(trashCredits)} 学分`}
+          pendingCountLabel={`${personalDrawerCount} 门 · ${formatCredits(personalDrawerCredits)} 学分`}
+          trashCountLabel={`${trashCount} 门 · ${formatCredits(trashCredits)} 学分`}
           pendingPanelWidth={pendingPanelWidth}
           trashPanelWidth={trashPanelWidth}
           pendingDropActive={dragging != null && dragging.fromTerm != null}
+          trashDropActive={dragging != null}
           onPendingDragOver={(event) => {
             if (!dragging || dragging.fromTerm == null) return;
             event.preventDefault();
@@ -488,6 +555,15 @@ export default function Timeline() {
           onPendingDrop={(event) => {
             event.preventDefault();
             void dropOnDrawer();
+          }}
+          onTrashDragOver={(event) => {
+            if (!dragging) return;
+            event.preventDefault();
+            event.dataTransfer.dropEffect = "move";
+          }}
+          onTrashDrop={(event) => {
+            event.preventDefault();
+            void dropOnTrash();
           }}
           pendingContent={
             <PersonalDrawerContent
@@ -533,7 +609,7 @@ export default function Timeline() {
         <Drawer
           title="待安排"
           subtitle="灵活课程（按 offered_term 推断）"
-          countLabel={`${officialDrawerCount} 门 · ${round1(officialDrawerCredits)} 学分`}
+          countLabel={`${officialDrawerCount} 门 · ${formatCredits(officialDrawerCredits)} 学分`}
           open={pendingIsOpen}
           panelWidth={pendingPanelWidth}
           onToggle={() => toggleActiveDrawer("pending")}
@@ -555,6 +631,7 @@ export default function Timeline() {
           onSubmit={async (input) => {
             await api.createPersonalManual({
               planned_term: input.term_number,
+              course_code: input.course_code,
               course_name: input.course_name,
               credits: input.credits,
               category_code: input.category_code,
@@ -903,7 +980,7 @@ function Drawer({
   const transition =
     "transform-gpu transition-[opacity,transform,border-color,background-color,box-shadow] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]";
   const panelClass =
-    "absolute bottom-14 left-1/2 max-h-[30vh] overflow-hidden rounded-2xl border bg-card/95 backdrop-blur-xl -translate-x-1/2 " +
+    "absolute bottom-14 left-1/2 max-h-[42vh] overflow-hidden rounded-2xl border bg-card/95 backdrop-blur-xl -translate-x-1/2 " +
     transition +
     " " +
     (open
@@ -952,7 +1029,7 @@ function Drawer({
               {countLabel}
             </span>
           </button>
-          <div className="max-h-[calc(30vh_-_48px)] overflow-y-auto overflow-x-hidden px-2.5 pb-2.5 pt-2.5">
+          <div className="max-h-[calc(42vh_-_48px)] overflow-y-auto overflow-x-hidden px-2.5 pb-2.5 pt-2.5">
             {children}
           </div>
         </div>
@@ -984,8 +1061,11 @@ function DualDrawer({
   pendingPanelWidth,
   trashPanelWidth,
   pendingDropActive,
+  trashDropActive,
   onPendingDragOver,
   onPendingDrop,
+  onTrashDragOver,
+  onTrashDrop,
   pendingContent,
   trashContent,
 }: {
@@ -996,8 +1076,11 @@ function DualDrawer({
   pendingPanelWidth: number;
   trashPanelWidth: number;
   pendingDropActive?: boolean;
+  trashDropActive?: boolean;
   onPendingDragOver?: React.DragEventHandler;
   onPendingDrop?: React.DragEventHandler;
+  onTrashDragOver?: React.DragEventHandler;
+  onTrashDrop?: React.DragEventHandler;
   pendingContent: React.ReactNode;
   trashContent: React.ReactNode;
 }) {
@@ -1014,14 +1097,16 @@ function DualDrawer({
   const transition =
     "transform-gpu transition-[opacity,transform,border-color,background-color,box-shadow] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]";
   const panelClass =
-    "absolute bottom-14 left-1/2 max-h-[30vh] overflow-hidden rounded-2xl border bg-card/95 backdrop-blur-xl -translate-x-1/2 " +
+    "absolute bottom-14 left-1/2 max-h-[42vh] overflow-hidden rounded-2xl border bg-card/95 backdrop-blur-xl -translate-x-1/2 " +
     transition +
     " " +
     (isOpen
       ? "pointer-events-auto translate-y-0 scale-100 opacity-100"
       : "pointer-events-none translate-y-4 scale-[0.985] opacity-0") +
     " " +
-    (pendingDropActive && active === "pending" ? "border-brand bg-brand/10" : "border-sub/15");
+    ((pendingDropActive && active === "pending") || (trashDropActive && active === "trash")
+      ? "border-brand bg-brand/10"
+      : "border-sub/15");
 
   const title = isTrash ? "垃圾篓" : "待安排";
   const subtitle = isTrash
@@ -1035,8 +1120,20 @@ function DualDrawer({
       <div className="relative mx-auto w-full max-w-[1280px]">
         <div
           data-timeline-drawer-panel={isOpen ? "active" : undefined}
-          onDragOver={active === "pending" ? onPendingDragOver : undefined}
-          onDrop={active === "pending" ? onPendingDrop : undefined}
+          onDragOver={
+            active === "pending"
+              ? onPendingDragOver
+              : active === "trash"
+              ? onTrashDragOver
+              : undefined
+          }
+          onDrop={
+            active === "pending"
+              ? onPendingDrop
+              : active === "trash"
+              ? onTrashDrop
+              : undefined
+          }
           className={panelClass}
           style={{
             width: `${panelWidth}px`,
@@ -1070,7 +1167,7 @@ function DualDrawer({
               {countLabel}
             </span>
           </button>
-          <div className="max-h-[calc(30vh_-_48px)] overflow-y-auto overflow-x-hidden px-2.5 pb-2.5 pt-2.5">
+          <div className="max-h-[calc(42vh_-_48px)] overflow-y-auto overflow-x-hidden px-2.5 pb-2.5 pt-2.5">
             {isTrash ? trashContent : pendingContent}
           </div>
         </div>
@@ -1092,7 +1189,10 @@ function DualDrawer({
             active={active === "trash"}
             title="垃圾篓"
             countLabel={trashCountLabel}
+            dropActive={trashDropActive}
             onClick={() => onToggle("trash")}
+            onDragOver={onTrashDragOver}
+            onDrop={onTrashDrop}
           />
         </div>
       </div>
@@ -1159,8 +1259,11 @@ function TrashDrawerContent({
 }) {
   if (items.length === 0) {
     return (
-      <div className="rounded-lg border border-dashed border-sub/20 px-3 py-3 text-center text-[11px] italic text-sub/60">
-        垃圾篓为空
+      <div className="flex min-h-28 flex-col items-center justify-center rounded-lg border border-dashed border-sub/20 bg-sub/5 px-4 py-6 text-center">
+        <div className="text-xs text-ink">垃圾篓为空</div>
+        <div className="mt-1 max-w-[360px] text-[11px] leading-relaxed text-sub/70">
+          移入垃圾篓的课程会保留在这里；只有执行永久删除后才不再显示。
+        </div>
       </div>
     );
   }
@@ -1259,7 +1362,7 @@ function TrashCourseCard({
         </div>
         <div className="mt-1 flex items-center justify-between text-[10px]">
           <span className="tabular-nums" style={{ color: style.text }}>
-            {item.credits} 学分
+            {formatCredits(item.credits)} 学分
           </span>
           <span
             className={isRequired ? "rounded-sm px-1 text-white" : "text-sub"}
@@ -1486,7 +1589,7 @@ function TermFrame({
           </div>
           <div className="text-sm text-ink">{TERM_LABEL[term]}</div>
         </div>
-        <div className="text-[11px] text-sub tabular-nums">{round1(credits)} 学分</div>
+        <div className="text-[11px] text-sub tabular-nums">{formatCredits(credits)} 学分</div>
       </div>
       <div className="flex flex-col gap-1.5">{children}</div>
     </div>
@@ -1628,7 +1731,7 @@ function Stat({ label, value }: { label: string; value: number }) {
   return (
     <div className="flex flex-col items-end">
       <div className="text-[10px] text-sub uppercase tracking-wide">{label}</div>
-      <div className="text-lg text-ink tabular-nums">{round1(value)}</div>
+      <div className="text-lg text-ink tabular-nums">{formatCredits(value)}</div>
     </div>
   );
 }
@@ -1643,6 +1746,8 @@ const DRAWER_CARD_GAP = 6;
 // Match the term-card spacing: courses stay compact, but the panel keeps a small balanced inset.
 const DRAWER_PANEL_PADDING_X = 20;
 const DRAWER_EMPTY_PANEL_WIDTH = 280;
+const DRAWER_MIN_PANEL_WIDTH = 560;
+const TRASH_DRAWER_MIN_PANEL_WIDTH = DRAWER_MIN_PANEL_WIDTH;
 const DRAWER_PANEL_MAX_WIDTH = 1500;
 
 function useViewportWidth() {
@@ -1693,16 +1798,24 @@ function getDrawerCardsContentWidth(columns: number) {
   return columns * DRAWER_CARD_WIDTH + (columns - 1) * DRAWER_CARD_GAP;
 }
 
-function getDrawerPanelWidth(itemCount: number, viewportWidth: number) {
+function getDrawerPanelWidth(
+  itemCount: number,
+  viewportWidth: number,
+  minPanelWidth = DRAWER_EMPTY_PANEL_WIDTH
+) {
   const safeWidth = Math.max(240, viewportWidth - 48);
   if (itemCount <= 0) {
-    return Math.round(Math.min(safeWidth, DRAWER_EMPTY_PANEL_WIDTH));
+    return Math.round(Math.min(safeWidth, minPanelWidth));
   }
 
   const columns = getDrawerColumns(itemCount, viewportWidth);
   const contentWidth = getDrawerCardsContentWidth(columns);
   return Math.round(
-    Math.min(safeWidth, DRAWER_PANEL_MAX_WIDTH, contentWidth + DRAWER_PANEL_PADDING_X)
+    Math.min(
+      safeWidth,
+      DRAWER_PANEL_MAX_WIDTH,
+      Math.max(minPanelWidth, contentWidth + DRAWER_PANEL_PADDING_X)
+    )
   );
 }
 
@@ -1772,8 +1885,4 @@ function formatAllowedTerms(terms: number[]) {
   if (terms.length === 8) return "任意学期";
   if (terms.length === 1) return `第 ${terms[0]} 学期`;
   return `第 ${terms[0]}–${terms[terms.length - 1]} 学期`;
-}
-
-function round1(n: number) {
-  return Math.round(n * 10) / 10;
 }

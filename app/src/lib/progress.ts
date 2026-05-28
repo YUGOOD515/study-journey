@@ -6,6 +6,7 @@ import type {
   ProgramRequirement,
   SemesterCourse,
 } from "../types";
+import { roundCredits } from "./credits";
 import { parseOfferedTerm } from "./offeredTerm";
 
 export type CreditAssignmentMap = Map<string, "interdisciplinary" | "elective">;
@@ -127,11 +128,11 @@ export function computeRequirementRows(
         credits: c.credits,
         score: c.score,
         categoryCode: c.category_code as CategoryCode,
-        courseNature: c.course_nature as "必修" | "选修",
+        courseNature: c.course_nature as "必修" | "选修" | "跨专业",
       }));
 
     const matched = [...officialMatched, ...manualMatched];
-    const earnedCredits = round1(
+    const earnedCredits = roundCredits(
       matched.reduce((s, c) => s + (c.credits ?? 0), 0)
     );
 
@@ -172,7 +173,7 @@ export function computeRequirementRows(
           credits: c.credits,
           plannedTerm: c.term_number,
           categoryCode: c.category_code as CategoryCode,
-          courseNature: c.course_nature as "必修" | "选修",
+          courseNature: c.course_nature as "必修" | "选修" | "跨专业",
           isInterdisciplinary: c.is_interdisciplinary === 1,
           assignedTo: (c.assigned_to ?? "interdisciplinary") as
             | "interdisciplinary"
@@ -191,7 +192,7 @@ export function computeRequirementRows(
           credits: c.credits,
           plannedTerm: c.planned_term,
           categoryCode: c.category_code,
-          courseNature: c.course_nature as "必修" | "选修",
+          courseNature: c.course_nature as "必修" | "选修" | "跨专业",
           isInterdisciplinary: c.is_interdisciplinary === 1,
           assignedTo: (c.assigned_to ?? "interdisciplinary") as
             | "interdisciplinary"
@@ -205,7 +206,7 @@ export function computeRequirementRows(
       ...plannedManualFromRecords,
       ...plannedManual,
     ].filter((c) => c.plannedTerm != null);
-    const plannedCredits = round1(
+    const plannedCredits = roundCredits(
       plannedCourses.reduce((s, c) => s + c.credits, 0)
     );
 
@@ -250,10 +251,11 @@ function matchCourses(
   }
   // elective
   return courses.filter((c) => {
+    if (c.course_nature === "跨专业") {
+      return req.category_code === "general_education";
+    }
     if (c.category_code !== req.category_code) return false;
-    const isElectiveLike =
-      c.course_nature === "选修" || c.course_nature === "跨专业";
-    if (!isElectiveLike) return false;
+    if (c.course_nature !== "选修") return false;
     if (isInterdisciplinary(c)) {
       // 仅当用户明确把这门课切到 elective 时才纳入
       return assignmentOf(c, assignments) === "elective";
@@ -275,6 +277,9 @@ function matchManualCourse(req: ProgramRequirement, c: SemesterCourse): boolean 
     return c.category_code === req.category_code && c.course_nature === "必修";
   }
   // elective
+  if (c.course_nature === "跨专业") {
+    return req.category_code === "general_education";
+  }
   if (c.category_code !== req.category_code) return false;
   if (c.course_nature !== "选修") return false;
   if (isInter) return inter === "elective"; // 经融课仅在被切到 elective 时入选修桶
@@ -294,6 +299,9 @@ function matchPersonalPlanManual(
   if (req.requirement_type === "required") {
     return c.category_code === req.category_code && c.course_nature === "必修";
   }
+  if (c.course_nature === "跨专业") {
+    return req.category_code === "general_education";
+  }
   if (c.category_code !== req.category_code) return false;
   if (c.course_nature !== "选修") return false;
   if (isInter) return inter === "elective";
@@ -309,10 +317,6 @@ function defaultPlannedTerm(c: CourseWithCategory): number | null {
   // 灵活课（A/null/1-8）→ null = 归入"待安排"
   if (parsed.isFlexible) return null;
   return parsed.primary;
-}
-
-function round1(n: number) {
-  return Math.round(n * 10) / 10;
 }
 
 /**
@@ -359,9 +363,9 @@ export function bundleByCategory(rows: RequirementRow[]): CategoryBundle[] {
       code,
       name: list[0]?.categoryName ?? code,
       rows: list,
-      totalRequired: round1(list.reduce((s, r) => s + r.requiredCredits, 0)),
-      totalEarned: round1(list.reduce((s, r) => s + r.earnedCredits, 0)),
-      totalPlanned: round1(list.reduce((s, r) => s + r.plannedCredits, 0)),
+      totalRequired: roundCredits(list.reduce((s, r) => s + r.requiredCredits, 0)),
+      totalEarned: roundCredits(list.reduce((s, r) => s + r.earnedCredits, 0)),
+      totalPlanned: roundCredits(list.reduce((s, r) => s + r.plannedCredits, 0)),
     };
   });
 }
