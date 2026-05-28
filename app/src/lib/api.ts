@@ -1,5 +1,6 @@
 import type {
   CategoryCode,
+  ActualCourseMeeting,
   CourseNature,
   CourseWithCategory,
   CreditAssignment,
@@ -746,5 +747,23 @@ export const api = {
     );
     rememberCourse(course);
     return { ok: true as const };
+  },
+
+  actualCourseMeetings: async (input: {
+    term?: number;
+    week?: number;
+    weekday?: number;
+    courseCode?: string;
+    limit?: number;
+  } = {}) => {
+    const params = new URLSearchParams();
+    if (input.term !== undefined) params.set("term", String(input.term));
+    if (input.week !== undefined) params.set("week", String(input.week));
+    if (input.weekday !== undefined) params.set("weekday", String(input.weekday));
+    if (input.courseCode) params.set("courseCode", input.courseCode);
+    params.set("limit", String(input.limit ?? 1000));
+    return getJSON<ActualCourseMeeting[]>(
+      `/api/raw/actual-course-meetings?${params.toString()}`
+    );
   },
 };

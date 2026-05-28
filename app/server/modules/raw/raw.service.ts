@@ -67,6 +67,16 @@ export const RawService = {
     return RawRepository.listCatalogPreviews(filter);
   },
 
+  listActualCourseMeetings(q: Record<string, unknown>) {
+    return RawRepository.listActualCourseMeetings({
+      term: q.term !== undefined ? expectNumber(Number(q.term), "term", { min: 1, max: 8, integer: true })! : undefined,
+      week: q.week !== undefined ? expectNumber(Number(q.week), "week", { min: 1, integer: true })! : undefined,
+      weekday: q.weekday !== undefined ? expectNumber(Number(q.weekday), "weekday", { min: 1, max: 7, integer: true })! : undefined,
+      courseCode: q.courseCode ? expectString(q.courseCode, "courseCode")! : undefined,
+      ...parseLimitOffset(q),
+    });
+  },
+
   findOpeningsByCode(code: string) {
     const c = expectString(code, "courseCode")!;
     return RawRepository.findOpeningsByCode(c);

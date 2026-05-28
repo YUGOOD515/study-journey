@@ -37,6 +37,14 @@ rawRouter.get(
   })
 );
 
+rawRouter.get(
+  "/actual-course-meetings",
+  handle((req, res) => {
+    const data = RawService.listActualCourseMeetings(req.query as Record<string, unknown>);
+    ok(res, data, { total: data.length });
+  })
+);
+
 /** 挂载在 /api/courses：GET /:code/openings。 */
 export const courseOpeningsRouter = Router({ mergeParams: true });
 

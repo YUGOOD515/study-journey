@@ -69,6 +69,31 @@ export interface RawCatalogPreviewRow {
   credits: number | null;
 }
 
+export interface RawActualCourseMeetingRow {
+  id: number;
+  batch_id: number;
+  term: number;
+  course_code: string;
+  section_code: string;
+  meeting_no: number;
+  start_week: number;
+  end_week: number;
+  weekday: number;
+  start_period: number;
+  end_period: number;
+  location_text: string | null;
+  course_name: string;
+  teacher: string | null;
+  class_group: string | null;
+  course_nature: string | null;
+  course_attribute: string | null;
+  class_time_raw: string | null;
+  location_raw: string | null;
+  academic_year: string;
+  semester: string;
+  phase: string;
+}
+
 function whereClause(parts: string[]): string {
   return parts.length ? ` WHERE ${parts.join(" AND ")}` : "";
 }
@@ -144,6 +169,34 @@ export const RawRepository = {
        LIMIT ${Number(filter.limit ?? 200)} OFFSET ${Number(filter.offset ?? 0)}`
     );
     return stmt.all(...(params as never[])) as unknown as RawCatalogPreviewRow[];
+  },
+
+  listActualCourseMeetings(filter: {
+    term?: number;
+    week?: number;
+    weekday?: number;
+    courseCode?: string;
+    limit?: number;
+    offset?: number;
+  }): RawActualCourseMeetingRow[] {
+    const parts: string[] = [];
+    const params: unknown[] = [];
+    if (filter.term !== undefined) { parts.push("m.term = ?"); params.push(filter.term); }
+    if (filter.week !== undefined) {
+      parts.push("m.start_week <= ? AND m.end_week >= ?");
+      params.push(filter.week, filter.week);
+    }
+    if (filter.weekday !== undefined) { parts.push("m.weekday = ?"); params.push(filter.weekday); }
+    if (filter.courseCode) { parts.push("m.course_code = ?"); params.push(filter.courseCode); }
+    const stmt = db.prepare(
+      `SELECT m.*, b.academic_year, b.semester, b.phase
+         FROM raw_actual_course_meetings m
+         JOIN raw_import_batches b ON b.id = m.batch_id
+       ${whereClause(parts)}
+       ORDER BY m.term, m.weekday, m.start_period, m.end_period, m.course_code, m.section_code, m.meeting_no
+       LIMIT ${Number(filter.limit ?? 500)} OFFSET ${Number(filter.offset ?? 0)}`
+    );
+    return stmt.all(...(params as never[])) as unknown as RawActualCourseMeetingRow[];
   },
 
   findOpeningsByCode(code: string): {

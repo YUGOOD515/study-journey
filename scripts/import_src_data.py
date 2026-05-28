@@ -24,6 +24,8 @@ import pandas as pd
 FINAL_KIND = "final"
 ADD_KIND = "beginning_add"
 CATALOG_KIND = "catalog_preview"
+ACTUAL_KIND = "actual_schedule"
+BASE_TERM_START_YEAR = 2024
 
 
 @dataclass(frozen=True)
@@ -32,6 +34,7 @@ class SourceFile:
     academic_year: str
     semester: str
     kind: str
+    term_number: int | None = None
 
 
 def clean_text(value: Any) -> str | None:
@@ -68,6 +71,19 @@ def parse_source_file(path: Path) -> SourceFile | None:
     name = path.name
     if name == "培养方案.xlsx":
         return None
+
+    actual = re.match(r"(?P<year>\d{4}-\d{4})-(?P<sem>[12])-有课表课程\.xls[x]?$", name)
+    if actual:
+        sem_no = int(actual.group("sem"))
+        start_year = int(actual.group("year").split("-")[0])
+        term_number = (start_year - BASE_TERM_START_YEAR) * 2 + sem_no
+        return SourceFile(
+            path=path,
+            academic_year=actual.group("year"),
+            semester="fall" if sem_no == 1 else "spring",
+            kind=ACTUAL_KIND,
+            term_number=term_number,
+        )
 
     year = re.search(r"(\d{4}-\d{4})学年", name)
     if not year:
@@ -128,7 +144,115 @@ def pick(row: pd.Series, *names: str) -> Any:
     return None
 
 
+WEEKDAY_MAP = {
+    "一": 1,
+    "二": 2,
+    "三": 3,
+    "四": 4,
+    "五": 5,
+    "六": 6,
+    "日": 7,
+    "天": 7,
+}
+
+CLASS_TIME_RE = re.compile(
+    r"(?P<weeks>[0-9,\-，、]+)周\s*星期(?P<weekday>[一二三四五六日天])\s*(?P<periods>\d+)节"
+)
+
+
+def split_locations(value: str | None) -> list[str | None]:
+    if value is None:
+        return []
+    return [part.strip() or None for part in re.split(r"[,，]", value)]
+
+
+def parse_week_intervals(text: str) -> list[tuple[int, int]]:
+    intervals: list[tuple[int, int]] = []
+    for part in re.split(r"[,，、]", text):
+        token = part.strip()
+        if not token:
+            continue
+        if "-" in token:
+            start_text, end_text = token.split("-", 1)
+            start = int(start_text)
+            end = int(end_text)
+        else:
+            start = end = int(token)
+        if end < start:
+            start, end = end, start
+        intervals.append((start, end))
+    return intervals
+
+
+def parse_period_range(text: str) -> tuple[int, int]:
+    if len(text) % 2 != 0:
+        raise ValueError(f"无法解析节次: {text}")
+    periods = [int(text[i : i + 2]) for i in range(0, len(text), 2)]
+    return periods[0], periods[-1]
+
+
+def parse_actual_meetings(class_time: str | None, location_raw: str | None) -> list[dict[str, Any]]:
+    if not class_time:
+        return []
+
+    locations = split_locations(location_raw)
+    meetings: list[dict[str, Any]] = []
+    matches = list(CLASS_TIME_RE.finditer(class_time))
+    for slot_index, match in enumerate(matches):
+        start_period, end_period = parse_period_range(match.group("periods"))
+        weekday = WEEKDAY_MAP[match.group("weekday")]
+        location = (
+            locations[slot_index]
+            if slot_index < len(locations)
+            else locations[-1]
+            if locations
+            else None
+        )
+        for start_week, end_week in parse_week_intervals(match.group("weeks")):
+            meetings.append(
+                {
+                    "start_week": start_week,
+                    "end_week": end_week,
+                    "weekday": weekday,
+                    "start_period": start_period,
+                    "end_period": end_period,
+                    "location_text": location,
+                }
+            )
+    return meetings
+
+
+def ensure_actual_schedule_phase(conn: sqlite3.Connection) -> None:
+    row = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='raw_import_batches'"
+    ).fetchone()
+    if not row or "actual_schedule" in row[0]:
+        return
+
+    sql = row[0]
+    sql = sql.replace(
+        "phase TEXT NOT NULL CHECK (phase IN ('final', 'beginning_add'))",
+        "phase TEXT NOT NULL CHECK (phase IN ('final', 'beginning_add', 'actual_schedule'))",
+    ).replace(
+        "phase TEXT NOT NULL CHECK (phase IN ('final','beginning_add'))",
+        "phase TEXT NOT NULL CHECK (phase IN ('final','beginning_add','actual_schedule'))",
+    )
+    if sql == row[0]:
+        raise RuntimeError("无法自动扩展 raw_import_batches.phase 的 CHECK 约束")
+
+    conn.execute("PRAGMA writable_schema = ON")
+    conn.execute(
+        "UPDATE sqlite_master SET sql = ? WHERE type='table' AND name='raw_import_batches'",
+        (sql,),
+    )
+    conn.execute("PRAGMA writable_schema = OFF")
+    version = conn.execute("PRAGMA schema_version").fetchone()[0]
+    conn.execute(f"PRAGMA schema_version = {int(version) + 1}")
+
+
 def ensure_schema(conn: sqlite3.Connection) -> None:
+    ensure_actual_schedule_phase(conn)
+
     columns = {
         row[1]
         for row in conn.execute("PRAGMA table_info(raw_term_course_sections)").fetchall()
@@ -168,6 +292,46 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
           ON raw_course_catalog_previews(academic_year, semester);
         CREATE INDEX IF NOT EXISTS idx_raw_catalog_preview_module_2024
           ON raw_course_catalog_previews(module_2024);
+
+        CREATE TABLE IF NOT EXISTS raw_actual_course_meetings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            batch_id INTEGER NOT NULL,
+            term INTEGER NOT NULL CHECK (term BETWEEN 1 AND 8),
+            course_code TEXT NOT NULL CHECK (TRIM(course_code) <> ''),
+            section_code TEXT NOT NULL CHECK (TRIM(section_code) <> ''),
+            meeting_no INTEGER NOT NULL CHECK (meeting_no > 0),
+            start_week INTEGER NOT NULL CHECK (start_week > 0),
+            end_week INTEGER NOT NULL CHECK (end_week >= start_week),
+            weekday INTEGER NOT NULL CHECK (weekday BETWEEN 1 AND 7),
+            start_period INTEGER NOT NULL CHECK (start_period > 0),
+            end_period INTEGER NOT NULL CHECK (end_period >= start_period),
+            location_text TEXT,
+            course_name TEXT NOT NULL CHECK (TRIM(course_name) <> ''),
+            teacher TEXT,
+            class_group TEXT,
+            course_nature TEXT,
+            course_attribute TEXT,
+            class_time_raw TEXT,
+            location_raw TEXT,
+            online_group TEXT,
+            online_url TEXT,
+            qr_code TEXT,
+            source_sheet TEXT,
+            source_row INTEGER NOT NULL CHECK (source_row > 0),
+            imported_at TEXT NOT NULL DEFAULT (datetime('now')),
+            UNIQUE(batch_id, source_row, meeting_no),
+            FOREIGN KEY (batch_id)
+              REFERENCES raw_import_batches(id)
+              ON UPDATE CASCADE
+              ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_raw_actual_course_meetings_term
+          ON raw_actual_course_meetings(term, weekday, start_period, end_period);
+        CREATE INDEX IF NOT EXISTS idx_raw_actual_course_meetings_course
+          ON raw_actual_course_meetings(course_code, section_code);
+        CREATE INDEX IF NOT EXISTS idx_raw_actual_course_meetings_week
+          ON raw_actual_course_meetings(term, start_week, end_week);
         """
     )
 
@@ -175,9 +339,10 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
 def reset_raw_tables(conn: sqlite3.Connection) -> None:
     conn.execute("DELETE FROM raw_term_course_sections")
     conn.execute("DELETE FROM raw_term_added_courses")
-    conn.execute("DELETE FROM raw_import_batches")
     conn.execute("DELETE FROM raw_course_catalog_previews")
-    conn.execute("DELETE FROM sqlite_sequence WHERE name IN ('raw_import_batches', 'raw_course_catalog_previews')")
+    conn.execute("DELETE FROM raw_actual_course_meetings")
+    conn.execute("DELETE FROM raw_import_batches")
+    conn.execute("DELETE FROM sqlite_sequence WHERE name IN ('raw_import_batches', 'raw_course_catalog_previews', 'raw_actual_course_meetings')")
 
 
 def insert_batch(conn: sqlite3.Connection, source: SourceFile, note: str) -> int:
@@ -340,6 +505,86 @@ def import_catalog(conn: sqlite3.Connection, source: SourceFile) -> dict[str, in
     return {"inserted": inserted, "skipped": skipped}
 
 
+def import_actual_schedule(conn: sqlite3.Connection, source: SourceFile) -> dict[str, int]:
+    if source.term_number is None:
+        raise ValueError(f"实际课表缺少 term_number: {source.path.name}")
+
+    sheet, table = table_from_header(source.path)
+    batch_id = insert_batch(conn, source, "实际课表课程数据")
+    courses = 0
+    meetings = 0
+    skipped_courses = 0
+    parse_failed = 0
+
+    for index, row in table.iterrows():
+        course_code = clean_text(pick(row, "课程编号", "课程号"))
+        section_code = clean_text(pick(row, "课序号"))
+        course_name = clean_text(pick(row, "课程名称", "课程名"))
+        class_time_raw = clean_text(pick(row, "上课时间"))
+        location_raw = clean_text(pick(row, "上课地点"))
+
+        if not course_code or not section_code or not course_name:
+            skipped_courses += 1
+            continue
+
+        try:
+            parsed_meetings = parse_actual_meetings(class_time_raw, location_raw)
+        except ValueError:
+            parsed_meetings = []
+
+        if not parsed_meetings:
+            parse_failed += 1
+            continue
+
+        courses += 1
+        for meeting_no, meeting in enumerate(parsed_meetings, start=1):
+            conn.execute(
+                """
+                INSERT INTO raw_actual_course_meetings(
+                    batch_id, term, course_code, section_code, meeting_no,
+                    start_week, end_week, weekday, start_period, end_period, location_text,
+                    course_name, teacher, class_group, course_nature, course_attribute,
+                    class_time_raw, location_raw, online_group, online_url, qr_code,
+                    source_sheet, source_row
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    batch_id,
+                    source.term_number,
+                    course_code,
+                    section_code,
+                    meeting_no,
+                    meeting["start_week"],
+                    meeting["end_week"],
+                    meeting["weekday"],
+                    meeting["start_period"],
+                    meeting["end_period"],
+                    meeting["location_text"],
+                    course_name,
+                    clean_text(pick(row, "授课教师", "上课教师")),
+                    clean_text(pick(row, "上课班级", "合班名称")),
+                    clean_text(pick(row, "课程性质")),
+                    clean_text(pick(row, "课程属性")),
+                    class_time_raw,
+                    location_raw,
+                    clean_text(pick(row, "网课群号")),
+                    clean_text(pick(row, "网课链接网址")),
+                    clean_text(pick(row, "二维码")),
+                    sheet,
+                    int(index) + 1,
+                ),
+            )
+            meetings += 1
+
+    return {
+        "courses": courses,
+        "meetings": meetings,
+        "skipped_courses": skipped_courses,
+        "parse_failed": parse_failed,
+        "batch_id": batch_id,
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--db", default="db/course_planner_v2.sqlite")
@@ -377,6 +622,8 @@ def main() -> None:
                 result = import_added(conn, source)
             elif source.kind == CATALOG_KIND:
                 result = import_catalog(conn, source)
+            elif source.kind == ACTUAL_KIND:
+                result = import_actual_schedule(conn, source)
             else:
                 continue
             summary.append((source.kind, source.path.name, result))

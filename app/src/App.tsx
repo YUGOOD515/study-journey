@@ -1,12 +1,19 @@
 import { useState } from "react";
 import Timeline from "./pages/Timeline";
+import TermSchedule from "./pages/TermSchedule";
 import Trail from "./pages/Trail";
 import { ThemeToggle } from "./components/ThemeToggle";
 
-type Tab = "timeline" | "trail";
+type Tab = "timeline" | "trail" | "term-schedule";
 
 export default function App() {
   const [tab, setTab] = useState<Tab>("timeline");
+  const [scheduleTerm, setScheduleTerm] = useState(1);
+
+  const openSchedule = (term: number) => {
+    setScheduleTerm(term);
+    setTab("term-schedule");
+  };
 
   return (
     <div className="min-h-screen">
@@ -29,6 +36,9 @@ export default function App() {
             <NavTab active={tab === "trail"} onClick={() => setTab("trail")}>
               旅迹
             </NavTab>
+            <NavTab active={tab === "term-schedule"} onClick={() => setTab("term-schedule")}>
+              学期课表
+            </NavTab>
           </div>
         </div>
         <div className="flex items-center gap-1">
@@ -36,7 +46,17 @@ export default function App() {
         </div>
       </nav>
 
-      <main>{tab === "timeline" ? <Timeline /> : <Trail />}</main>
+      <main>
+        {tab === "timeline" && <Timeline onOpenSchedule={openSchedule} />}
+        {tab === "trail" && <Trail />}
+        {tab === "term-schedule" && (
+          <TermSchedule
+            termNumber={scheduleTerm}
+            onTermChange={setScheduleTerm}
+            onBack={() => setTab("timeline")}
+          />
+        )}
+      </main>
     </div>
   );
 }

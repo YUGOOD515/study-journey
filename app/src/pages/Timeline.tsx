@@ -51,7 +51,11 @@ interface PlannedOfficial {
 
 type ActiveDrawer = "pending" | "trash" | null;
 
-export default function Timeline() {
+export default function Timeline({
+  onOpenSchedule,
+}: {
+  onOpenSchedule?: (term: number) => void;
+}) {
   const [courses, setCourses] = useState<CourseWithCategory[]>([]);
   const [reqs, setReqs] = useState<ProgramRequirement[]>([]);
   const [done, setDone] = useState<SemesterCourse[]>([]);
@@ -523,6 +527,7 @@ export default function Timeline() {
                 await api.deletePersonalPlan(id);
                 await refetchPlan();
               }}
+              onOpenSchedule={() => onOpenSchedule?.(term)}
             />
           ) : (
             <OfficialTermColumn
@@ -532,6 +537,7 @@ export default function Timeline() {
               completedByCode={completedByCode}
               displayOptions={displayOptions}
               onSaveCourse={saveProgramCourse}
+              onOpenSchedule={() => onOpenSchedule?.(term)}
             />
           )
         )}
@@ -817,16 +823,18 @@ function OfficialTermColumn({
   completedByCode,
   displayOptions,
   onSaveCourse,
+  onOpenSchedule,
 }: {
   term: number;
   courses: CourseWithCategory[];
   completedByCode: Map<string, number | null>;
   displayOptions: CourseCardDisplayOptions;
   onSaveCourse: (courseCode: string, patch: PlanCoursePatch) => Promise<void>;
+  onOpenSchedule?: () => void;
 }) {
   const credits = courses.reduce((s, c) => s + c.credits, 0);
   return (
-    <TermFrame term={term} credits={credits}>
+    <TermFrame term={term} credits={credits} onOpenSchedule={onOpenSchedule}>
       {courses.map((course) => (
         <CourseCard
           key={`${term}-${course.course_code}`}
@@ -859,6 +867,7 @@ function PersonalTermColumn({
   onSaveOfficial,
   onSaveManual,
   onDeleteManual,
+  onOpenSchedule,
 }: {
   term: number;
   officialItems: PlannedOfficial[];
@@ -881,6 +890,7 @@ function PersonalTermColumn({
   onSaveOfficial: (courseCode: string, patch: PlanCoursePatch) => Promise<void>;
   onSaveManual: (id: number, patch: PlanCoursePatch) => Promise<void>;
   onDeleteManual: (id: number) => Promise<void>;
+  onOpenSchedule?: () => void;
 }) {
   const credits =
     officialItems.reduce((s, item) => s + item.course.credits, 0) +
@@ -893,6 +903,7 @@ function PersonalTermColumn({
       credits={credits}
       variant="personal"
       dropActive={isDropTarget}
+      onOpenSchedule={onOpenSchedule}
       onDragOver={(event) => {
         if (!dragging) return;
         event.preventDefault();
@@ -1554,6 +1565,7 @@ function TermFrame({
   children,
   variant = "official",
   dropActive = false,
+  onOpenSchedule,
   onDragOver,
   onDrop,
 }: {
@@ -1562,6 +1574,7 @@ function TermFrame({
   children: React.ReactNode;
   variant?: ViewMode;
   dropActive?: boolean;
+  onOpenSchedule?: () => void;
   onDragOver?: (event: React.DragEvent<HTMLDivElement>) => void;
   onDrop?: (event: React.DragEvent<HTMLDivElement>) => void;
 }) {
@@ -1589,7 +1602,20 @@ function TermFrame({
           </div>
           <div className="text-sm text-ink">{TERM_LABEL[term]}</div>
         </div>
-        <div className="text-[11px] text-sub tabular-nums">{formatCredits(credits)} 学分</div>
+        <div className="flex items-center gap-1.5">
+          <div className="text-[11px] text-sub tabular-nums">{formatCredits(credits)} 学分</div>
+          {onOpenSchedule && (
+            <button
+              type="button"
+              onClick={onOpenSchedule}
+              className="h-6 w-6 rounded-md text-[13px] leading-none text-sub transition-colors hover:bg-sub/10 hover:text-ink"
+              aria-label={`展开${TERM_LABEL[term]}课表`}
+              title="展开课表"
+            >
+              ↗
+            </button>
+          )}
+        </div>
       </div>
       <div className="flex flex-col gap-1.5">{children}</div>
     </div>
