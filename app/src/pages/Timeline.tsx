@@ -20,7 +20,7 @@ import type {
 } from "../types";
 import { CourseCard } from "../components/CourseCard";
 import { ManualCourseCard } from "../components/ManualCourseCard";
-import { ManualCourseDialog } from "../components/ManualCourseDialog";
+import { AddCourseDialog } from "../components/AddCourseDialog";
 import { CourseHoverCard, type CourseHoverInfo } from "../components/CourseHoverCard";
 import { useHoverIntentTriangle } from "../hooks/useHoverIntentTriangle";
 
@@ -625,10 +625,10 @@ export default function Timeline({
       )}
 
       {addTerm != null && (
-        <ManualCourseDialog
+        <AddCourseDialog
           termNumber={addTerm === "drawer" ? null : addTerm}
           onClose={() => setAddTerm(null)}
-          onSubmit={async (input) => {
+          onSubmitManual={async (input) => {
             await api.createPersonalManual({
               planned_term: input.term_number,
               course_code: input.course_code,
@@ -645,7 +645,11 @@ export default function Timeline({
               is_interdisciplinary: input.is_interdisciplinary,
               assigned_to: input.assigned_to,
             });
-            await refetchPlan();
+            await refetchTimelineData();
+          }}
+          onSubmitRaw={async (input) => {
+            await api.createPersonalFromRaw(input);
+            await refetchTimelineData();
           }}
         />
       )}
