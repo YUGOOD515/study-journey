@@ -111,3 +111,34 @@ body {
     transform: translateY(0) scale(1);
   }
 }
+
+/* 旅迹页：卡片入场（淡入 + 上浮），用 animation-delay 做错峰 */
+@keyframes trailRise {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.trail-rise {
+  animation: trailRise 560ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* 进度环：沿描边"画"出弧线，--ring-arc 由组件内联给出 */
+@keyframes ringDraw {
+  from {
+    stroke-dashoffset: var(--ring-arc);
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .trail-rise {
+    animation: none;
+  }
+}

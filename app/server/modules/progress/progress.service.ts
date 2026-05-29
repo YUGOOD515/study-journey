@@ -1,7 +1,9 @@
 import type { CategoryCode } from "../../db";
 import type {
   Course,
+  CourseSource,
   CreditCountTo,
+  RequirementType,
   StudyStatus,
 } from "../courses/course.types";
 import { CustomCourseRepository } from "../courses/custom-course.repository";
@@ -11,6 +13,16 @@ import {
   type RequirementRow,
   type RequirementTypeCode,
 } from "../requirements/requirement.repository";
+
+/**
+ * 进度 / 学分统计。口径定稿见 docs/16-credit-rule-finalization-and-frontend-plan.md §2。
+ *
+ * 经法管融通规则（要点）：
+ *  - credit_count_to=大类平台-选修：按优先级+学分降序，整门计入「大类平台·经法管」直至 6 学分（上限）；
+ *    放不下的整门溢出，计入「通识·选修」。
+ *  - credit_count_to=通识教育-选修：直接计入「通识·选修」。
+ *  - 不双计；未通过剔除；未修读占位展示（0 学分）。
+ */
 
 const INTERDISCIPLINARY_CAP = 6;
 
@@ -24,7 +36,23 @@ function bucketKey(category: CategoryCode, type: RequirementTypeCode): string {
   return `${category}|${type}`;
 }
 
-interface Bucket {
+export interface BucketCourse {
+  courseCode: string;
+  courseName: string;
+  credits: number;
+  studyStatus: StudyStatus;
+  source: CourseSource;
+  score: number | null;
+  /** 课程本身所属类别（用于经法管流向图等展示）。 */
+  categoryCode: CategoryCode;
+  /** program 取 actualTerm ?? plannedTerm；custom 取 plannedTerm。 */
+  term: number | null;
+  requirementType: RequirementType;
+  /** 经法管融通课程的学分计入方向；非经法管为 null。 */
+  creditCountTo: CreditCountTo | null;
+}
+
+export interface Bucket {
   categoryCode: CategoryCode;
   categoryName: string;
   requirementTypeCode: RequirementTypeCode;
@@ -34,19 +62,17 @@ interface Bucket {
   inProgress: number;
   planned: number;
   pending: number;
-  courses: Array<{
-    courseCode: string;
-    courseName: string;
-    credits: number;
-    studyStatus: StudyStatus;
-  }>;
+  courses: BucketCourse[];
 }
 
-interface OverflowReport {
+export interface OverflowReport {
   interdisciplinary: {
     cap: number;
+    /** 计入大类平台方向、且为计学分状态的经法管学分合计 = counted + overflowCredits。 */
     totalAttempted: number;
+    /** 实际落进「大类平台·经法管」桶的学分（≤ cap）。 */
     counted: number;
+    /** 因超过 cap 而溢出到「通识·选修」的学分。 */
     overflowCredits: number;
     overflowCourses: Array<{
       courseCode: string;
@@ -62,15 +88,8 @@ const STATUS_PRIORITY: Record<StudyStatus, number> = {
   正在修读: 1,
   计划修读: 2,
   未修读: 3,
-  未通过: 4, // 未通过课程其实不应占名额，但保留位置；下面会过滤掉
+  未通过: 4,
 };
-
-function parseCountTo(value: CreditCountTo | null): { category: CategoryCode; type: RequirementTypeCode } | null {
-  if (!value) return null;
-  if (value === "通识教育-选修") return { category: "general_education", type: "elective" };
-  if (value === "大类平台-选修") return { category: "major_platform", type: "elective" };
-  return null;
-}
 
 function activeCourses(): Course[] {
   const program = ProgramCourseRepository.find({ limit: 1000 });
@@ -78,11 +97,9 @@ function activeCourses(): Course[] {
   return [...program, ...custom];
 }
 
-function isCountedStatus(status: StudyStatus): boolean {
-  return status === "已修读" || status === "正在修读" || status === "计划修读";
-}
-
-function statusCreditBucketField(status: StudyStatus): "earned" | "inProgress" | "planned" | null {
+function statusCreditBucketField(
+  status: StudyStatus
+): "earned" | "inProgress" | "planned" | null {
   if (status === "已修读") return "earned";
   if (status === "正在修读") return "inProgress";
   if (status === "计划修读") return "planned";
@@ -104,15 +121,84 @@ function emptyBucket(req: RequirementRow): Bucket {
   };
 }
 
-function addCourseToBucket(bucket: Bucket, course: Course): void {
-  const field = statusCreditBucketField(course.studyStatus);
-  if (field) bucket[field] += course.credits;
-  bucket.courses.push({
+type CreditField = "earned" | "inProgress" | "planned" | null;
+
+/** 解析 official_term 的默认开课学期（与前端 lib/offeredTerm 同口径）。 */
+function defaultTermFromOfficial(official: string | null): number | null {
+  if (!official) return null;
+  const s = official.trim();
+  if (!s || s.toUpperCase() === "A") return null;
+  const single = /^(\d+)$/.exec(s);
+  if (single) return parseInt(single[1], 10);
+  const range = /^(\d+)\s*-\s*(\d+)$/.exec(s);
+  if (range) {
+    const a = parseInt(range[1], 10);
+    const b = parseInt(range[2], 10);
+    if (a === 1 && b === 8) return null; // 全学期视为灵活
+    return a;
+  }
+  return null;
+}
+
+/**
+ * 课程在“我的计划”时间轴上的学期；null = 未落位（灵活/抽屉）。与时间轴页同口径。
+ *
+ * 关键：计划修读的官方课等价于时间轴里的 override，plannedTerm 即最终结果（可能为 null=用户主动放进抽屉），
+ * 不再回退默认开课学期；其余官方课才用 actual ?? planned ?? 默认。
+ */
+function placementTerm(course: Course): number | null {
+  if (course.source === "program") {
+    if (course.studyStatus === "计划修读") return course.plannedTerm;
+    return course.actualTerm ?? course.plannedTerm ?? defaultTermFromOfficial(course.officialTerm);
+  }
+  return course.plannedTerm;
+}
+
+/**
+ * 学分归类，与时间轴“我的计划”一致：
+ *  已修读→earned，正在修读→inProgress，计划修读→planned，
+ *  未修读但已落位（有默认/实际学期）→planned，其余（未通过 / 灵活未修读）→不计。
+ */
+function effectiveField(course: Course, term: number | null): CreditField {
+  // 未落位（抽屉/灵活，term=null）一律不计入——与时间轴“我的计划合计”一致。
+  if (term == null) return null;
+  switch (course.studyStatus) {
+    case "已修读":
+      return "earned";
+    case "正在修读":
+      return "inProgress";
+    case "计划修读":
+    case "未修读":
+      return "planned";
+    default:
+      return null; // 未通过
+  }
+}
+
+function toBucketCourse(course: Course, term: number | null): BucketCourse {
+  return {
     courseCode: course.courseCode,
     courseName: course.courseName,
     credits: course.credits,
     studyStatus: course.studyStatus,
-  });
+    source: course.source,
+    score: course.score,
+    categoryCode: course.categoryCode,
+    term,
+    requirementType: course.requirementType,
+    creditCountTo: course.creditCountTo,
+  };
+}
+
+function addToBucket(
+  bucket: Bucket | undefined,
+  course: Course,
+  field: CreditField,
+  term: number | null
+): void {
+  if (!bucket) return;
+  if (field) bucket[field] += course.credits;
+  bucket.courses.push(toBucketCourse(course, term));
 }
 
 export const ProgressService = {
@@ -127,55 +213,58 @@ export const ProgressService = {
       buckets.set(bucketKey(r.category_code as CategoryCode, r.requirement_type_code), emptyBucket(r));
     }
 
+    const generalElective = buckets.get(bucketKey("general_education", "elective"));
+    const majorInterdisciplinary = buckets.get(bucketKey("major_platform", "interdisciplinary"));
+
     const courses = activeCourses();
-    const interdisciplinaryQueue: Course[] = [];
+    const interToMajor: Array<{ course: Course; term: number | null; field: CreditField }> = [];
 
     for (const c of courses) {
+      const term = placementTerm(c);
+      const field = effectiveField(c, term);
       if (c.requirementType === "经法管融通") {
-        interdisciplinaryQueue.push(c);
+        // credit_count_to=通识教育-选修 → 直接进通识选修；
+        // 其余（含 creditCountTo 缺失的数据异常）按默认"大类平台-选修"处理。
+        if (c.creditCountTo === "通识教育-选修") {
+          addToBucket(generalElective, c, field, term);
+        } else {
+          interToMajor.push({ course: c, term, field });
+        }
         continue;
       }
       const reqType =
-        c.requirementType === "跨专业"
-          ? "elective"
-          : REQ_TYPE_BY_NATURE[c.requirementType];
+        c.requirementType === "跨专业" ? "elective" : REQ_TYPE_BY_NATURE[c.requirementType];
       if (!reqType) continue;
-      const targetCategory =
-        c.requirementType === "跨专业" ? "general_education" : c.categoryCode;
-      const bucket = buckets.get(bucketKey(targetCategory, reqType));
-      if (bucket) addCourseToBucket(bucket, c);
+      const targetCategory = c.requirementType === "跨专业" ? "general_education" : c.categoryCode;
+      addToBucket(buckets.get(bucketKey(targetCategory, reqType)), c, field, term);
     }
 
-    // 经法管融通：按 (已修读 > 正在修读 > 计划修读 > 未修读) 优先级、credits 降序排队，
-    // 占用累计 6 学分内的名额；溢出部分进入 overflow，不进任何 bucket。
-    interdisciplinaryQueue.sort((a, b) => {
-      const sp = (STATUS_PRIORITY[a.studyStatus] ?? 9) - (STATUS_PRIORITY[b.studyStatus] ?? 9);
+    // 大类平台方向的经法管：优先级（已修 > 在修 > 计划 > 未修）+ 学分降序，整门装入
+    //「大类平台·经法管」直至累计 6 学分；放不下的整门溢出到「通识·选修」。
+    interToMajor.sort((a, b) => {
+      const sp =
+        (STATUS_PRIORITY[a.course.studyStatus] ?? 9) - (STATUS_PRIORITY[b.course.studyStatus] ?? 9);
       if (sp !== 0) return sp;
-      return b.credits - a.credits;
+      return b.course.credits - a.course.credits;
     });
 
     let remaining = INTERDISCIPLINARY_CAP;
     let totalAttempted = 0;
     const overflowCourses: OverflowReport["interdisciplinary"]["overflowCourses"] = [];
 
-    for (const c of interdisciplinaryQueue) {
-      if (isCountedStatus(c.studyStatus)) totalAttempted += c.credits;
-      // 未通过课程：不进 bucket、不计 attempt
-      if (c.studyStatus === "未通过") continue;
-      if (c.studyStatus === "未修读") {
-        // 未修读不占用名额、但也不进入桶；仍要计算 attempt
+    for (const { course: c, term, field } of interToMajor) {
+      if (field === null) {
+        // 未通过 / 灵活未修读：展示在桶里但不计学分、不占额度
+        addToBucket(majorInterdisciplinary, c, null, term);
         continue;
       }
-      const target = parseCountTo(c.creditCountTo);
-      if (!target) {
-        // 经法管融通课程没填 creditCountTo（数据异常）；跳过
-        continue;
-      }
+      totalAttempted += c.credits;
       if (c.credits <= remaining + 1e-9) {
-        const bucket = buckets.get(bucketKey(target.category, target.type));
-        if (bucket) addCourseToBucket(bucket, c);
+        addToBucket(majorInterdisciplinary, c, field, term);
         remaining = Math.max(0, remaining - c.credits);
       } else {
+        // 溢出：整门计入通识选修
+        addToBucket(generalElective, c, field, term);
         overflowCourses.push({
           courseCode: c.courseCode,
           courseName: c.courseName,
@@ -185,7 +274,6 @@ export const ProgressService = {
       }
     }
 
-    // 计算 pending 与 totals
     const byCategory = Array.from(buckets.values()).map((b) => {
       const used = b.earned + b.inProgress + b.planned;
       const pending = Math.max(0, b.required - used);
@@ -205,6 +293,8 @@ export const ProgressService = {
     );
 
     const counted = INTERDISCIPLINARY_CAP - remaining;
+    const overflowCredits = overflowCourses.reduce((s, c) => s + c.credits, 0);
+
     return {
       byCategory,
       totals,
@@ -213,7 +303,7 @@ export const ProgressService = {
           cap: INTERDISCIPLINARY_CAP,
           totalAttempted,
           counted,
-          overflowCredits: Math.max(0, totalAttempted - counted),
+          overflowCredits,
           overflowCourses,
         },
       },

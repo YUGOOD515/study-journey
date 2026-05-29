@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../lib/api";
 import { formatCredits } from "../lib/credits";
+import { myPlanTotalCredits } from "../lib/planTotal";
 import { parseOfferedTerm, TERM_LABEL } from "../lib/offeredTerm";
 import { CATEGORY_STYLE } from "../lib/categoryStyle";
 import {
@@ -241,14 +242,6 @@ export default function Timeline({
     const requiredTotal = reqs.reduce((s, r) => s + r.required_credits, 0);
     const officialPlanTotal = courses.reduce((s, c) => s + c.credits, 0);
 
-    // 我的计划合计：只算时间线上的课（plannedTerm != null），抽屉里的不算
-    const personalOfficialOnTimeline = Object.values(personalBuckets.byTerm)
-      .flat()
-      .reduce((s, item) => s + item.course.credits, 0);
-    const personalManualOnTimeline = Object.values(manualPlanByTerm.byTerm)
-      .flat()
-      .reduce((s, item) => s + item.credits, 0);
-
     const completedTotal = done.reduce(
       (s, d) => s + (d.score != null ? d.credits ?? 0 : 0),
       0
@@ -256,10 +249,11 @@ export default function Timeline({
     return {
       requiredTotal,
       officialPlanTotal,
-      personalPlanTotal: personalOfficialOnTimeline + personalManualOnTimeline,
+      // “我的计划合计”：与旅迹页共用同一套口径（lib/planTotal）
+      personalPlanTotal: myPlanTotalCredits(courses, personalPlan, done),
       completedTotal,
     };
-  }, [reqs, courses, done, personalBuckets, manualPlanByTerm]);
+  }, [reqs, courses, done, personalPlan]);
 
   const startOfficialDrag = (
     event: React.DragEvent<HTMLDivElement>,
