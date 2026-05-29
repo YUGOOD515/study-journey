@@ -45,6 +45,14 @@ rawRouter.get(
   })
 );
 
+rawRouter.get(
+  "/course-search",
+  handle((req, res) => {
+    const data = RawService.searchCourses(req.query as Record<string, unknown>);
+    ok(res, data, { total: data.length });
+  })
+);
+
 /** 挂载在 /api/courses：GET /:code/openings。 */
 export const courseOpeningsRouter = Router({ mergeParams: true });
 

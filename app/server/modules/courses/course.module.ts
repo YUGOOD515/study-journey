@@ -22,6 +22,14 @@ courseRouter.get(
 );
 
 courseRouter.post(
+  "/from-raw",
+  handle((req, res) => {
+    const data = CourseService.createCustomFromRaw(req.body);
+    created(res, data);
+  })
+);
+
+courseRouter.post(
   "/",
   handle((req, res) => {
     const data = CourseService.createCustom(req.body);

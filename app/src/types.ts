@@ -240,3 +240,35 @@ export interface ActualCourseMeeting {
   semester: string;
   phase: string;
 }
+
+export interface RawCourseSearchResult {
+  sourceType: "section" | "added";
+  batchId: number;
+  sourceRow: number;
+  termNumber: number;
+  academicYear: string;
+  semester: "fall" | "spring";
+  phase: "final" | "beginning_add" | "actual_schedule";
+  courseCode: string;
+  sectionCode: string | null;
+  courseName: string;
+  credits: number | null;
+  hours: number | null;
+  teacher: string | null;
+  classTime: string | null;
+  teachingWeeks: string | null;
+  campus: string | null;
+  classroom: string | null;
+  department: string | null;
+  courseAttribute: string | null;
+  enrollmentRestriction: string | null;
+  combinedClassName: string | null;
+  groupName: string | null;
+  learningPlatform: string | null;
+  module2022: string | null;
+  module2024: string | null;
+  remark1: string | null;
+  remark2: string | null;
+  existsInProgram: boolean;
+  existsInCustom: boolean;
+}

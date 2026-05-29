@@ -1,5 +1,5 @@
 import { fail } from "../../lib/errors";
-import { expectNumber, expectString } from "../../lib/validate";
+import { expectEnum, expectNumber, expectString } from "../../lib/validate";
 import { RawRepository } from "./raw.repository";
 
 function parseLimitOffset(q: Record<string, unknown>): { limit?: number; offset?: number } {
@@ -74,6 +74,65 @@ export const RawService = {
       weekday: q.weekday !== undefined ? expectNumber(Number(q.weekday), "weekday", { min: 1, max: 7, integer: true })! : undefined,
       courseCode: q.courseCode ? expectString(q.courseCode, "courseCode")! : undefined,
       ...parseLimitOffset(q),
+    });
+  },
+
+  searchCourses(q: Record<string, unknown>) {
+    const keyword = q.q ?? q.keyword;
+    const filter = {
+      keyword: keyword !== undefined && String(keyword).trim() !== ""
+        ? expectString(keyword, "q")!
+        : undefined,
+      term: q.term !== undefined
+        ? expectNumber(Number(q.term), "term", { min: 1, max: 8, integer: true })!
+        : undefined,
+      source: q.source !== undefined
+        ? expectEnum(q.source, "source", ["all", "section", "added"] as const)!
+        : "all" as const,
+      ...parseLimitOffset(q),
+    };
+    if (!filter.keyword && filter.term === undefined) {
+      throw fail.validation(
+        "GET /api/raw/course-search 必须至少传入 q 或 term",
+        { hint: "建议传入当前学期 term，并可附加 q 做实时搜索" }
+      );
+    }
+
+    const baseYear = RawRepository.baseEnrollmentYear();
+    return RawRepository.searchCourses(filter).map((row) => {
+      const startYear = Number(row.academic_year.slice(0, 4));
+      const termNumber = (startYear - baseYear) * 2 + (row.semester === "fall" ? 1 : 2);
+      return {
+        sourceType: row.source_type,
+        batchId: row.batch_id,
+        sourceRow: row.source_row,
+        termNumber,
+        academicYear: row.academic_year,
+        semester: row.semester,
+        phase: row.phase,
+        courseCode: row.course_code,
+        sectionCode: row.section_code,
+        courseName: row.course_name,
+        credits: row.credits,
+        hours: row.hours,
+        teacher: row.teacher,
+        classTime: row.class_time,
+        teachingWeeks: row.teaching_weeks,
+        campus: row.campus,
+        classroom: row.classroom,
+        department: row.department,
+        courseAttribute: row.course_attribute,
+        enrollmentRestriction: row.enrollment_restriction,
+        combinedClassName: row.combined_class_name,
+        groupName: row.group_name,
+        learningPlatform: row.learning_platform,
+        module2022: row.module_2022,
+        module2024: row.module_2024,
+        remark1: row.remark1,
+        remark2: row.remark2,
+        existsInProgram: row.exists_in_program === 1,
+        existsInCustom: row.exists_in_custom === 1,
+      };
     });
   },
 

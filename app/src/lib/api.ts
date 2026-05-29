@@ -8,6 +8,7 @@ import type {
   PlanCoursePatch,
   ProgramRequirement,
   ProgressResponse,
+  RawCourseSearchResult,
   SemesterCourse,
   TrashItem,
 } from "../types";
@@ -667,6 +668,46 @@ export const api = {
         )
       );
     }
+    return { ok: true as const, id: rememberCustomCode(created.courseCode) };
+  },
+
+  searchRawCourses: async (input: {
+    q?: string;
+    term?: number | null;
+    source?: "all" | "section" | "added";
+    limit?: number;
+  } = {}) => {
+    const params = new URLSearchParams();
+    if (input.q?.trim()) params.set("q", input.q.trim());
+    if (input.term != null) params.set("term", String(input.term));
+    params.set("source", input.source ?? "all");
+    params.set("limit", String(input.limit ?? 40));
+    return getJSON<RawCourseSearchResult[]>(`/api/raw/course-search?${params.toString()}`);
+  },
+
+  createPersonalFromRaw: async (input: {
+    sourceType: "section" | "added";
+    batchId: number;
+    sourceRow: number;
+    courseCode: string;
+    sectionCode: string | null;
+    termNumber: number;
+    categoryCode: CategoryCode;
+    courseNature: CourseNature;
+    isInterdisciplinary: boolean;
+    assignedTo: CreditAssignmentTarget;
+    credits: number;
+    totalHours: number;
+    lectureHours: number;
+    experimentHours: number;
+    extraHours: number;
+    studyStatus: StudyStatus;
+    score: number | null;
+    note?: string | null;
+  }) => {
+    const created = rememberCourse(
+      await send<CourseDto>("/api/courses/from-raw", "POST", input)
+    );
     return { ok: true as const, id: rememberCustomCode(created.courseCode) };
   },
 
