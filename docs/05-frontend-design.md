@@ -160,6 +160,9 @@ hover 卡片显示：
 | `planned_term` | 官方课程的计划学期 |
 | `term_number` | 自定义课程的学期 |
 
+> **进度与学分统计（旅迹页）的唯一真相源是后端 `/api/progress`**（口径见 [docs/16](16-credit-rule-finalization-and-frontend-plan.md)）。
+> `lib/progress.ts` 不再自行计算学分桶，只通过 `bundlesFromProgress` / `flowItemsFromProgress` 把后端结果映射为页面结构；经法管融通计入「大类平台」上限 6 学分，超出自动计入「通识教育·选修」，旅迹页会给出溢出提示。
+
 ## 7. 与后端接口关系
 
 | 前端功能 | 后端接口 |

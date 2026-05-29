@@ -3,11 +3,11 @@ import type {
   ActualCourseMeeting,
   CourseNature,
   CourseWithCategory,
-  CreditAssignment,
   CreditAssignmentTarget,
   PersonalPlanItem,
   PlanCoursePatch,
   ProgramRequirement,
+  ProgressResponse,
   SemesterCourse,
   TrashItem,
 } from "../types";
@@ -474,6 +474,18 @@ export const api = {
     return reqs.map(toLegacyRequirement);
   },
 
+  /** 进度/学分统计的唯一真相源（后端计算，详见 docs/16）。 */
+  progress: async (): Promise<ProgressResponse> => {
+    return getJSON<ProgressResponse>("/api/progress");
+  },
+
+  /**
+   * 旧版交互按 number id 寻址（patchManual 等）。这里用与各 fetch 相同的
+   * 合成 id 规则，把后端的 courseCode 映射为同一个稳定 id，供进度页内联编辑复用。
+   */
+  idForCourse: (courseCode: string, source: "program" | "custom"): number =>
+    source === "custom" ? rememberCustomCode(courseCode) : stableProgramId(courseCode),
+
   semesterCourses: async () => {
     const courses = await fetchCourses("status=正在修读,已修读,未通过&limit=1000");
     return courses.map(toSemesterCourse).filter((x): x is SemesterCourse => x !== null);
@@ -712,16 +724,6 @@ export const api = {
     const code = await customCodeFromId(id);
     await updateCourse(code, patch);
     return { ok: true as const, changes: 1 };
-  },
-
-  creditAssignments: async () => {
-    const courses = await fetchCourses("requirementType=经法管融通&limit=1000");
-    return courses.map(
-      (course): CreditAssignment => ({
-        course_code: course.courseCode,
-        assigned_to: creditCountToToAssignment(course.creditCountTo) ?? "interdisciplinary",
-      })
-    );
   },
 
   setCreditAssignment: async (

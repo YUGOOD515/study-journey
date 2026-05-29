@@ -4,11 +4,9 @@ import { api } from "../lib/api";
 import { CATEGORY_STYLE } from "../lib/categoryStyle";
 import { formatCredits, roundCredits } from "../lib/credits";
 import {
-  buildAssignmentMap,
-  bundleByCategory,
-  computeRequirementRows,
+  bundlesFromProgress,
+  flowItemsFromProgress,
   type CategoryBundle,
-  type CreditAssignmentMap,
   type EarnedCourse,
   type PlannedCourse,
   type RequirementRow,
@@ -16,77 +14,75 @@ import {
 import { TERM_LABEL } from "../lib/offeredTerm";
 import { ProgressBar } from "../components/ProgressBar";
 import { InterdisciplinaryFlow, type FlowItem } from "../components/InterdisciplinaryFlow";
+import { myPlanTotalCredits } from "../lib/planTotal";
 import type {
   CourseWithCategory,
-  CreditAssignment,
   PersonalPlanItem,
-  ProgramRequirement,
+  ProgressResponse,
   SemesterCourse,
 } from "../types";
 
 export default function Trail() {
-  const [courses, setCourses] = useState<CourseWithCategory[]>([]);
-  const [reqs, setReqs] = useState<ProgramRequirement[]>([]);
-  const [done, setDone] = useState<SemesterCourse[]>([]);
-  const [personalPlan, setPersonalPlan] = useState<PersonalPlanItem[]>([]);
-  const [assignments, setAssignments] = useState<CreditAssignment[]>([]);
+  const [progress, setProgress] = useState<ProgressResponse | null>(null);
+  const [planInputs, setPlanInputs] = useState<{
+    courses: CourseWithCategory[];
+    personalPlan: PersonalPlanItem[];
+    done: SemesterCourse[];
+  } | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     Promise.all([
+      api.progress(),
       api.coursesWithCategory(),
-      api.programRequirements(),
-      api.semesterCourses(),
       api.personalPlan(),
-      api.creditAssignments(),
+      api.semesterCourses(),
     ])
-      .then(([c, r, d, p, a]) => {
-        setCourses(c);
-        setReqs(r);
-        setDone(d);
-        setPersonalPlan(p);
-        setAssignments(a);
+      .then(([p, courses, personalPlan, done]) => {
+        setProgress(p);
+        setPlanInputs({ courses, personalPlan, done });
       })
       .catch((e) => setErr(String(e)))
       .finally(() => setLoading(false));
   }, []);
 
   const refetchTrailData = useCallback(async () => {
-    const [d, p, a] = await Promise.all([
-      api.semesterCourses(),
+    const [p, courses, personalPlan, done] = await Promise.all([
+      api.progress(),
+      api.coursesWithCategory(),
       api.personalPlan(),
-      api.creditAssignments(),
+      api.semesterCourses(),
     ]);
-    setDone(d);
-    setPersonalPlan(p);
-    setAssignments(a);
+    setProgress(p);
+    setPlanInputs({ courses, personalPlan, done });
   }, []);
 
-  const assignmentMap: CreditAssignmentMap = useMemo(
-    () => buildAssignmentMap(assignments),
-    [assignments]
-  );
-
   const bundles = useMemo(
-    () =>
-      bundleByCategory(
-        computeRequirementRows(reqs, courses, done, personalPlan, assignmentMap)
-      ),
-    [reqs, courses, done, personalPlan, assignmentMap]
+    () => (progress ? bundlesFromProgress(progress, api.idForCourse) : []),
+    [progress]
   );
 
-  const overall = useMemo(() => {
-    const required = bundles.reduce((s, b) => s + b.totalRequired, 0);
-    const earned = bundles.reduce((s, b) => s + b.totalEarned, 0);
-    const planned = bundles.reduce((s, b) => s + b.totalPlanned, 0);
+  const totals = useMemo(() => {
+    const t = progress?.totals;
     return {
-      required: roundCredits(required),
-      earned: roundCredits(earned),
-      planned: roundCredits(planned),
+      required: roundCredits(t?.required ?? 0),
+      earned: roundCredits(t?.earned ?? 0),
+      inProgress: roundCredits(t?.inProgress ?? 0),
+      planned: roundCredits(t?.planned ?? 0),
+      pending: roundCredits(t?.pending ?? 0),
     };
-  }, [bundles]);
+  }, [progress]);
+
+  // “我的计划合计”：与时间轴页同一套口径（lib/planTotal）
+  const planTotal = useMemo(
+    () =>
+      planInputs
+        ? myPlanTotalCredits(planInputs.courses, planInputs.personalPlan, planInputs.done)
+        : 0,
+    [planInputs]
+  );
 
   const toggle = (key: string) => {
     setExpanded((prev) => {
@@ -97,69 +93,12 @@ export default function Trail() {
     });
   };
 
-  // 经法管融通 流向图 items —— 三种来源合一
+  // 经法管融通 流向图 items —— 全部来自后端进度结果（唯一真相源）
   // 注意：所有 hooks 必须在早 return 之前调用，否则违反 Rules of Hooks
-  const flowItems: FlowItem[] = useMemo(() => {
-    const list: FlowItem[] = [];
-
-    // 1) 培养方案内经法管融通课
-    const earnedOfficialCodes = new Set<string>();
-    for (const r of done) {
-      if (r.source === "official" && r.course_code && r.score != null) {
-        earnedOfficialCodes.add(r.course_code);
-      }
-    }
-    for (const c of courses) {
-      if (c.course_category?.includes("经法管融通")) {
-        list.push({
-          key: `official:${c.course_code}`,
-          courseName: c.course_name,
-          credits: c.credits,
-          categoryCode: c.category_code,
-          isEarned: earnedOfficialCodes.has(c.course_code),
-          assignment: assignmentMap.get(c.course_code) ?? "interdisciplinary",
-        });
-      }
-    }
-
-    // 2) 手动已修课带经法管融通旗标
-    for (const r of done) {
-      if (
-        r.source === "manual" &&
-        r.is_interdisciplinary === 1 &&
-        r.category_code &&
-        r.id != null
-      ) {
-        list.push({
-          key: `record:${r.id}`,
-          courseName: r.course_name,
-          credits: r.credits,
-          categoryCode: r.category_code,
-          isEarned: r.score != null,
-          assignment: (r.assigned_to ?? "interdisciplinary") as
-            | "interdisciplinary"
-            | "elective",
-        });
-      }
-    }
-
-    // 3) 计划课带经法管融通旗标
-    for (const p of personalPlan) {
-      if (p.item_type === "manual" && p.is_interdisciplinary === 1) {
-        list.push({
-          key: `plan:${p.id}`,
-          courseName: p.course_name,
-          credits: p.credits,
-          categoryCode: p.category_code,
-          isEarned: false,
-          assignment: (p.assigned_to ?? "interdisciplinary") as
-            | "interdisciplinary"
-            | "elective",
-        });
-      }
-    }
-    return list;
-  }, [courses, done, personalPlan, assignmentMap]);
+  const flowItems: FlowItem[] = useMemo(
+    () => (progress ? flowItemsFromProgress(progress, api.idForCourse) : []),
+    [progress]
+  );
 
   const interdisciplinaryTotal = useMemo(() => {
     for (const b of bundles) {
@@ -223,78 +162,200 @@ export default function Trail() {
     );
   }
 
-  const overallPct =
-    overall.required > 0 ? (overall.earned / overall.required) * 100 : 0;
+  const pct =
+    totals.required > 0 ? Math.min(100, (totals.earned / totals.required) * 100) : 0;
+  const interOverflow = progress?.overflow.interdisciplinary ?? null;
 
   return (
-    <div className="min-h-screen px-8 py-6">
-      <header className="mb-6">
-        <h1 className="text-lg text-ink">旅迹</h1>
-        <div className="text-[11px] text-sub mt-0.5">
-          已修在前 · 计划修读在后 · 点课程填成绩
-        </div>
-      </header>
+    <div className="relative min-h-screen">
+      {/* 顶部暖色氛围光 */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 top-0 h-[340px]"
+        style={{
+          background:
+            "radial-gradient(120% 100% at 50% 0%, rgb(var(--brand) / 0.07), transparent 72%)",
+        }}
+      />
 
-      {/* 总览 */}
-      <section className="bg-card border border-sub/15 rounded-xl p-6 mb-6">
-        <div className="flex items-baseline justify-between mb-3">
-          <div className="text-sm text-sub">总进度</div>
-          <div className="flex items-baseline gap-2">
-            <span className="text-3xl text-ink tabular-nums">
-              {formatCredits(overall.earned)}
-            </span>
-            <span className="text-sub tabular-nums">
-              / {formatCredits(overall.required)} 学分
-            </span>
-            <span className="ml-3 text-xs text-sub tabular-nums">
-              ({overallPct.toFixed(1)}%)
+      <div className="relative max-w-5xl mx-auto px-6 md:px-8 py-9">
+        {/* 标题 */}
+        <header className="trail-rise" style={{ animationDelay: "0ms" }}>
+          <div className="text-[10px] tracking-[0.32em] text-sub/60 uppercase mb-1.5">
+            Study Journey
+          </div>
+          <div className="flex items-baseline gap-3 flex-wrap">
+            <h1 className="text-2xl text-ink tracking-tight">旅迹</h1>
+            <span className="text-[11px] text-sub/80">
+              已修在前 · 计划在后 · 点课程可填成绩
             </span>
           </div>
-        </div>
-        <div className="flex items-center justify-between mb-2 text-[11px] text-sub">
-          <span>我的计划预览</span>
-          <span className="tabular-nums">
-            + {formatCredits(overall.planned)} 学分，预计 {formatCredits(overall.earned + overall.planned)}
-          </span>
-        </div>
-        <ProgressBar
-          earned={overall.earned}
-          required={overall.required}
-          color="#c96442"
-          trackColor="rgba(201,100,66,0.10)"
-          planned={overall.planned}
-        />
-      </section>
+        </header>
 
-      {/* 经法管融通学分流向（仅当有该类课程时显示） */}
-      {flowItems.length > 0 && (
-        <section className="bg-card border border-sub/15 rounded-xl p-4 mb-6 inline-block">
-          <div className="mb-2">
-            <h2 className="text-xs text-ink">学分流向 · 经法管融通</h2>
-            <div className="text-[10px] text-sub mt-0.5">
-              点击课程或连线，切换归属
+        {/* 总览 */}
+        <section
+          className="trail-rise mt-6 bg-card border border-sub/15 rounded-2xl p-6 md:p-8"
+          style={{
+            animationDelay: "70ms",
+            boxShadow:
+              "0 1px 2px rgb(var(--shadow-rgb) / var(--shadow-soft)), 0 24px 48px -32px rgb(var(--shadow-rgb) / var(--shadow-strong))",
+          }}
+        >
+          <div className="flex flex-col sm:flex-row sm:items-center gap-7 sm:gap-9">
+            <Ring pct={pct} />
+            <div className="flex-1 min-w-0">
+              <div className="flex flex-wrap items-stretch gap-x-7 gap-y-3 mb-5">
+                <Stat label="已修" value={totals.earned} dotOpacity={1} />
+                <Stat label="在修" value={totals.inProgress} dotOpacity={0.55} />
+                <Stat label="计划" value={totals.planned} dotOpacity={0.26} />
+                <Stat label="待修" value={totals.pending} muted />
+              </div>
+              <ProgressBar
+                earned={totals.earned}
+                inProgress={totals.inProgress}
+                planned={totals.planned}
+                required={totals.required}
+                color="rgb(var(--brand) / 1)"
+                height={12}
+              />
+              <div className="mt-2.5 flex items-baseline justify-between text-[11px] text-sub">
+                <span className="tabular-nums">
+                  共需 <span className="text-ink">{formatCredits(totals.required)}</span> 学分
+                </span>
+                <span className="tabular-nums">
+                  我的计划合计 <span className="text-ink">{formatCredits(planTotal)}</span> 学分
+                </span>
+              </div>
             </div>
           </div>
-          <InterdisciplinaryFlow
-            items={flowItems}
-            onToggle={toggleItem}
-            interdisciplinaryTotal={interdisciplinaryTotal}
-            electiveTotalByCategory={electiveTotalByCategory}
-          />
         </section>
-      )}
 
-      {/* 5 个板块 */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {bundles.map((b) => (
-          <CategoryCard
-            key={b.code}
-            bundle={b}
-            expandedKeys={expanded}
-            onToggle={toggle}
-            onRefetch={refetchTrailData}
+        {/* 经法管融通学分流向（仅当有该类课程时显示） */}
+        {flowItems.length > 0 && (
+          <section
+            className="trail-rise mt-5 bg-card border border-sub/15 rounded-2xl p-5 w-fit max-w-full"
+            style={{ animationDelay: "130ms" }}
+          >
+            <div className="mb-3">
+              <h2 className="text-xs text-ink flex items-center gap-2">
+                <span
+                  className="inline-block w-1.5 h-1.5 rounded-full"
+                  style={{ backgroundColor: "rgb(var(--cat-mp) / 1)" }}
+                />
+                学分流向 · 经法管融通
+              </h2>
+              <div className="text-[10px] text-sub/70 mt-1">
+                点击课程或连线切换归属 · 计入「大类平台」上限 {interOverflow?.cap ?? 6} 学分，超出自动计入「通识教育·选修」
+              </div>
+            </div>
+            <InterdisciplinaryFlow
+              items={flowItems}
+              onToggle={toggleItem}
+              interdisciplinaryTotal={interdisciplinaryTotal}
+              electiveTotalByCategory={electiveTotalByCategory}
+            />
+            {interOverflow && interOverflow.overflowCredits > 0 && (
+              <div className="mt-3 text-[10px] leading-relaxed" style={{ color: "rgb(var(--brand) / 1)" }}>
+                大类平台·经法管已达 {interOverflow.cap} 学分上限，超出的{" "}
+                {formatCredits(interOverflow.overflowCredits)} 学分已自动计入「通识教育·选修」：
+                {interOverflow.overflowCourses.map((c) => c.courseName).join("、")}
+              </div>
+            )}
+          </section>
+        )}
+
+        {/* 五大板块 */}
+        <div className="mt-8 mb-3 text-[10px] tracking-[0.28em] text-sub/55 uppercase">
+          培养方案 · 五大板块
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {bundles.map((b, i) => (
+            <CategoryCard
+              key={b.code}
+              bundle={b}
+              index={i}
+              expandedKeys={expanded}
+              onToggle={toggle}
+              onRefetch={refetchTrailData}
+            />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** 总览进度环：沿描边画出弧线，中心显示百分比。 */
+function Ring({ pct }: { pct: number }) {
+  const size = 128;
+  const stroke = 9;
+  const r = (size - stroke) / 2;
+  const c = 2 * Math.PI * r;
+  const arc = (Math.max(0, Math.min(100, pct)) / 100) * c;
+  return (
+    <div className="relative shrink-0" style={{ width: size, height: size }}>
+      <svg width={size} height={size} className="-rotate-90">
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={r}
+          fill="none"
+          stroke="rgb(var(--sub) / 0.13)"
+          strokeWidth={stroke}
+        />
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={r}
+          fill="none"
+          stroke="rgb(var(--brand) / 1)"
+          strokeWidth={stroke}
+          strokeLinecap="round"
+          style={{
+            ["--ring-arc" as string]: `${arc}`,
+            strokeDasharray: `${arc} ${c}`,
+            animation: "ringDraw 1100ms cubic-bezier(0.22,1,0.36,1) both",
+          } as React.CSSProperties}
+        />
+      </svg>
+      <div className="absolute inset-0 flex flex-col items-center justify-center">
+        <span className="text-[30px] leading-none text-ink tabular-nums">
+          {pct.toFixed(0)}
+          <span className="text-sm text-sub align-top ml-0.5">%</span>
+        </span>
+        <span className="text-[10px] text-sub/65 mt-1 tracking-[0.2em]">完成</span>
+      </div>
+    </div>
+  );
+}
+
+/** 总览四态统计项：已修 / 在修 / 计划 / 待修。 */
+function Stat({
+  label,
+  value,
+  dotOpacity,
+  muted,
+}: {
+  label: string;
+  value: number;
+  dotOpacity?: number;
+  muted?: boolean;
+}) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="flex items-center gap-1.5 text-[10px] text-sub/80">
+        {muted ? (
+          <span className="inline-block w-1.5 h-1.5 rounded-full border border-sub/45" />
+        ) : (
+          <span
+            className="inline-block w-1.5 h-1.5 rounded-full"
+            style={{ backgroundColor: "rgb(var(--brand) / 1)", opacity: dotOpacity }}
           />
-        ))}
+        )}
+        {label}
+      </div>
+      <div className="text-[19px] leading-none text-ink tabular-nums">
+        {formatCredits(value)}
       </div>
     </div>
   );
@@ -302,11 +363,13 @@ export default function Trail() {
 
 function CategoryCard({
   bundle,
+  index,
   expandedKeys,
   onToggle,
   onRefetch,
 }: {
   bundle: CategoryBundle;
+  index: number;
   expandedKeys: Set<string>;
   onToggle: (key: string) => void;
   onRefetch: () => Promise<void>;
@@ -314,71 +377,96 @@ function CategoryCard({
   const style = CATEGORY_STYLE[bundle.code];
   const pct =
     bundle.totalRequired > 0
-      ? (bundle.totalEarned / bundle.totalRequired) * 100
-      : 0;
+      ? Math.min(100, (bundle.totalEarned / bundle.totalRequired) * 100)
+      : bundle.totalEarned > 0
+        ? 100
+        : 0;
+  const preview = roundCredits(bundle.totalInProgress + bundle.totalPlanned);
 
   return (
-    <div className="bg-card border border-sub/15 rounded-xl p-5">
-      <div className="flex items-baseline justify-between mb-4">
+    <div
+      className="trail-rise relative bg-card border border-sub/15 rounded-2xl pl-6 pr-5 py-5 overflow-hidden transition-all duration-300 hover:-translate-y-0.5 hover:border-sub/25 hover:shadow-[0_18px_36px_-26px_rgb(var(--shadow-rgb)/var(--shadow-strong))]"
+      style={{ animationDelay: `${150 + index * 70}ms` }}
+    >
+      {/* 类别色脊 */}
+      <span
+        className="absolute left-0 top-0 bottom-0 w-[3px]"
+        style={{ backgroundColor: style.color }}
+      />
+
+      <div className="flex items-center justify-between mb-1">
         <div className="flex items-center gap-2">
           <span
-            className="inline-block w-3 h-3 rounded-sm"
+            className="inline-block w-2.5 h-2.5 rounded-[3px]"
             style={{ backgroundColor: style.color }}
           />
-          <h2 className="text-base text-ink">{bundle.name}</h2>
+          <h2 className="text-[15px] text-ink">{bundle.name}</h2>
         </div>
         <div className="text-xs text-sub tabular-nums">
-          <span className="text-ink text-base mr-1">{formatCredits(bundle.totalEarned)}</span>
-          / {formatCredits(bundle.totalRequired)} 学分 · {pct.toFixed(1)}%
+          <span className="text-ink text-lg mr-0.5">{formatCredits(bundle.totalEarned)}</span>
+          <span className="text-sub/55">/ {formatCredits(bundle.totalRequired)}</span>
+          <span className="ml-2" style={{ color: style.text }}>
+            {pct.toFixed(0)}%
+          </span>
         </div>
       </div>
-      <div className="mb-3 text-[11px] text-sub tabular-nums">
-        我的计划预览 + {formatCredits(bundle.totalPlanned)} 学分
+      <div className="mb-3 h-[14px] text-[10px] text-sub/65 tabular-nums">
+        {preview > 0 ? `计划预览 +${formatCredits(preview)} 学分` : ""}
       </div>
+      <ProgressBar
+        earned={bundle.totalEarned}
+        inProgress={bundle.totalInProgress}
+        planned={bundle.totalPlanned}
+        required={bundle.totalRequired}
+        color={style.color}
+        trackColor={style.bgGhost}
+        height={8}
+      />
 
-      <div className="space-y-3">
+      <div className="mt-5 space-y-3.5">
         {bundle.rows.map((row) => {
           const key = `${bundle.code}-${row.requirementType}`;
           const isOpen = expandedKeys.has(key);
           const rowPct =
             row.requiredCredits > 0
-              ? (row.earnedCredits / row.requiredCredits) * 100
-              : 0;
+              ? Math.min(100, (row.earnedCredits / row.requiredCredits) * 100)
+              : row.earnedCredits > 0
+                ? 100
+                : 0;
+          const rowPreview = roundCredits(row.inProgressCredits + row.plannedCredits);
           return (
             <div key={key}>
               <button
                 onClick={() => onToggle(key)}
-                className="w-full text-left group"
+                className="w-full text-left group/row"
               >
-                <div className="flex items-baseline justify-between text-xs mb-1.5">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-sub group-hover:text-ink transition-colors">
+                <div className="flex items-baseline justify-between text-xs mb-1.5 gap-2">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <span className="text-sub group-hover/row:text-ink transition-colors truncate">
                       {row.requirementName}
                     </span>
-                    <span className="text-sub/60 tabular-nums">
-                      ({row.earnedCourses.length} 门已修 · {row.plannedCourses.length} 门计划)
+                    <span className="text-sub/50 tabular-nums shrink-0">
+                      {row.earnedCourses.length} 已修 · {row.plannedCourses.length} 计划
                     </span>
                   </div>
-                  <div className="tabular-nums" style={{ color: style.text }}>
+                  <div className="tabular-nums shrink-0" style={{ color: style.text }}>
                     {formatCredits(row.earnedCredits)}
-                    {row.plannedCredits > 0 && (
-                      <span className="text-sub/70 ml-1">
-                        +{formatCredits(row.plannedCredits)}
-                      </span>
+                    {rowPreview > 0 && (
+                      <span className="text-sub/65 ml-0.5">+{formatCredits(rowPreview)}</span>
                     )}
-                    <span className="text-sub mx-0.5">/</span>
-                    {formatCredits(row.requiredCredits)}
-                    <span className="text-sub/60 ml-1.5 text-[10px]">
-                      {rowPct.toFixed(0)}%
-                    </span>
+                    <span className="text-sub/45 mx-1">/</span>
+                    <span className="text-sub">{formatCredits(row.requiredCredits)}</span>
+                    <span className="text-sub/50 ml-1.5 text-[10px]">{rowPct.toFixed(0)}%</span>
                   </div>
                 </div>
                 <ProgressBar
                   earned={row.earnedCredits}
+                  inProgress={row.inProgressCredits}
+                  planned={row.plannedCredits}
                   required={row.requiredCredits}
                   color={style.color}
                   trackColor={style.bgGhost}
-                  planned={row.plannedCredits}
+                  height={6}
                 />
               </button>
 

@@ -160,14 +160,58 @@ export interface CourseEditDraft {
   note: string;
 }
 
-/**
- * 经法管融通课程的学分归属覆盖。
- *   不存在该课程的记录 = 走默认（计入「大类平台·经法管融通」）
- *   assigned_to='elective' = 用户主动切换到该课原属板块的"选修"桶
- */
-export interface CreditAssignment {
-  course_code: string;
-  assigned_to: CreditAssignmentTarget;
+/** 后端 /api/progress 的响应（唯一真相源，详见 docs/16）。 */
+export type RequirementTypeCode = "required" | "elective" | "interdisciplinary";
+
+export interface ProgressBucketCourse {
+  courseCode: string;
+  courseName: string;
+  credits: number;
+  studyStatus: string;
+  source: "program" | "custom";
+  score: number | null;
+  categoryCode: CategoryCode;
+  term: number | null;
+  requirementType: "必修" | "选修" | "跨专业" | "经法管融通";
+  creditCountTo: string | null;
+}
+
+export interface ProgressBucket {
+  categoryCode: CategoryCode;
+  categoryName: string;
+  requirementTypeCode: RequirementTypeCode;
+  requirementName: string;
+  required: number;
+  earned: number;
+  inProgress: number;
+  planned: number;
+  pending: number;
+  courses: ProgressBucketCourse[];
+}
+
+export interface ProgressResponse {
+  byCategory: ProgressBucket[];
+  totals: {
+    required: number;
+    earned: number;
+    inProgress: number;
+    planned: number;
+    pending: number;
+  };
+  overflow: {
+    interdisciplinary: {
+      cap: number;
+      totalAttempted: number;
+      counted: number;
+      overflowCredits: number;
+      overflowCourses: Array<{
+        courseCode: string;
+        courseName: string;
+        credits: number;
+        studyStatus: string;
+      }>;
+    };
+  };
 }
 
 export interface ActualCourseMeeting {
