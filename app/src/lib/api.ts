@@ -1,22 +1,23 @@
 import type {
   CategoryCode,
   ActualCourseMeeting,
+  Course,
   CourseNature,
+  CourseSource,
   CourseWithCategory,
   CreditAssignmentTarget,
+  CreditCountTo,
   PersonalPlanItem,
   PlanCoursePatch,
   ProgramRequirement,
   ProgressResponse,
   RawCourseSearchResult,
+  RequirementType,
   SemesterCourse,
+  StudyStatus,
   TrashItem,
 } from "../types";
 
-type CourseSource = "program" | "custom";
-type RequirementType = CourseNature | "经法管融通";
-type StudyStatus = "未修读" | "计划修读" | "正在修读" | "已修读" | "未通过";
-type CreditCountTo = "通识教育-选修" | "大类平台-选修";
 type LegacyManualPatch = PlanCoursePatch & { term_number?: number | null };
 
 interface ApiEnvelope<T> {
@@ -34,38 +35,6 @@ interface ApiErrorEnvelope {
   };
 }
 
-interface CourseDto {
-  source: CourseSource;
-  courseCode: string;
-  sectionCode: string | null;
-  courseName: string;
-  categoryCode: CategoryCode;
-  categoryName: string;
-  requirementType: RequirementType;
-  courseSubcategory: string | null;
-  credits: number;
-  totalHours: number;
-  lectureHours: number;
-  experimentHours: number;
-  extraHours: number;
-  plannedTerm: number | null;
-  actualTerm: number | null;
-  officialTerm: string | null;
-  studyStatus: StudyStatus;
-  score: number | null;
-  creditCountTo: CreditCountTo | null;
-  prerequisiteCourseCode: string | null;
-  prerequisiteCourseName: string | null;
-  isDeleted: boolean;
-  isPermanentlyDeleted: boolean;
-  deletedAt: string | null;
-  deletedNote: string | null;
-  preferenceLevel: number | null;
-  note: string | null;
-  createdAt: string;
-  updatedAt: string;
-}
-
 interface RequirementDto {
   categoryCode: string;
   categoryName: string;
@@ -78,7 +47,7 @@ interface RequirementDto {
 
 const customIdByCode = new Map<string, number>();
 const customCodeById = new Map<number, string>();
-const courseCacheByCode = new Map<string, CourseDto>();
+const courseCacheByCode = new Map<string, Course>();
 let nextSyntheticCustomId = 1;
 
 async function request<T>(
@@ -121,13 +90,13 @@ async function send<T>(
   });
 }
 
-function rememberCourse(course: CourseDto): CourseDto {
+function rememberCourse(course: Course): Course {
   courseCacheByCode.set(course.courseCode, course);
   if (course.source === "custom") rememberCustomCode(course.courseCode);
   return course;
 }
 
-function rememberCourses(courses: CourseDto[]): CourseDto[] {
+function rememberCourses(courses: Course[]): Course[] {
   courses.forEach(rememberCourse);
   return courses;
 }
@@ -153,15 +122,15 @@ async function customCodeFromId(id: number): Promise<string> {
   return resolved;
 }
 
-async function fetchCourses(query = "limit=1000"): Promise<CourseDto[]> {
-  const data = await getJSON<CourseDto[]>(`/api/courses?${query}`);
+async function fetchCourses(query = "limit=1000"): Promise<Course[]> {
+  const data = await getJSON<Course[]>(`/api/courses?${query}`);
   return rememberCourses(data);
 }
 
-async function getCourse(code: string): Promise<CourseDto> {
+async function getCourse(code: string): Promise<Course> {
   const cached = courseCacheByCode.get(code);
   if (cached) return cached;
-  const course = await getJSON<CourseDto>(`/api/courses/${encodeURIComponent(code)}`);
+  const course = await getJSON<Course>(`/api/courses/${encodeURIComponent(code)}`);
   return rememberCourse(course);
 }
 
@@ -183,7 +152,7 @@ function creditCountToToAssignment(
   return null;
 }
 
-function isInterdisciplinary(course: CourseDto): 0 | 1 {
+function isInterdisciplinary(course: Course): 0 | 1 {
   return course.requirementType === "经法管融通" ||
     Boolean(course.courseSubcategory?.includes("经法管融通")) ||
     Boolean(course.creditCountTo)
@@ -191,7 +160,7 @@ function isInterdisciplinary(course: CourseDto): 0 | 1 {
     : 0;
 }
 
-function toCourseWithCategory(course: CourseDto): CourseWithCategory {
+function toCourseWithCategory(course: Course): CourseWithCategory {
   rememberCourse(course);
   return {
     course_code: course.courseCode,
@@ -221,7 +190,7 @@ function toCourseWithCategory(course: CourseDto): CourseWithCategory {
   };
 }
 
-function toSemesterCourse(course: CourseDto): SemesterCourse | null {
+function toSemesterCourse(course: Course): SemesterCourse | null {
   const term = course.actualTerm ?? course.plannedTerm;
   if (term == null) return null;
   if (
@@ -248,7 +217,7 @@ function toSemesterCourse(course: CourseDto): SemesterCourse | null {
   };
 }
 
-function toPersonalPlanItem(course: CourseDto): PersonalPlanItem | null {
+function toPersonalPlanItem(course: Course): PersonalPlanItem | null {
   if (course.studyStatus !== "计划修读") return null;
   return {
     id: course.source === "custom" ? rememberCustomCode(course.courseCode) : stableProgramId(course.courseCode),
@@ -275,7 +244,7 @@ function toPersonalPlanItem(course: CourseDto): PersonalPlanItem | null {
   };
 }
 
-function toTrashItem(course: CourseDto): TrashItem {
+function toTrashItem(course: Course): TrashItem {
   return {
     source: course.source,
     id: course.source === "custom" ? rememberCustomCode(course.courseCode) : stableProgramId(course.courseCode),
@@ -372,7 +341,7 @@ function categoryName(code: CategoryCode): string {
   return names[code];
 }
 
-function toCoursePatch(patch: PlanCoursePatch, existing?: CourseDto): Record<string, unknown> {
+function toCoursePatch(patch: PlanCoursePatch, existing?: Course): Record<string, unknown> {
   const body: Record<string, unknown> = {};
   if (patch.course_name !== undefined) body.courseName = patch.course_name;
   if (patch.category_code !== undefined) body.categoryCode = patch.category_code;
@@ -413,7 +382,7 @@ function hasFieldPatch(body: Record<string, unknown>) {
   return Object.keys(body).length > 0;
 }
 
-async function applyStatePatch(code: string, patch: PlanCoursePatch): Promise<CourseDto | null> {
+async function applyStatePatch(code: string, patch: PlanCoursePatch): Promise<Course | null> {
   if (patch.score === undefined && patch.planned_term === undefined) return null;
 
   const course = await getCourse(code);
@@ -427,7 +396,7 @@ async function applyStatePatch(code: string, patch: PlanCoursePatch): Promise<Co
     }
     const studyStatus: StudyStatus =
       patch.score == null ? "正在修读" : patch.score >= 60 ? "已修读" : "未通过";
-    const updated = await send<CourseDto>(
+    const updated = await send<Course>(
       `/api/courses/${encodeURIComponent(code)}/study-record`,
       "POST",
       { studyStatus, term, score: patch.score ?? null }
@@ -435,7 +404,7 @@ async function applyStatePatch(code: string, patch: PlanCoursePatch): Promise<Co
     return rememberCourse(updated);
   }
 
-  const updated = await send<CourseDto>(
+  const updated = await send<Course>(
     course.studyStatus === "正在修读" ||
       course.studyStatus === "已修读" ||
       course.studyStatus === "未通过"
@@ -451,13 +420,13 @@ async function applyStatePatch(code: string, patch: PlanCoursePatch): Promise<Co
   return rememberCourse(updated);
 }
 
-async function updateCourse(code: string, patch: PlanCoursePatch): Promise<CourseDto> {
+async function updateCourse(code: string, patch: PlanCoursePatch): Promise<Course> {
   const existing = await getCourse(code);
   const fieldPatch = toCoursePatch(patch, existing);
   let latest = existing;
   if (hasFieldPatch(fieldPatch)) {
     latest = rememberCourse(
-      await send<CourseDto>(`/api/courses/${encodeURIComponent(code)}`, "PATCH", fieldPatch)
+      await send<Course>(`/api/courses/${encodeURIComponent(code)}`, "PATCH", fieldPatch)
     );
   }
   const stateUpdated = await applyStatePatch(code, patch);
@@ -498,7 +467,7 @@ export const api = {
   },
 
   trash: async () => {
-    const courses = await getJSON<CourseDto[]>("/api/trash");
+    const courses = await getJSON<Course[]>("/api/trash");
     return rememberCourses(courses).map(toTrashItem);
   },
 
@@ -509,7 +478,7 @@ export const api = {
   }) => {
     const studyStatus: StudyStatus =
       input.score == null ? "正在修读" : input.score >= 60 ? "已修读" : "未通过";
-    const course = await send<CourseDto>(
+    const course = await send<Course>(
       `/api/courses/${encodeURIComponent(input.course_code)}/study-record`,
       "POST",
       { studyStatus, term: input.term_number, score: input.score ?? null }
@@ -528,7 +497,7 @@ export const api = {
     const score = patch.score !== undefined ? patch.score : course.score;
     const studyStatus: StudyStatus =
       score == null ? "正在修读" : score >= 60 ? "已修读" : "未通过";
-    const updated = await send<CourseDto>(
+    const updated = await send<Course>(
       `/api/courses/${encodeURIComponent(course_code)}/study-record`,
       "POST",
       { studyStatus, term, score: score ?? null }
@@ -538,7 +507,7 @@ export const api = {
   },
 
   deleteOfficial: async (course_code: string) => {
-    const course = await send<CourseDto>(
+    const course = await send<Course>(
       `/api/courses/${encodeURIComponent(course_code)}/study-record?fallback=plan`,
       "DELETE"
     );
@@ -562,11 +531,11 @@ export const api = {
     is_interdisciplinary?: 0 | 1;
     assigned_to?: CreditAssignmentTarget;
   }) => {
-    const created = rememberCourse(await send<CourseDto>("/api/courses", "POST", toCreateCustomBody(input)));
+    const created = rememberCourse(await send<Course>("/api/courses", "POST", toCreateCustomBody(input)));
     const score = input.score ?? null;
     const studyStatus: StudyStatus = score == null ? "正在修读" : score >= 60 ? "已修读" : "未通过";
     rememberCourse(
-      await send<CourseDto>(
+      await send<Course>(
         `/api/courses/${encodeURIComponent(created.courseCode)}/study-record`,
         "POST",
         { studyStatus, term: input.term_number, score }
@@ -587,7 +556,7 @@ export const api = {
   deleteManual: async (id: number) => {
     const code = await customCodeFromId(id);
     rememberCourse(
-      await send<CourseDto>(`/api/courses/${encodeURIComponent(code)}/trash`, "POST", {
+      await send<Course>(`/api/courses/${encodeURIComponent(code)}/trash`, "POST", {
         note: "手动课程移入垃圾篓",
       })
     );
@@ -599,7 +568,7 @@ export const api = {
     planned_term: number | null;
     note?: string | null;
   }) => {
-    const course = await send<CourseDto>(
+    const course = await send<Course>(
       `/api/courses/${encodeURIComponent(input.course_code)}/plan`,
       "POST",
       { term: input.planned_term, note: input.note ?? null }
@@ -614,7 +583,7 @@ export const api = {
   },
 
   resetPersonalOfficial: async (course_code: string) => {
-    const course = await send<CourseDto>(
+    const course = await send<Course>(
       `/api/courses/${encodeURIComponent(course_code)}/plan`,
       "DELETE"
     );
@@ -623,7 +592,7 @@ export const api = {
   },
 
   trashOfficial: async (course_code: string) => {
-    const course = await send<CourseDto>(
+    const course = await send<Course>(
       `/api/courses/${encodeURIComponent(course_code)}/trash`,
       "POST",
       { note: "培养方案课程移入垃圾篓" }
@@ -648,12 +617,12 @@ export const api = {
     is_interdisciplinary?: 0 | 1;
     assigned_to?: CreditAssignmentTarget;
   }) => {
-    const created = rememberCourse(await send<CourseDto>("/api/courses", "POST", toCreateCustomBody(input)));
+    const created = rememberCourse(await send<Course>("/api/courses", "POST", toCreateCustomBody(input)));
     if (input.score != null) {
       const term = input.planned_term;
       if (term == null) throw new Error("填写成绩的手动课程必须设置学期");
       rememberCourse(
-        await send<CourseDto>(
+        await send<Course>(
           `/api/courses/${encodeURIComponent(created.courseCode)}/study-record`,
           "POST",
           { studyStatus: input.score >= 60 ? "已修读" : "未通过", term, score: input.score }
@@ -661,7 +630,7 @@ export const api = {
       );
     } else {
       rememberCourse(
-        await send<CourseDto>(
+        await send<Course>(
           `/api/courses/${encodeURIComponent(created.courseCode)}/plan`,
           "POST",
           { term: input.planned_term }
@@ -706,7 +675,7 @@ export const api = {
     note?: string | null;
   }) => {
     const created = rememberCourse(
-      await send<CourseDto>("/api/courses/from-raw", "POST", input)
+      await send<Course>("/api/courses/from-raw", "POST", input)
     );
     return { ok: true as const, id: rememberCustomCode(created.courseCode) };
   },
@@ -720,7 +689,7 @@ export const api = {
   deletePersonalPlan: async (id: number) => {
     const code = await customCodeFromId(id);
     rememberCourse(
-      await send<CourseDto>(`/api/courses/${encodeURIComponent(code)}/trash`, "POST", {
+      await send<Course>(`/api/courses/${encodeURIComponent(code)}/trash`, "POST", {
         note: "计划课程移入垃圾篓",
       })
     );
@@ -729,7 +698,7 @@ export const api = {
 
   restoreTrashItem: async (item: TrashItem) => {
     const code = item.course_code ?? (await customCodeFromId(item.id));
-    const course = await send<CourseDto>(
+    const course = await send<Course>(
       `/api/trash/${encodeURIComponent(code)}/restore`,
       "POST"
     );
@@ -774,7 +743,7 @@ export const api = {
     const code = customIdByCode.has(course_code)
       ? course_code
       : customCodeById.get(Number(course_code)) ?? course_code;
-    const course = await send<CourseDto>(
+    const course = await send<Course>(
       `/api/courses/${encodeURIComponent(code)}/credit-assignment`,
       "POST",
       { creditCountTo: assignmentToCreditCountTo(assigned_to) }
@@ -784,7 +753,7 @@ export const api = {
   },
 
   resetCreditAssignment: async (course_code: string) => {
-    const course = await send<CourseDto>(
+    const course = await send<Course>(
       `/api/courses/${encodeURIComponent(course_code)}/credit-assignment`,
       "DELETE"
     );
