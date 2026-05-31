@@ -135,9 +135,9 @@ export default function Trail() {
         if (kind === "official") {
           await api.setCreditAssignment(raw, next);
         } else if (kind === "record") {
-          await api.patchManual(Number(raw), { assigned_to: next });
+          await api.patchManual(raw, { assigned_to: next });
         } else if (kind === "plan") {
-          await api.patchPersonalPlan(Number(raw), { assigned_to: next });
+          await api.patchPersonalPlan(raw, { assigned_to: next });
         }
         await refetchTrailData();
       } catch (e) {
@@ -507,7 +507,7 @@ function CourseStatusList({
         <CourseGroup label="已修">
           {row.earnedCourses.map((c) => (
             <ScorePill
-              key={`earned-${c.source}-${c.courseCode ?? c.id}`}
+              key={`earned-${c.source}-${c.courseCode}`}
               course={c}
               color={color}
               onRefetch={onRefetch}
@@ -520,7 +520,7 @@ function CourseStatusList({
         <CourseGroup label="计划修读">
           {row.plannedCourses.map((c) => (
             <PlannedCoursePill
-              key={`planned-${c.source}-${c.courseCode ?? c.id}-${c.courseName}`}
+              key={`planned-${c.source}-${c.courseCode}-${c.courseName}`}
               course={c}
               color={color}
               onRefetch={onRefetch}
@@ -726,11 +726,11 @@ function ScorePopover({
           const courseNature =
             course.courseNature === "跨专业" ? "选修" : course.courseNature;
           if (course.origin === "record") {
-            if (course.id == null) throw new Error("手动课缺少 id");
-            await api.patchManual(course.id, { score: newScore });
+            if (!course.courseCode) throw new Error("手动课缺少 courseCode");
+            await api.patchManual(course.courseCode, { score: newScore });
           } else {
-            if (course.id == null) throw new Error("计划课程缺少 id");
-            await api.patchManual(course.id, {
+            if (!course.courseCode) throw new Error("计划课程缺少 courseCode");
+            await api.patchManual(course.courseCode, {
               term_number: plannedTerm,
               score: newScore,
               note: "由计划转为已修",
@@ -746,8 +746,8 @@ function ScorePopover({
           });
         }
       } else if (course.source === "manual") {
-        if (course.id == null) throw new Error("手动课缺少 id");
-        await api.patchManual(course.id, { score: newScore });
+        if (!course.courseCode) throw new Error("手动课缺少 courseCode");
+        await api.patchManual(course.courseCode, { score: newScore });
       } else {
         if (!course.courseCode) throw new Error("官方课缺少课程号");
         await api.patchOfficial(course.courseCode, { score: newScore });

@@ -910,7 +910,6 @@ function buildHoverInfoMap(
     const style = CATEGORY_STYLE[record.category_code] ?? CATEGORY_STYLE.general_education;
     map.set(record.course_code, {
       source: record.source === "manual" ? "custom" : "program",
-      id: record.id,
       course_code: record.course_code,
       course_name: record.course_name,
       credits: record.credits,

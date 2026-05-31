@@ -16,6 +16,20 @@
 | 8 | `docs/07-data-import-and-raw-tables.md` | 理解学校 Excel 如何进入 raw 表 |
 | 9 | `docs/08-api-reference.md` | 查询接口路径、请求字段和返回字段 |
 | 10 | `docs/09-maintenance-and-refactor-plan.md` | 查看后续维护和重构路线 |
+| 11 | `docs/10-api-redesign.md` | 完整 API 重设计契约（33 个 endpoint，分层架构） |
+| 12 | `docs/14-codebase-analysis-2026-05-29.md` | 代码质量分析报告（数据库/后端/前端/工程基建） |
+| 13 | `docs/16-credit-rule-finalization-and-frontend-plan.md` | 经法管融通学分口径定稿与前端实施详情 |
+| 14 | `docs/17-project-status-and-roadmap-2026-05-31.md` | **项目近况总览与未来路线图** |
+
+## 专题文档
+
+以下文档针对特定功能或阶段，按需阅读：
+
+| 文档 | 用途 |
+|---|---|
+| `docs/12-actual-schedule-and-course-selection-view-plan.md` | 学期课表数据导入与选课界面设计 |
+| `docs/13-term-schedule-redesign-plan.md` | 学期课表界面视觉升级计划 |
+| `docs/15-经法管融通学分规则-需求对齐问卷.md` | 经法管融通业务规则需求确认 |
 
 ## 按任务查找
 
@@ -28,6 +42,9 @@
 | 导入学校 Excel | `docs/07-data-import-and-raw-tables.md` |
 | 判断一门课程应放哪个表 | `docs/06-database-design.md` |
 | 清理旧代码或拆分后端 | `docs/09-maintenance-and-refactor-plan.md` |
+| 了解项目整体近况和未来计划 | `docs/17-project-status-and-roadmap-2026-05-31.md` |
+| 查看代码质量评估 | `docs/14-codebase-analysis-2026-05-29.md` |
+| 查询 API 设计契约 | `docs/10-api-redesign.md` |
 
 ## 当前正式文档清单
 
@@ -43,6 +60,13 @@ docs/06-database-design.md
 docs/07-data-import-and-raw-tables.md
 docs/08-api-reference.md
 docs/09-maintenance-and-refactor-plan.md
+docs/10-api-redesign.md
+docs/12-actual-schedule-and-course-selection-view-plan.md
+docs/13-term-schedule-redesign-plan.md
+docs/14-codebase-analysis-2026-05-29.md
+docs/15-经法管融通学分规则-需求对齐问卷.md
+docs/16-credit-rule-finalization-and-frontend-plan.md
+docs/17-project-status-and-roadmap-2026-05-31.md
 ```
 
 ## 已被替代的旧文档

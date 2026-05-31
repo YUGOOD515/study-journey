@@ -42,20 +42,20 @@ export function myPlanTotalCredits(
   }
 
   // 自定义课程：计划修读来自 personal_plan(manual)；已修/在修 custom 来自 done。
-  const seenIds = new Set<number>();
+  const seenCodes = new Set<string>();
   let manualOnTimeline = 0;
   for (const item of personalPlan) {
     if (item.item_type !== "manual") continue;
-    seenIds.add(item.id);
+    if (item.course_code) seenCodes.add(item.course_code);
     if (item.planned_term != null) manualOnTimeline += item.credits;
   }
   for (const item of done) {
     if (
       item.source !== "manual" ||
-      item.id == null ||
+      !item.course_code ||
       item.category_code == null ||
       item.course_nature == null ||
-      seenIds.has(item.id)
+      seenCodes.has(item.course_code)
     ) {
       continue;
     }

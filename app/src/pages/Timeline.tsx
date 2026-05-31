@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../lib/api";
 import { formatCredits } from "../lib/credits";
 import { myPlanTotalCredits } from "../lib/planTotal";
@@ -38,7 +38,7 @@ type DragPayload =
     }
   | {
       kind: "manual";
-      id: number;
+      courseCode: string;
       courseName: string;
       /** null = 来自抽屉 */
       fromTerm: number | null;
@@ -183,29 +183,28 @@ export default function Timeline({
   const manualPlanByTerm = useMemo(() => {
     const byTerm = emptyTermBuckets<PersonalPlanItem>();
     const drawer: PersonalPlanItem[] = [];
-    const seenIds = new Set<number>();
+    const seenCodes = new Set<string>();
 
     for (const item of personalPlan) {
       if (item.item_type !== "manual") continue;
-      seenIds.add(item.id);
+      if (item.course_code) seenCodes.add(item.course_code);
       if (item.planned_term == null) drawer.push(item);
       else byTerm[item.planned_term].push(item);
     }
 
-    // 自定义课程不只存在于“计划修读”里；已修读/正在修读的 custom 课也应该出现在
-    // “我的计划”时间轴上，否则时间轴合计和旅迹页口径会断开。
+    // 自定义课程不只存在于'计划修读'里；已修读/正在修读的 custom 课也应该出现在
+    // '我的计划'时间轴上，否则时间轴合计和旅迹页口径会断开。
     for (const item of done) {
       if (
         item.source !== "manual" ||
-        item.id == null ||
+        !item.course_code ||
         item.category_code == null ||
         item.course_nature == null ||
-        seenIds.has(item.id)
+        seenCodes.has(item.course_code)
       ) {
         continue;
       }
       const normalized: PersonalPlanItem = {
-        id: item.id,
         item_type: "manual",
         course_code: item.course_code,
         planned_term: item.term_number,
@@ -249,7 +248,7 @@ export default function Timeline({
     return {
       requiredTotal,
       officialPlanTotal,
-      // “我的计划合计”：与旅迹页共用同一套口径（lib/planTotal）
+      // '我的计划合计'：与旅迹页共用同一套口径（lib/planTotal）
       personalPlanTotal: myPlanTotalCredits(courses, personalPlan, done),
       completedTotal,
     };
@@ -278,7 +277,7 @@ export default function Timeline({
   ) => {
     const payload: DragPayload = {
       kind: "manual",
-      id: item.id,
+      courseCode: item.course_code ?? "",
       courseName: item.course_name,
       fromTerm: item.planned_term,
     };
@@ -316,7 +315,7 @@ export default function Timeline({
         );
         setHint(warning ? `已放入第 ${term} 学期：${warning}` : null);
       } else {
-        await api.patchPersonalPlan(dragging.id, { planned_term: term });
+        await api.patchPersonalPlan(dragging.courseCode, { planned_term: term });
         setHint(null);
       }
       await refetchPlan();
@@ -341,7 +340,7 @@ export default function Timeline({
         });
         setHint(`已放入待安排：${dragging.courseName}`);
       } else {
-        await api.patchPersonalPlan(dragging.id, { planned_term: null });
+        await api.patchPersonalPlan(dragging.courseCode, { planned_term: null });
         setHint(`已放入待安排：${dragging.courseName}`);
       }
       await refetchPlan();
@@ -415,7 +414,7 @@ export default function Timeline({
       if (dragging.kind === "official") {
         await api.trashOfficial(dragging.courseCode);
       } else {
-        await api.deletePersonalPlan(dragging.id);
+        await api.deletePersonalPlan(dragging.courseCode);
       }
       await refetchTimelineData();
       setActiveDrawer("trash");
@@ -433,8 +432,8 @@ export default function Timeline({
     setHint("课程信息已保存");
   };
 
-  const saveCustomCourse = async (id: number, patch: PlanCoursePatch) => {
-    await api.updateCustomCourse(id, patch);
+  const saveCustomCourse = async (courseCode: string, patch: PlanCoursePatch) => {
+    await api.updateCustomCourse(courseCode, patch);
     await refetchTimelineData();
     setHint("课程信息已保存");
   };
@@ -517,8 +516,8 @@ export default function Timeline({
               onDeleteOfficial={moveOfficialToTrash}
               onSaveOfficial={saveProgramCourse}
               onSaveManual={saveCustomCourse}
-              onDeleteManual={async (id) => {
-                await api.deletePersonalPlan(id);
+              onDeleteManual={async (courseCode) => {
+                await api.deletePersonalPlan(courseCode);
                 await refetchPlan();
               }}
               onOpenSchedule={() => onOpenSchedule?.(term)}
@@ -578,8 +577,8 @@ export default function Timeline({
               onDeleteOfficial={moveOfficialToTrash}
               onSaveOfficial={saveProgramCourse}
               onSaveManual={saveCustomCourse}
-              onDeleteManual={async (id) => {
-                await api.deletePersonalPlan(id);
+              onDeleteManual={async (courseCode) => {
+                await api.deletePersonalPlan(courseCode);
                 await refetchPlan();
               }}
               columns={pendingDrawerColumns}
@@ -886,8 +885,8 @@ function PersonalTermColumn({
   onAdd: () => void;
   onDeleteOfficial: (course: CourseWithCategory) => Promise<void>;
   onSaveOfficial: (courseCode: string, patch: PlanCoursePatch) => Promise<void>;
-  onSaveManual: (id: number, patch: PlanCoursePatch) => Promise<void>;
-  onDeleteManual: (id: number) => Promise<void>;
+  onSaveManual: (courseCode: string, patch: PlanCoursePatch) => Promise<void>;
+  onDeleteManual: (courseCode: string) => Promise<void>;
   onOpenSchedule?: () => void;
 }) {
   const credits =
@@ -933,17 +932,17 @@ function PersonalTermColumn({
         <div className="pt-1 mt-1 border-t border-dashed border-sub/20 flex flex-col gap-1.5">
           {manualItems.map((item) => (
             <ManualCourseCard
-              key={`plan-manual-${item.id}`}
+              key={`plan-manual-${item.course_code}`}
               course={item}
               draggable
               displayOptions={displayOptions}
               editable
-              onSave={(patch) => onSaveManual(item.id, patch)}
+              onSave={(patch) => onSaveManual(item.course_code ?? "", patch)}
               onDragStart={(event) => onStartManualDrag(event, item)}
               onDragEnd={onDragEnd}
-              onDelete={async (id) => {
+              onDelete={async (courseCode) => {
                 if (!window.confirm(`将「${item.course_name}」移入垃圾篓？`)) return;
-                await onDeleteManual(id);
+                await onDeleteManual(courseCode);
               }}
             />
           ))}
@@ -1302,7 +1301,7 @@ function TrashDrawerContent({
       </div>
       <DrawerCourseGrid columns={columns}>
         {items.map((item) => (
-          <DrawerCourseItem key={`${item.source}-${item.id}-${item.course_code ?? "custom"}`}>
+          <DrawerCourseItem key={`${item.source}-${item.course_code ?? "custom"}`}>
             <TrashCourseCard
               item={item}
               onRestore={() => onRestore(item)}
@@ -1329,7 +1328,6 @@ function TrashCourseCard({
   const hover = useHoverIntentTriangle<HTMLDivElement>({ width: 280 });
   const hoverItem: CourseHoverInfo = {
     source: item.source,
-    id: item.id,
     course_code: item.course_code,
     course_name: item.course_name,
     credits: item.credits,
@@ -1497,8 +1495,8 @@ function PersonalDrawerContent({
   onAdd: () => void;
   onDeleteOfficial: (course: CourseWithCategory) => Promise<void>;
   onSaveOfficial: (courseCode: string, patch: PlanCoursePatch) => Promise<void>;
-  onSaveManual: (id: number, patch: PlanCoursePatch) => Promise<void>;
-  onDeleteManual: (id: number) => Promise<void>;
+  onSaveManual: (courseCode: string, patch: PlanCoursePatch) => Promise<void>;
+  onDeleteManual: (courseCode: string) => Promise<void>;
   columns: number;
 }) {
   const empty = officialItems.length === 0 && manualItems.length === 0;
@@ -1528,18 +1526,18 @@ function PersonalDrawerContent({
             </DrawerCourseItem>
           ))}
           {manualItems.map((item) => (
-            <DrawerCourseItem key={`drawer-manual-${item.id}`}>
+            <DrawerCourseItem key={`drawer-manual-${item.course_code}`}>
               <ManualCourseCard
                 course={item}
                 draggable
                 displayOptions={displayOptions}
                 editable
-                onSave={(patch) => onSaveManual(item.id, patch)}
+                onSave={(patch) => onSaveManual(item.course_code ?? "", patch)}
                 onDragStart={(event) => onStartManualDrag(event, item)}
                 onDragEnd={onDragEnd}
-                onDelete={async (id) => {
+                onDelete={async (courseCode) => {
                   if (!window.confirm(`将「${item.course_name}」移入垃圾篓？`)) return;
-                  await onDeleteManual(id);
+                  await onDeleteManual(courseCode);
                 }}
               />
             </DrawerCourseItem>
