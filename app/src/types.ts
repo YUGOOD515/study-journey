@@ -5,9 +5,68 @@ export type CategoryCode =
   | "quality_education"
   | "practice_education";
 
-export type CourseNature = "必修" | "选修" | "跨专业";
+export type CourseNature = "必修" | "选修" | "跨专业" | "经法管融通";
 export type CreditAssignmentTarget = "interdisciplinary" | "elective";
 
+/** 后端 RequirementType */
+export type RequirementType = CourseNature;
+/** 后端 StudyStatus */
+export type StudyStatus = "未修读" | "计划修读" | "正在修读" | "已修读" | "未通过";
+/** 后端 CreditCountTo */
+export type CreditCountTo = "通识教育-选修" | "大类平台-选修";
+/** 后端 CourseSource */
+export type CourseSource = "program" | "custom";
+
+// ══════════════════════════════════════════════════════════════════════
+// 新统一类型（camelCase，与后端 DTO 对齐）
+// ══════════════════════════════════════════════════════════════════════
+
+/** 课程统一模型，与后端 CourseDto 完全对齐。是前端的主要数据载体。 */
+export interface Course {
+  source: CourseSource;
+  courseCode: string;
+  sectionCode: string | null;
+  courseName: string;
+
+  categoryCode: CategoryCode;
+  categoryName: string;
+  requirementType: RequirementType;
+  courseSubcategory: string | null;
+
+  credits: number;
+  totalHours: number;
+  lectureHours: number;
+  experimentHours: number;
+  extraHours: number;
+
+  plannedTerm: number | null;
+  actualTerm: number | null;
+  officialTerm: string | null;
+  studyStatus: StudyStatus;
+  score: number | null;
+
+  creditCountTo: CreditCountTo | null;
+
+  prerequisiteCourseCode: string | null;
+  prerequisiteCourseName: string | null;
+
+  isDeleted: boolean;
+  isPermanentlyDeleted: boolean;
+  deletedAt: string | null;
+  deletedNote: string | null;
+
+  preferenceLevel: number | null;
+  note: string | null;
+
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// 旧类型（snake_case）—— 逐步迁移中，新代码请使用 Course
+// ══════════════════════════════════════════════════════════════════════
+
+/** @deprecated 请使用 Course 代替 */
 export interface CourseWithCategory {
   course_code: string;
   course_name: string;
@@ -45,9 +104,8 @@ export interface ProgramRequirement {
 }
 
 /**
- * 已修记录。两种来源：
- *  - 'official' = 培养方案内课程（course_code 有效；category/nature 从 courses 表反查）
- *  - 'manual'   = 用户手动添加的公选课（id 有效；category/nature 自带）
+ * @deprecated 请使用 Course 代替。旧版"已修记录"类型。
+ * 来源：'official' = 培养方案内课程；'manual' = 用户手动添加
  */
 export interface SemesterCourse {
   source: "official" | "manual";
@@ -67,6 +125,7 @@ export interface SemesterCourse {
   credit_count_to?: string | null;
 }
 
+/** @deprecated 请使用 Course 代替 */
 export interface PersonalPlanItem {
   id: number;
   item_type: "official" | "manual";
@@ -93,6 +152,7 @@ export interface PersonalPlanItem {
   credit_count_to?: string | null;
 }
 
+/** @deprecated 请使用 Course 代替 */
 export interface TrashItem {
   source: "program" | "custom";
   id: number;
