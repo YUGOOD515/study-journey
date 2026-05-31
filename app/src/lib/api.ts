@@ -3,7 +3,6 @@ import type {
   ActualCourseMeeting,
   Course,
   CourseNature,
-  CourseSource,
   CourseWithCategory,
   CreditAssignmentTarget,
   CreditCountTo,

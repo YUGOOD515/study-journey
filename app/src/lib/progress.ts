@@ -177,7 +177,7 @@ export function bundlesFromProgress(
 /** 从进度结果里抽取所有经法管融通课程，构造流向图 items（每门课一次）。 */
 export function flowItemsFromProgress(
   progress: ProgressResponse,
-  idFor: IdForCourse
+  _idFor: IdForCourse
 ): FlowItem[] {
   const seen = new Set<string>();
   const list: FlowItem[] = [];
