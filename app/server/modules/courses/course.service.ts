@@ -233,7 +233,7 @@ const WEEKDAY_MAP: Record<string, number> = {
   天: 7,
 };
 
-const ACTUAL_CLASS_TIME_RE = /(?:(?<weeks>[0-9,，、\-]+)周\s*)?星期(?<weekday>[一二三四五六日天])\s*(?<periods>\d+)节/g;
+const ACTUAL_CLASS_TIME_RE = /(?:(?<weeks>[0-9,，、-]+)周\s*)?星期(?<weekday>[一二三四五六日天])\s*(?<periods>\d+)节/g;
 
 function nullableText(value: unknown): string | null {
   if (value === null || value === undefined) return null;

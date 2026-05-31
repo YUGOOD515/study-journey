@@ -3,7 +3,7 @@ import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import type { CategoryCode, CourseEditDraft, CourseNature, CreditAssignmentTarget, PlanCoursePatch } from "../types";
 import { CATEGORY_STYLE } from "../lib/categoryStyle";
-import { assignmentLabel, canUseInterdisciplinary, categoryNameOf } from "../lib/courseOptions";
+import { assignmentLabel, canUseInterdisciplinary } from "../lib/courseOptions";
 import { formatCredits } from "../lib/credits";
 import { parseOfferedTerm } from "../lib/offeredTerm";
 import { CourseEditFields } from "./CourseEditFields";
