@@ -45,10 +45,7 @@ interface RequirementDto {
   note: string | null;
 }
 
-const customIdByCode = new Map<string, number>();
-const customCodeById = new Map<number, string>();
 const courseCacheByCode = new Map<string, Course>();
-let nextSyntheticCustomId = 1;
 
 async function request<T>(
   path: string,
@@ -92,34 +89,12 @@ async function send<T>(
 
 function rememberCourse(course: Course): Course {
   courseCacheByCode.set(course.courseCode, course);
-  if (course.source === "custom") rememberCustomCode(course.courseCode);
   return course;
 }
 
 function rememberCourses(courses: Course[]): Course[] {
   courses.forEach(rememberCourse);
   return courses;
-}
-
-function rememberCustomCode(code: string): number {
-  const existing = customIdByCode.get(code);
-  if (existing != null) return existing;
-  const id = nextSyntheticCustomId++;
-  customIdByCode.set(code, id);
-  customCodeById.set(id, code);
-  return id;
-}
-
-async function customCodeFromId(id: number): Promise<string> {
-  const cached = customCodeById.get(id);
-  if (cached) return cached;
-
-  const courses = await fetchCourses("source=custom&inTrash=true&limit=1000");
-  for (const course of courses) rememberCourse(course);
-
-  const resolved = customCodeById.get(id);
-  if (!resolved) throw new Error(`找不到自定义课程映射 id=${id}`);
-  return resolved;
 }
 
 async function fetchCourses(query = "limit=1000"): Promise<Course[]> {
@@ -202,9 +177,8 @@ function toSemesterCourse(course: Course): SemesterCourse | null {
   }
   return {
     source: course.source === "program" ? "official" : "manual",
-    id: course.source === "custom" ? rememberCustomCode(course.courseCode) : null,
     term_number: term,
-    course_code: course.source === "program" ? course.courseCode : course.courseCode,
+    course_code: course.courseCode,
     score: course.score,
     course_name: course.courseName,
     credits: course.credits,
@@ -220,9 +194,8 @@ function toSemesterCourse(course: Course): SemesterCourse | null {
 function toPersonalPlanItem(course: Course): PersonalPlanItem | null {
   if (course.studyStatus !== "计划修读") return null;
   return {
-    id: course.source === "custom" ? rememberCustomCode(course.courseCode) : stableProgramId(course.courseCode),
     item_type: course.source === "program" ? "official" : "manual",
-    course_code: course.source === "program" ? course.courseCode : course.courseCode,
+    course_code: course.courseCode,
     planned_term: course.plannedTerm,
     course_name: course.courseName,
     credits: course.credits,
@@ -247,7 +220,6 @@ function toPersonalPlanItem(course: Course): PersonalPlanItem | null {
 function toTrashItem(course: Course): TrashItem {
   return {
     source: course.source,
-    id: course.source === "custom" ? rememberCustomCode(course.courseCode) : stableProgramId(course.courseCode),
     course_code: course.courseCode,
     course_name: course.courseName,
     credits: course.credits,
@@ -282,14 +254,6 @@ function toLegacyRequirement(req: RequirementDto): ProgramRequirement {
     required_credits: req.requiredCredits,
     source: req.source,
   };
-}
-
-function stableProgramId(code: string): number {
-  let hash = 0;
-  for (let i = 0; i < code.length; i += 1) {
-    hash = (hash * 31 + code.charCodeAt(i)) | 0;
-  }
-  return Math.abs(hash);
 }
 
 function toCreateCustomBody(input: {
@@ -449,12 +413,8 @@ export const api = {
     return getJSON<ProgressResponse>("/api/progress");
   },
 
-  /**
-   * 旧版交互按 number id 寻址（patchManual 等）。这里用与各 fetch 相同的
-   * 合成 id 规则，把后端的 courseCode 映射为同一个稳定 id，供进度页内联编辑复用。
-   */
-  idForCourse: (courseCode: string, source: "program" | "custom"): number =>
-    source === "custom" ? rememberCustomCode(courseCode) : stableProgramId(courseCode),
+  /** 把课程号直接返回（不再合成 number id，统一使用 courseCode 寻址）。 */
+  idForCourse: (courseCode: string, _source: "program" | "custom"): string => courseCode,
 
   semesterCourses: async () => {
     const courses = await fetchCourses("status=正在修读,已修读,未通过&limit=1000");
@@ -541,22 +501,20 @@ export const api = {
         { studyStatus, term: input.term_number, score }
       )
     );
-    return { ok: true as const, id: rememberCustomCode(created.courseCode) };
+    return { ok: true as const, courseCode: created.courseCode };
   },
 
-  patchManual: async (id: number, patch: LegacyManualPatch) => {
-    const code = await customCodeFromId(id);
-    await updateCourse(code, {
+  patchManual: async (courseCode: string, patch: LegacyManualPatch) => {
+    await updateCourse(courseCode, {
       ...patch,
       planned_term: patch.planned_term ?? patch.term_number,
     });
     return { ok: true as const };
   },
 
-  deleteManual: async (id: number) => {
-    const code = await customCodeFromId(id);
+  deleteManual: async (courseCode: string) => {
     rememberCourse(
-      await send<Course>(`/api/courses/${encodeURIComponent(code)}/trash`, "POST", {
+      await send<Course>(`/api/courses/${encodeURIComponent(courseCode)}/trash`, "POST", {
         note: "手动课程移入垃圾篓",
       })
     );
@@ -576,7 +534,6 @@ export const api = {
     rememberCourse(course);
     return {
       ok: true as const,
-      id: null,
       course_code: input.course_code,
       planned_term: input.planned_term,
     };
@@ -637,7 +594,7 @@ export const api = {
         )
       );
     }
-    return { ok: true as const, id: rememberCustomCode(created.courseCode) };
+    return { ok: true as const, courseCode: created.courseCode };
   },
 
   searchRawCourses: async (input: {
@@ -677,19 +634,17 @@ export const api = {
     const created = rememberCourse(
       await send<Course>("/api/courses/from-raw", "POST", input)
     );
-    return { ok: true as const, id: rememberCustomCode(created.courseCode) };
+    return { ok: true as const, courseCode: created.courseCode };
   },
 
-  patchPersonalPlan: async (id: number, patch: PlanCoursePatch) => {
-    const code = await customCodeFromId(id);
-    await updateCourse(code, patch);
-    return { ok: true as const, id };
+  patchPersonalPlan: async (courseCode: string, patch: PlanCoursePatch) => {
+    await updateCourse(courseCode, patch);
+    return { ok: true as const, courseCode };
   },
 
-  deletePersonalPlan: async (id: number) => {
-    const code = await customCodeFromId(id);
+  deletePersonalPlan: async (courseCode: string) => {
     rememberCourse(
-      await send<Course>(`/api/courses/${encodeURIComponent(code)}/trash`, "POST", {
+      await send<Course>(`/api/courses/${encodeURIComponent(courseCode)}/trash`, "POST", {
         note: "计划课程移入垃圾篓",
       })
     );
@@ -697,7 +652,7 @@ export const api = {
   },
 
   restoreTrashItem: async (item: TrashItem) => {
-    const code = item.course_code ?? (await customCodeFromId(item.id));
+    const code = item.course_code!;
     const course = await send<Course>(
       `/api/trash/${encodeURIComponent(code)}/restore`,
       "POST"
@@ -707,7 +662,7 @@ export const api = {
   },
 
   permanentlyDeleteTrashItem: async (item: TrashItem) => {
-    const code = item.course_code ?? (await customCodeFromId(item.id));
+    const code = item.course_code!;
     await send<{ courseCode: string; source: string; status: string }>(
       `/api/trash/${encodeURIComponent(code)}`,
       "DELETE"
@@ -730,9 +685,8 @@ export const api = {
     return { ok: true as const, changes: 1 };
   },
 
-  updateCustomCourse: async (id: number, patch: PlanCoursePatch) => {
-    const code = await customCodeFromId(id);
-    await updateCourse(code, patch);
+  updateCustomCourse: async (courseCode: string, patch: PlanCoursePatch) => {
+    await updateCourse(courseCode, patch);
     return { ok: true as const, changes: 1 };
   },
 
@@ -740,11 +694,8 @@ export const api = {
     course_code: string,
     assigned_to: CreditAssignmentTarget
   ) => {
-    const code = customIdByCode.has(course_code)
-      ? course_code
-      : customCodeById.get(Number(course_code)) ?? course_code;
     const course = await send<Course>(
-      `/api/courses/${encodeURIComponent(code)}/credit-assignment`,
+      `/api/courses/${encodeURIComponent(course_code)}/credit-assignment`,
       "POST",
       { creditCountTo: assignmentToCreditCountTo(assigned_to) }
     );

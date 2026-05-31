@@ -109,7 +109,6 @@ export interface ProgramRequirement {
  */
 export interface SemesterCourse {
   source: "official" | "manual";
-  id: number | null;
   term_number: number;
   course_code: string | null;
   score: number | null;
@@ -127,7 +126,6 @@ export interface SemesterCourse {
 
 /** @deprecated 请使用 Course 代替 */
 export interface PersonalPlanItem {
-  id: number;
   item_type: "official" | "manual";
   course_code: string | null;
   /** null = 显式放进"待安排"抽屉 */
@@ -155,7 +153,6 @@ export interface PersonalPlanItem {
 /** @deprecated 请使用 Course 代替 */
 export interface TrashItem {
   source: "program" | "custom";
-  id: number;
   course_code: string | null;
   course_name: string;
   credits: number;

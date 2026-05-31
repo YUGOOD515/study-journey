@@ -15,7 +15,7 @@ type ManualLike = SemesterCourse | PersonalPlanItem;
 
 interface Props {
   course: ManualLike;
-  onDelete?: (id: number) => void;
+  onDelete?: (courseCode: string) => void;
   draggable?: boolean;
   displayOptions?: CourseCardDisplayOptions;
   editable?: boolean;
@@ -46,7 +46,6 @@ export function ManualCourseCard({
 
   const hoverItem: CourseHoverInfo = {
     source: "custom",
-    id: course.id,
     course_code: course.course_code ?? null,
     course_name: course.course_name,
     credits: course.credits,
@@ -122,14 +121,14 @@ export function ManualCourseCard({
           </div>
         )}
 
-        {course.id != null && onDelete && (
+        {course.course_code != null && onDelete && (
           <button
             type="button"
             onMouseDown={(event) => event.stopPropagation()}
             onClick={(event) => {
               event.stopPropagation();
               hover.close();
-              onDelete(course.id as number);
+              onDelete(course.course_code!);
             }}
             className="absolute -right-1.5 -top-1.5 w-4 h-4 rounded-full bg-card border border-sub/25 text-sub hover:text-ink hover:border-sub/50 transition-colors text-[10px] leading-none"
             title="移入垃圾篓"

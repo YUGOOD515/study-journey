@@ -18,7 +18,6 @@ export type CourseNature = "必修" | "选修" | "跨专业";
 
 export interface EarnedCourse {
   source: "official" | "manual";
-  id: number | null;
   courseCode: string | null;
   courseName: string;
   credits: number;
@@ -30,7 +29,6 @@ export interface EarnedCourse {
 export interface PlannedCourse {
   source: "official" | "manual";
   origin: "plan" | "record";
-  id: number | null;
   courseCode: string | null;
   courseName: string;
   credits: number;
@@ -67,8 +65,8 @@ export interface CategoryBundle {
   totalPlanned: number;
 }
 
-/** 把课程号映射为旧版内联编辑用的稳定 number id（由 api.idForCourse 提供）。 */
-export type IdForCourse = (courseCode: string, source: "program" | "custom") => number;
+/** 把课程号直接返回（不再合成 number id，统一使用 courseCode 寻址）。 */
+export type IdForCourse = (courseCode: string, source: "program" | "custom") => string;
 
 const CATEGORY_ORDER: CategoryCode[] = [
   "general_education",
@@ -105,11 +103,10 @@ function isPlanned(c: ProgressBucketCourse): boolean {
   return c.term != null && !isEarned(c);
 }
 
-function toEarned(c: ProgressBucketCourse, idFor: IdForCourse): EarnedCourse {
+function toEarned(c: ProgressBucketCourse, _idFor: IdForCourse): EarnedCourse {
   const source = c.source === "program" ? "official" : "manual";
   return {
     source,
-    id: c.source === "custom" ? idFor(c.courseCode, "custom") : null,
     courseCode: c.courseCode,
     courseName: c.courseName,
     credits: c.credits,
@@ -119,13 +116,12 @@ function toEarned(c: ProgressBucketCourse, idFor: IdForCourse): EarnedCourse {
   };
 }
 
-function toPlanned(c: ProgressBucketCourse, idFor: IdForCourse): PlannedCourse {
+function toPlanned(c: ProgressBucketCourse, _idFor: IdForCourse): PlannedCourse {
   const source = c.source === "program" ? "official" : "manual";
   return {
     source,
     // 正在修读 视为已有修读记录（record）；计划修读 视为计划项（plan）。
     origin: c.studyStatus === "正在修读" ? "record" : "plan",
-    id: c.source === "custom" ? idFor(c.courseCode, "custom") : null,
     courseCode: c.courseCode,
     courseName: c.courseName,
     credits: c.credits,
@@ -193,7 +189,7 @@ export function flowItemsFromProgress(
       const key =
         c.source === "program"
           ? `official:${c.courseCode}`
-          : `record:${idFor(c.courseCode, "custom")}`;
+          : `record:${c.courseCode}`;
       list.push({
         key,
         courseName: c.courseName,
