@@ -323,9 +323,9 @@ export function AddCourseDialog({ termNumber, onClose, onSubmitManual, onSubmitR
   };
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 px-4">
+    <div className="motion-overlay-in fixed inset-0 z-50 flex items-center justify-center bg-black/35 px-4">
       <div
-        className="flex w-[920px] max-w-full flex-col overflow-hidden rounded-xl border border-sub/20 bg-card"
+        className="motion-panel-in flex w-[920px] max-w-full flex-col overflow-hidden rounded-xl border border-sub/20 bg-card"
         style={{
           height: "min(760px, calc(100vh - 32px))",
           boxShadow:

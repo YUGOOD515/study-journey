@@ -79,7 +79,7 @@ export function CourseCard({
         onMouseEnter={hover.open}
         onMouseLeave={hover.startGuardedClose}
         className={
-          "relative rounded-md px-2.5 py-2 text-[11px] leading-tight transition-all hover:-translate-y-0.5 hover:shadow-sm " +
+          "motion-list-item relative rounded-md px-2.5 py-2 text-[11px] leading-tight transition-all hover:-translate-y-0.5 hover:shadow-sm " +
           (draggable ? "cursor-grab active:cursor-grabbing" : "cursor-default")
         }
         style={{

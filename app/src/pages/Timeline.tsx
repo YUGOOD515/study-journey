@@ -776,10 +776,10 @@ function FloatingHint({
     >
       <div
         className={
-          "mx-auto flex max-w-[520px] items-center gap-3 rounded-2xl border px-3.5 py-2.5 text-xs backdrop-blur-xl transform-gpu transition-[opacity,transform,box-shadow] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] pointer-events-auto " +
+          "mx-auto flex max-w-[520px] items-center gap-3 rounded-2xl border px-3.5 py-2.5 text-xs backdrop-blur-xl transform-gpu transition-[opacity,transform,box-shadow] duration-[260ms] ease-[cubic-bezier(0.22,1,0.36,1)] pointer-events-auto " +
           tone.panel +
           " " +
-          (visible ? "translate-y-0 scale-100 opacity-100" : "translate-y-2 scale-[0.985] opacity-0")
+          (visible ? "translate-y-0 scale-100 opacity-100" : "translate-y-1.5 scale-[0.992] opacity-0")
         }
         style={{
           boxShadow:
@@ -1355,7 +1355,7 @@ function TrashCourseCard({
         ref={hover.anchorRef}
         onMouseEnter={hover.open}
         onMouseLeave={hover.startGuardedClose}
-        className="rounded-md px-2.5 py-2 text-[11px] leading-tight transition-all hover:-translate-y-0.5 hover:shadow-sm"
+        className="motion-list-item rounded-md px-2.5 py-2 text-[11px] leading-tight transition-all hover:-translate-y-0.5 hover:shadow-sm"
         style={{
           backgroundColor: isRequired ? style.bgSoft : style.bgGhost,
           border: `1px ${isRequired ? "solid" : "dashed"} ${style.border}`,
