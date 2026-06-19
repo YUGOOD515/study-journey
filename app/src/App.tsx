@@ -1,19 +1,93 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Timeline from "./pages/Timeline";
 import TermSchedule from "./pages/TermSchedule";
 import Trail from "./pages/Trail";
 import { ThemeToggle } from "./components/ThemeToggle";
 
 type Tab = "timeline" | "trail" | "term-schedule";
+type MotionDirection = -1 | 1;
+
+const TAB_ORDER: Record<Tab, number> = {
+  timeline: 0,
+  trail: 1,
+  "term-schedule": 2,
+};
+
+const PAGE_TRANSITION_MS = 420;
+
+interface PageTransitionState {
+  from: Tab | null;
+  to: Tab;
+  direction: MotionDirection;
+  nonce: number;
+}
+
+function getTabDirection(from: Tab, to: Tab): MotionDirection {
+  return TAB_ORDER[to] >= TAB_ORDER[from] ? 1 : -1;
+}
 
 export default function App() {
   const [tab, setTab] = useState<Tab>("timeline");
   const [scheduleTerm, setScheduleTerm] = useState(1);
+  const [pageTransition, setPageTransition] = useState<PageTransitionState>({
+    from: null,
+    to: tab,
+    direction: 1,
+    nonce: 0,
+  });
 
   const openSchedule = (term: number) => {
     setScheduleTerm(term);
     setTab("term-schedule");
   };
+
+  useEffect(() => {
+    setPageTransition((current) => {
+      if (current.to === tab) return current;
+
+      return {
+        from: current.to,
+        to: tab,
+        direction: getTabDirection(current.to, tab),
+        nonce: current.nonce + 1,
+      };
+    });
+  }, [tab]);
+
+  useEffect(() => {
+    if (pageTransition.from == null) return;
+
+    const timer = window.setTimeout(() => {
+      setPageTransition((current) =>
+        current.nonce === pageTransition.nonce
+          ? { ...current, from: null }
+          : current
+      );
+    }, PAGE_TRANSITION_MS);
+
+    return () => window.clearTimeout(timer);
+  }, [pageTransition.from, pageTransition.nonce]);
+
+  const renderPage = (pageTab: Tab) => {
+    if (pageTab === "timeline") {
+      return <Timeline onOpenSchedule={openSchedule} />;
+    }
+
+    if (pageTab === "trail") {
+      return <Trail />;
+    }
+
+    return (
+      <TermSchedule
+        termNumber={scheduleTerm}
+        onTermChange={setScheduleTerm}
+        onBack={() => setTab("timeline")}
+      />
+    );
+  };
+
+  const transitioning =
+    pageTransition.from != null && pageTransition.from !== pageTransition.to;
 
   return (
     <div className="min-h-screen">
@@ -46,16 +120,27 @@ export default function App() {
         </div>
       </nav>
 
-      <main>
-        {tab === "timeline" && <Timeline onOpenSchedule={openSchedule} />}
-        {tab === "trail" && <Trail />}
-        {tab === "term-schedule" && (
-          <TermSchedule
-            termNumber={scheduleTerm}
-            onTermChange={setScheduleTerm}
-            onBack={() => setTab("timeline")}
-          />
+      <main className="page-transition-stage">
+        {transitioning && pageTransition.from != null && (
+          <div
+            key={pageTransition.from}
+            className="page-transition-layer page-transition-exit"
+            data-direction={pageTransition.direction}
+            aria-hidden="true"
+          >
+            {renderPage(pageTransition.from)}
+          </div>
         )}
+        <div
+          key={pageTransition.to}
+          className={
+            "page-transition-layer " +
+            (transitioning ? "page-transition-enter" : "")
+          }
+          data-direction={pageTransition.direction}
+        >
+          {renderPage(pageTransition.to)}
+        </div>
       </main>
     </div>
   );

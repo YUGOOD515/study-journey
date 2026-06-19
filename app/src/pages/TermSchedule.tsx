@@ -665,7 +665,7 @@ function ScheduleCourseCard({
         ref={hover.anchorRef}
         onMouseEnter={hover.open}
         onMouseLeave={hover.startGuardedClose}
-        className="m-0.5 overflow-hidden rounded-md px-2 py-1.5 text-[11px] leading-snug transition-all hover:-translate-y-0.5 hover:shadow-sm"
+        className="motion-list-item m-0.5 overflow-hidden rounded-md px-2 py-1.5 text-[11px] leading-snug transition-all hover:-translate-y-0.5 hover:shadow-sm"
         style={{
           gridRow,
           backgroundColor: visual.isRequired ? visual.style.bgSoft : visual.style.bgGhost,

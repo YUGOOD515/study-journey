@@ -127,9 +127,9 @@ export function ManualCourseDialog({
   };
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 px-4">
+    <div className="motion-overlay-in fixed inset-0 z-50 flex items-center justify-center bg-black/35 px-4">
       <div
-        className="max-h-[calc(100vh-32px)] w-[520px] max-w-full overflow-y-auto rounded-xl border border-sub/20 bg-card p-5"
+        className="motion-panel-in max-h-[calc(100vh-32px)] w-[520px] max-w-full overflow-y-auto rounded-xl border border-sub/20 bg-card p-5"
         style={{
           boxShadow:
             "0 18px 54px rgb(var(--shadow-rgb) / var(--shadow-strong)), 0 4px 14px rgb(var(--shadow-rgb) / var(--shadow-soft))",
