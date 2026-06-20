@@ -1,0 +1,25 @@
+# IDE
+.idea/
+.vscode/
+
+# Python
+__pycache__/
+*.pyc
+
+# Database backups
+db/*.sqlite.bak_*
+
+# Node
+node_modules/
+
+# Build output
+app/dist/
+dist/
+build/
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
