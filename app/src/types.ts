@@ -24,6 +24,8 @@ export type CourseSource = "program" | "custom";
 /** 课程统一模型，与后端 CourseDto 完全对齐。是前端的主要数据载体。 */
 export interface Course {
   source: CourseSource;
+  originType?: "official" | "manual" | "raw";
+  officialCourseCode?: string | null;
   courseCode: string;
   sectionCode: string | null;
   courseName: string;

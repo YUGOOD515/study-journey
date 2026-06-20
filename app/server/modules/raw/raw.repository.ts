@@ -240,6 +240,7 @@ export const RawRepository = {
     week?: number;
     weekday?: number;
     courseCode?: string;
+    onlyMyPlan?: boolean;
     limit?: number;
     offset?: number;
   }): RawActualCourseMeetingRow[] {
@@ -252,6 +253,16 @@ export const RawRepository = {
     }
     if (filter.weekday !== undefined) { parts.push("m.weekday = ?"); params.push(filter.weekday); }
     if (filter.courseCode) { parts.push("m.course_code = ?"); params.push(filter.courseCode); }
+    if (filter.onlyMyPlan !== false) {
+      parts.push(`EXISTS (
+        SELECT 1
+          FROM my_plan_courses p
+         WHERE p.is_deleted = 0
+           AND p.course_code = m.course_code
+           AND (p.section_code IS NULL OR p.section_code = m.section_code)
+           AND (p.actual_term = m.term OR p.planned_term = m.term)
+      )`);
+    }
     const stmt = db.prepare(
       `SELECT m.*, b.academic_year, b.semester, b.phase
          FROM raw_actual_course_meetings m
@@ -274,6 +285,7 @@ export const RawRepository = {
     const limit = Math.max(1, Math.min(Number(filter.limit ?? 40), 200));
     const offset = Math.max(0, Number(filter.offset ?? 0));
     const source = filter.source ?? "all";
+    const rawTermExpr = `((CAST(substr(b.academic_year, 1, 4) AS INTEGER) - ${baseYear}) * 2 + CASE b.semester WHEN 'fall' THEN 1 ELSE 2 END)`;
     const sectionParams: unknown[] = [];
     const addedParams: unknown[] = [];
     const sectionWhere: string[] = [];
@@ -335,8 +347,8 @@ export const RawRepository = {
         NULL AS module_2024,
         NULL AS remark1,
         NULL AS remark2,
-        EXISTS(SELECT 1 FROM plan_program_courses p WHERE p.course_code = s.course_code AND p.is_permanently_deleted = 0) AS exists_in_program,
-        EXISTS(SELECT 1 FROM plan_custom_courses c WHERE c.course_code = s.course_code) AS exists_in_custom
+        EXISTS(SELECT 1 FROM plan_program_courses p WHERE p.course_code = s.course_code OR TRIM(p.course_name) = TRIM(s.course_name)) AS exists_in_program,
+        EXISTS(SELECT 1 FROM my_plan_courses c WHERE c.is_deleted = 0 AND (c.course_code = s.course_code OR TRIM(c.course_name) = TRIM(s.course_name)) AND (c.planned_term = ${rawTermExpr} OR c.actual_term = ${rawTermExpr})) AS exists_in_custom
       FROM raw_term_course_sections s
       JOIN raw_import_batches b ON b.id = s.batch_id
       ${whereClause(sectionWhere)}
@@ -370,8 +382,8 @@ export const RawRepository = {
         a.module_2024,
         a.remark1,
         a.remark2,
-        EXISTS(SELECT 1 FROM plan_program_courses p WHERE p.course_code = a.course_code AND p.is_permanently_deleted = 0) AS exists_in_program,
-        EXISTS(SELECT 1 FROM plan_custom_courses c WHERE c.course_code = a.course_code) AS exists_in_custom
+        EXISTS(SELECT 1 FROM plan_program_courses p WHERE p.course_code = a.course_code OR TRIM(p.course_name) = TRIM(a.course_name)) AS exists_in_program,
+        EXISTS(SELECT 1 FROM my_plan_courses c WHERE c.is_deleted = 0 AND (c.course_code = a.course_code OR TRIM(c.course_name) = TRIM(a.course_name)) AND (c.planned_term = ${rawTermExpr} OR c.actual_term = ${rawTermExpr})) AS exists_in_custom
       FROM raw_term_added_courses a
       JOIN raw_import_batches b ON b.id = a.batch_id
       ${whereClause(addedWhere)}
@@ -427,8 +439,8 @@ export const RawRepository = {
              course_name, credits, hours, teacher, class_time, teaching_weeks, campus, classroom,
              department, course_attribute, enrollment_restriction, combined_class_name, group_name,
              NULL AS learning_platform, NULL AS module_2022, NULL AS module_2024, NULL AS remark1, NULL AS remark2,
-             EXISTS(SELECT 1 FROM plan_program_courses p WHERE p.course_code = r.course_code AND p.is_permanently_deleted = 0) AS exists_in_program,
-             EXISTS(SELECT 1 FROM plan_custom_courses c WHERE c.course_code = r.course_code) AS exists_in_custom
+             EXISTS(SELECT 1 FROM plan_program_courses p WHERE p.course_code = r.course_code) AS exists_in_program,
+             EXISTS(SELECT 1 FROM my_plan_courses c WHERE c.course_code = r.course_code) AS exists_in_custom
             FROM row r`
         : `WITH row AS (
              SELECT a.*, b.academic_year, b.semester, b.phase
@@ -443,8 +455,8 @@ export const RawRepository = {
              NULL AS campus, NULL AS classroom, department, NULL AS course_attribute,
              enrollment_restriction, NULL AS combined_class_name, NULL AS group_name,
              learning_platform, module_2022, module_2024, remark1, remark2,
-             EXISTS(SELECT 1 FROM plan_program_courses p WHERE p.course_code = r.course_code AND p.is_permanently_deleted = 0) AS exists_in_program,
-             EXISTS(SELECT 1 FROM plan_custom_courses c WHERE c.course_code = r.course_code) AS exists_in_custom
+             EXISTS(SELECT 1 FROM plan_program_courses p WHERE p.course_code = r.course_code) AS exists_in_program,
+             EXISTS(SELECT 1 FROM my_plan_courses c WHERE c.course_code = r.course_code) AS exists_in_custom
             FROM row r`
     );
     const params = source === "section"

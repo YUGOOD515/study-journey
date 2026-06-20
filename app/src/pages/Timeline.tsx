@@ -155,13 +155,13 @@ export default function Timeline({
     const plannedTermByCode = new Map<string, number | null>();
     for (const c of courses) {
       const override = overrides.get(c.course_code);
-      const plannedTerm = override
-        ? override.planned_term // 可能是 null（用户主动放入抽屉）
-        : c.actual_term ?? c.planned_term ?? defaultTerm(c);
-      plannedTermByCode.set(c.course_code, plannedTerm);
+      if (override) {
+        plannedTermByCode.set(c.course_code, override.planned_term);
+      }
     }
 
     for (const c of courses) {
+      if (!plannedTermByCode.has(c.course_code)) continue;
       const plannedTerm = plannedTermByCode.get(c.course_code) ?? null;
       const item: PlannedOfficial = {
         course: c,
@@ -297,16 +297,10 @@ export default function Timeline({
       if (dragging.kind === "official") {
         const course = courses.find((c) => c.course_code === dragging.courseCode);
         if (!course) return;
-        const defaultPlannedTerm = defaultTerm(course);
-        if (defaultPlannedTerm === term) {
-          // 拖到默认学期 → 直接清掉个人 override，回到默认位置
-          await api.resetPersonalOfficial(dragging.courseCode);
-        } else {
-          await api.upsertPersonalOfficial({
-            course_code: dragging.courseCode,
-            planned_term: term,
-          });
-        }
+        await api.upsertPersonalOfficial({
+          course_code: dragging.courseCode,
+          planned_term: term,
+        });
         const warning = placementWarning(
           course,
           term,
@@ -649,6 +643,18 @@ export default function Timeline({
           onSubmitRaw={async (input) => {
             await api.createPersonalFromRaw(input);
             await refetchTimelineData();
+            const _message = input.existsInCustom
+              ? `已更新我的计划课程：${input.courseName}`
+              : input.existsInProgram
+                ? `已替换官方占位课程：${input.courseName}`
+                : `已添加课程：${input.courseName}`;
+            setHint(_message);
+              /* input.existsInCustom
+                ? "\u5df2\u66f4\u65b0\u6211\u7684\u8ba1\u5212\u8bfe\u7a0b\uff1a" + input.courseName
+                : input.existsInProgram
+                  ? "\u5df2\u66ff\u6362\u5b98\u65b9\u5360\u4f4d\u8bfe\u7a0b\uff1a" + input.courseName
+                  : "\u5df2\u6dfb\u52a0\u8bfe\u7a0b\uff1a" + input.courseName
+            */
           }}
         />
       )}
@@ -1861,12 +1867,6 @@ function sortPlanned(arr: PlannedOfficial[]) {
     }
     return a.course.category_name.localeCompare(b.course.category_name, "zh");
   });
-}
-
-function defaultTerm(course: CourseWithCategory): number | null {
-  const parsed = parseOfferedTerm(course.offered_term);
-  if (parsed.isFlexible || parsed.primary == null) return null;
-  return parsed.primary;
 }
 
 function allowedTerms(course: CourseWithCategory): number[] {

@@ -466,7 +466,7 @@ export const CourseService = {
     };
 
     const programs =
-      source === "custom" ? [] : ProgramCourseRepository.find(sharedFilter as ProgramCourseFilter);
+      source === "program" ? ProgramCourseRepository.find(sharedFilter as ProgramCourseFilter) : [];
     const customs =
       source === "program" ? [] : CustomCourseRepository.find(sharedFilter as CustomCourseFilter);
 
@@ -572,33 +572,28 @@ export const CourseService = {
       includeTrash: true,
       includePermanentlyDeleted: true,
     });
-    if (existingProgram) {
-      throw fail.conflict(
-        `「${raw.course_name}」已存在于培养方案中，不能作为自定义课程重复添加`,
-        { courseCode: raw.course_code, source: "program" }
-      );
-    }
-    const existingCustom = CustomCourseRepository.findByCode(raw.course_code, { includeTrash: true });
-    if (existingCustom) {
-      throw fail.conflict(
-        `「${raw.course_name}」已存在于自定义课程中，不能重复添加`,
-        { courseCode: raw.course_code, source: "custom" }
-      );
-    }
+    const existingPlanCourse = CustomCourseRepository.findByCodeOrNameInTerm({
+      courseCode: raw.course_code,
+      courseName: raw.course_name,
+      term: input.termNumber,
+      includeTrash: true,
+    });
 
-    validateCustomCourseCode(raw.course_code);
-
-    const requirementType: RequirementType = input.isInterdisciplinary
-      ? "经法管融通"
-      : input.courseNature;
-    const creditCountTo = input.isInterdisciplinary
-      ? creditCountToFromAssignedTo(input.assignedTo)
+    const categoryCode = existingProgram?.categoryCode ?? input.categoryCode;
+    const categoryNameValue = existingProgram?.categoryName ?? categoryName(categoryCode);
+    const requirementType: RequirementType = existingProgram?.requirementType ?? (
+      input.isInterdisciplinary ? "经法管融通" : input.courseNature
+    );
+    const creditCountTo = requirementType === "经法管融通"
+      ? existingProgram?.creditCountTo ?? creditCountToFromAssignedTo(input.assignedTo)
       : null;
     validateCreditCountToWithType(requirementType, creditCountTo);
 
-    const courseSubcategory = input.isInterdisciplinary
-      ? `${categoryName(input.categoryCode)}（经法管融通）`
-      : nullableText(raw.module_2024) ?? nullableText(raw.module_2022) ?? nullableText(raw.course_attribute);
+    const courseSubcategory = existingProgram
+      ? existingProgram.courseSubcategory
+      : input.isInterdisciplinary
+        ? `${categoryName(categoryCode)}（经法管融通）`
+        : nullableText(raw.module_2024) ?? nullableText(raw.module_2022) ?? nullableText(raw.course_attribute);
     const sourceNote = [
       `来源：${raw.source_type === "section" ? "正式开课表" : "补选新增课"}`,
       `batch=${raw.batch_id}`,
@@ -618,10 +613,19 @@ export const CourseService = {
       : true;
 
     return unitOfWork(() => {
+      if (existingPlanCourse && existingPlanCourse.courseCode !== raw.course_code) {
+        CustomCourseRepository.delete(existingPlanCourse.courseCode);
+      }
       CustomCourseRepository.insert({
+        origin_type: existingProgram
+          ? "official"
+          : existingPlanCourse?.originType === "official"
+            ? "official"
+            : "raw",
+        official_course_code: existingProgram?.courseCode ?? existingPlanCourse?.officialCourseCode ?? null,
         course_code: raw.course_code,
-        category_code: input.categoryCode,
-        category_name: categoryName(input.categoryCode),
+        category_code: categoryCode,
+        category_name: categoryNameValue,
         requirement_type: requirementType,
         course_subcategory: courseSubcategory,
         course_name: raw.course_name,
@@ -632,6 +636,8 @@ export const CourseService = {
         experiment_hours: input.experimentHours,
         extra_hours: input.extraHours,
         term_number: input.termNumber,
+        actual_term: input.studyStatus === "计划修读" ? null : input.termNumber,
+        official_term: existingProgram?.officialTerm ?? existingPlanCourse?.officialTerm ?? null,
         prerequisite_course_code: null,
         study_status: input.studyStatus,
         score: input.score,
@@ -652,9 +658,7 @@ export const CourseService = {
     const dto = (body ?? {}) as Record<string, unknown>;
 
     if (existing.source === "program") {
-      if (dto.categoryCode !== undefined && dto.categoryCode !== existing.categoryCode) {
-        throw fail.immutable("categoryCode");
-      }
+      throw fail.precondition("官方培养计划是只读的，请在我的计划中修改课程", { courseCode: code });
     }
 
     const patch: Record<string, unknown> = {};
@@ -746,11 +750,7 @@ export const CourseService = {
       validateCreditCountToWithType(nextType, nextCountTo);
     }
 
-    if (existing.source === "program") {
-      ProgramCourseRepository.update(code, patch);
-    } else {
-      CustomCourseRepository.update(code, patch);
-    }
+    CustomCourseRepository.update(code, patch);
     return resolveCourse(code);
   },
 

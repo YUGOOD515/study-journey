@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { api } from "../lib/api";
 import { canUseInterdisciplinary } from "../lib/courseOptions";
+import { formatCredits } from "../lib/credits";
 import type {
   CategoryCode,
   CourseEditDraft,
@@ -37,7 +38,10 @@ type RawSubmitInput = {
   batchId: number;
   sourceRow: number;
   courseCode: string;
+  courseName: string;
   sectionCode: string | null;
+  existsInProgram: boolean;
+  existsInCustom: boolean;
   termNumber: number;
   categoryCode: CategoryCode;
   courseNature: CourseNature;
@@ -272,14 +276,6 @@ export function AddCourseDialog({ termNumber, onClose, onSubmitManual, onSubmitR
       setErr("请先选择一条课程记录");
       return;
     }
-    if (selected.existsInProgram) {
-      setErr("该课程已存在于培养方案中，不能作为自定义课程重复添加");
-      return;
-    }
-    if (selected.existsInCustom) {
-      setErr("该课程已存在于自定义课程中，不能重复添加");
-      return;
-    }
     if (rawDraft.planned_term == null) {
       setErr("搜索添加需要选择具体学期，才能写入学期课表");
       return;
@@ -300,7 +296,10 @@ export function AddCourseDialog({ termNumber, onClose, onSubmitManual, onSubmitR
         batchId: selected.batchId,
         sourceRow: selected.sourceRow,
         courseCode: selected.courseCode,
+        courseName: selected.courseName,
         sectionCode: selected.sectionCode,
+        existsInProgram: selected.existsInProgram,
+        existsInCustom: selected.existsInCustom,
         termNumber: rawDraft.planned_term,
         categoryCode: rawDraft.category_code,
         courseNature: isInter ? "选修" : rawDraft.course_nature,
@@ -409,7 +408,7 @@ export function AddCourseDialog({ termNumber, onClose, onSubmitManual, onSubmitR
                 ) : (
                   results.map((item) => {
                     const active = selected?.sourceType === item.sourceType && selected.batchId === item.batchId && selected.sourceRow === item.sourceRow && selected.courseCode === item.courseCode && selected.sectionCode === item.sectionCode;
-                    const disabled = item.existsInProgram || item.existsInCustom;
+                    const hasPlanWarning = item.existsInProgram || item.existsInCustom;
                     return (
                       <button
                         key={`${item.sourceType}-${item.batchId}-${item.sourceRow}-${item.courseCode}-${item.sectionCode ?? ""}`}
@@ -429,16 +428,18 @@ export function AddCourseDialog({ termNumber, onClose, onSubmitManual, onSubmitR
                               {compactText([
                                 item.courseCode,
                                 item.sectionCode ? `课序号 ${item.sectionCode}` : null,
-                                item.credits != null ? `${item.credits} 学分` : null,
+                                item.credits != null ? `${formatCredits(item.credits)} 学分` : null,
                                 item.teacher,
                               ])}
                             </div>
                           </div>
                           <div className="flex shrink-0 flex-col items-end gap-1">
                             <span className="rounded-full bg-sub/10 px-2 py-0.5 text-[10px] text-sub">{sourceLabel(item)}</span>
-                            {disabled && (
-                              <span className="rounded-full bg-red-500/10 px-2 py-0.5 text-[10px] text-red-500">
-                                {item.existsInProgram ? "已在培养方案" : "已添加"}
+                            {hasPlanWarning && (
+                              <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] text-amber-600">
+                                {item.existsInCustom
+                                  ? "已在我的计划"
+                                  : "会匹配官方占位"}
                               </span>
                             )}
                           </div>
@@ -479,10 +480,10 @@ export function AddCourseDialog({ termNumber, onClose, onSubmitManual, onSubmitR
                       ])}
                     </div>
                     {(selected.existsInProgram || selected.existsInCustom) && (
-                      <div className="mt-2 rounded-md bg-red-500/10 px-2 py-1 text-[11px] text-red-500">
-                        {selected.existsInProgram
-                          ? "该课程已在培养方案中。按当前规则 C，不能作为自定义课程重复添加。"
-                          : "该课程已存在于自定义课程中。"}
+                      <div className="mt-2 rounded-md bg-amber-500/10 px-2 py-1 text-[11px] text-amber-600">
+                        {selected.existsInCustom
+                          ? "该课程已在我的计划中；继续添加会用当前课表记录更新它。"
+                          : "该课程匹配官方培养计划；继续添加会覆盖我的计划中的官方占位课程。"}
                       </div>
                     )}
                   </div>
@@ -515,8 +516,8 @@ export function AddCourseDialog({ termNumber, onClose, onSubmitManual, onSubmitR
                 <div className="min-h-[16px] text-[11px] text-red-500">{err}</div>
                 <div className="flex shrink-0 items-center gap-2">
                   <button type="button" onClick={onClose} disabled={busy} className="rounded-md px-3 py-1.5 text-xs text-sub transition-colors hover:bg-sub/10 hover:text-ink disabled:opacity-50">取消</button>
-                  <button type="submit" disabled={busy || !selected || selected.existsInProgram || selected.existsInCustom} className="rounded-md px-3 py-1.5 text-xs text-white disabled:opacity-50" style={{ backgroundColor: "rgb(var(--brand) / 1)" }}>
-                    {busy ? "保存中…" : "添加课程"}
+                  <button type="submit" disabled={busy || !selected} className="rounded-md px-3 py-1.5 text-xs text-white disabled:opacity-50" style={{ backgroundColor: "rgb(var(--brand) / 1)" }}>
+                    {busy ? "保存中…" : selected?.existsInCustom ? "更新课程" : selected?.existsInProgram ? "覆盖并添加" : "添加课程"}
                   </button>
                 </div>
               </div>

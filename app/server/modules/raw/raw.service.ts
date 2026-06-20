@@ -73,6 +73,7 @@ export const RawService = {
       week: q.week !== undefined ? expectNumber(Number(q.week), "week", { min: 1, integer: true })! : undefined,
       weekday: q.weekday !== undefined ? expectNumber(Number(q.weekday), "weekday", { min: 1, max: 7, integer: true })! : undefined,
       courseCode: q.courseCode ? expectString(q.courseCode, "courseCode")! : undefined,
+      onlyMyPlan: q.onlyMyPlan === undefined ? true : q.onlyMyPlan !== "false" && q.onlyMyPlan !== false,
       ...parseLimitOffset(q),
     });
   },

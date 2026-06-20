@@ -138,7 +138,7 @@ export function CourseEditFields({
 
       <div className={compact ? "grid grid-cols-2 gap-1.5" : "grid grid-cols-2 gap-3"}>
         <Field label="学分" compact labelClass={labelClass}>
-          <NumberInput value={draft.credits} onChange={(credits) => setDraft({ credits })} inputClass={inputClass} />
+          <NumberInput value={draft.credits} onChange={(credits) => setDraft({ credits })} inputClass={inputClass} step="0.01" />
         </Field>
         <Field label="成绩" compact labelClass={labelClass}>
           <NumberInput value={draft.score} onChange={(score) => setDraft({ score })} inputClass={inputClass} allowEmpty max={100} />
@@ -206,19 +206,21 @@ function NumberInput({
   inputClass,
   allowEmpty = false,
   max,
+  step = "0.1",
 }: {
   value: string;
   onChange: (value: string) => void;
   inputClass: string;
   allowEmpty?: boolean;
   max?: number;
+  step?: string;
 }) {
   return (
     <input
       type="number"
       min={0}
       max={max}
-      step="0.1"
+      step={step}
       value={value}
       onChange={(event) => onChange(event.target.value)}
       onBlur={() => {

@@ -1,22 +1,20 @@
+import { fail } from "../../lib/errors";
 import { expectNumber } from "../../lib/validate";
 import { resolveCourse } from "../courses/course-resolver";
 import { CustomCourseRepository } from "../courses/custom-course.repository";
-import { ProgramCourseRepository } from "../courses/program-course.repository";
 import { assertPlanWritable } from "../courses/state-machine";
 import type { Course } from "../courses/course.types";
 
 function writeTerm(course: Course, term: number | null, status: "计划修读" | "未修读"): void {
   if (course.source === "program") {
-    ProgramCourseRepository.update(course.courseCode, {
-      planned_term: term,
-      study_status: status,
-    });
-  } else {
-    CustomCourseRepository.update(course.courseCode, {
-      term_number: term,
-      study_status: status,
+    throw fail.precondition("官方培养计划是只读的，请先把课程加入我的计划", {
+      courseCode: course.courseCode,
     });
   }
+  CustomCourseRepository.update(course.courseCode, {
+    planned_term: term,
+    study_status: status,
+  });
 }
 
 export const PlanService = {

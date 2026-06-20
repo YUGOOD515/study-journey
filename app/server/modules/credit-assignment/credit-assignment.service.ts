@@ -3,14 +3,17 @@ import { expectEnum } from "../../lib/validate";
 import type { Course, CreditCountTo } from "../courses/course.types";
 import { resolveCourse } from "../courses/course-resolver";
 import { CustomCourseRepository } from "../courses/custom-course.repository";
-import { ProgramCourseRepository } from "../courses/program-course.repository";
 
 const CREDIT_COUNT_TO_VALUES: CreditCountTo[] = ["通识教育-选修", "大类平台-选修"];
 
 function writeCountTo(course: Course, value: CreditCountTo | null): void {
   const patch = { credit_count_to: value };
-  if (course.source === "program") ProgramCourseRepository.update(course.courseCode, patch);
-  else CustomCourseRepository.update(course.courseCode, patch);
+  if (course.source === "program") {
+    throw fail.precondition("官方培养计划是只读的，请在我的计划中设置学分归属", {
+      courseCode: course.courseCode,
+    });
+  }
+  CustomCourseRepository.update(course.courseCode, patch);
 }
 
 export const CreditAssignmentService = {
