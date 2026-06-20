@@ -16,18 +16,16 @@ import { ProgressBar } from "../components/ProgressBar";
 import { InterdisciplinaryFlow, type FlowItem } from "../components/InterdisciplinaryFlow";
 import { myPlanTotalCredits } from "../lib/planTotal";
 import type {
-  CourseWithCategory,
-  PersonalPlanItem,
+  Course,
   ProgressResponse,
-  SemesterCourse,
 } from "../types";
 
 export default function Trail() {
   const [progress, setProgress] = useState<ProgressResponse | null>(null);
   const [planInputs, setPlanInputs] = useState<{
-    courses: CourseWithCategory[];
-    personalPlan: PersonalPlanItem[];
-    done: SemesterCourse[];
+    courses: Course[];
+    personalPlan: Course[];
+    done: Course[];
   } | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);

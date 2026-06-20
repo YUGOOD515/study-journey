@@ -1,5 +1,5 @@
 ﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api } from "../lib/api";
+import { api, type RequirementDto } from "../lib/api";
 import { formatCredits } from "../lib/credits";
 import { myPlanTotalCredits } from "../lib/planTotal";
 import { parseOfferedTerm, TERM_LABEL } from "../lib/offeredTerm";
@@ -11,12 +11,8 @@ import {
 } from "../lib/courseCardDisplay";
 import type {
   CourseCardDisplayOptions,
-  CourseWithCategory,
-  PersonalPlanItem,
+  Course,
   PlanCoursePatch,
-  ProgramRequirement,
-  SemesterCourse,
-  TrashItem,
 } from "../types";
 import { CourseCard } from "../components/CourseCard";
 import { ManualCourseCard } from "../components/ManualCourseCard";
@@ -45,7 +41,7 @@ type DragPayload =
     };
 
 interface PlannedOfficial {
-  course: CourseWithCategory;
+  course: Course;
   plannedTerm: number | null;
   warning: string | null;
 }
@@ -57,10 +53,10 @@ export default function Timeline({
 }: {
   onOpenSchedule?: (term: number) => void;
 }) {
-  const [courses, setCourses] = useState<CourseWithCategory[]>([]);
-  const [reqs, setReqs] = useState<ProgramRequirement[]>([]);
-  const [done, setDone] = useState<SemesterCourse[]>([]);
-  const [personalPlan, setPersonalPlan] = useState<PersonalPlanItem[]>([]);
+  const [courses, setCourses] = useState<Course[]>([]);
+  const [reqs, setReqs] = useState<RequirementDto[]>([]);
+  const [done, setDone] = useState<Course[]>([]);
+  const [personalPlan, setPersonalPlan] = useState<Course[]>([]);
   const [viewMode, setViewMode] = useState<ViewMode>("personal");
   const [displayOptions, setDisplayOptions] = useState<CourseCardDisplayOptions>(
     loadCourseCardDisplayOptions
@@ -70,7 +66,7 @@ export default function Timeline({
   const [addTerm, setAddTerm] = useState<number | null | "drawer">(null);
   const [dragging, setDragging] = useState<DragPayload | null>(null);
   const [hint, setHint] = useState<string | null>(null);
-  const [trashItems, setTrashItems] = useState<TrashItem[]>([]);
+  const [trashItems, setTrashItems] = useState<Course[]>([]);
   const [activeDrawer, setActiveDrawer] = useState<ActiveDrawer>(null);
   const viewportWidth = useViewportWidth();
   const clearHint = useCallback(() => setHint(null), []);
@@ -121,8 +117,8 @@ export default function Timeline({
   const completedByCode = useMemo(() => {
     const m = new Map<string, number | null>();
     for (const d of done) {
-      if (d.source === "official" && d.course_code) {
-        m.set(d.course_code, d.score);
+      if (d.originType === "official" && d.courseCode) {
+        m.set(d.courseCode, d.score);
       }
     }
     return m;
@@ -130,10 +126,10 @@ export default function Timeline({
 
   // 官方视图：纯按 offered_term 分；灵活课进抽屉
   const officialBuckets = useMemo(() => {
-    const byTerm = emptyTermBuckets<CourseWithCategory>();
-    const drawer: CourseWithCategory[] = [];
+    const byTerm = emptyTermBuckets<Course>();
+    const drawer: Course[] = [];
     for (const c of courses) {
-      const p = parseOfferedTerm(c.offered_term);
+      const p = parseOfferedTerm(c.officialTerm);
       if (p.isFlexible || p.primary == null) drawer.push(c);
       else byTerm[p.primary].push(c);
     }
@@ -148,21 +144,21 @@ export default function Timeline({
     const drawer: PlannedOfficial[] = [];
     const overrides = new Map(
       personalPlan
-        .filter((p) => p.item_type === "official" && p.course_code)
-        .map((p) => [p.course_code as string, p])
+        .filter((p) => p.originType === "official" && p.courseCode)
+        .map((p) => [p.courseCode, p])
     );
 
     const plannedTermByCode = new Map<string, number | null>();
     for (const c of courses) {
-      const override = overrides.get(c.course_code);
+      const override = overrides.get(c.courseCode);
       if (override) {
-        plannedTermByCode.set(c.course_code, override.planned_term);
+        plannedTermByCode.set(c.courseCode, override.actualTerm ?? override.plannedTerm);
       }
     }
 
     for (const c of courses) {
-      if (!plannedTermByCode.has(c.course_code)) continue;
-      const plannedTerm = plannedTermByCode.get(c.course_code) ?? null;
+      if (!plannedTermByCode.has(c.courseCode)) continue;
+      const plannedTerm = plannedTermByCode.get(c.courseCode) ?? null;
       const item: PlannedOfficial = {
         course: c,
         plannedTerm,
@@ -181,64 +177,36 @@ export default function Timeline({
   }, [courses, personalPlan]);
 
   const manualPlanByTerm = useMemo(() => {
-    const byTerm = emptyTermBuckets<PersonalPlanItem>();
-    const drawer: PersonalPlanItem[] = [];
+    const byTerm = emptyTermBuckets<Course>();
+    const drawer: Course[] = [];
     const seenCodes = new Set<string>();
 
     for (const item of personalPlan) {
-      if (item.item_type !== "manual") continue;
-      if (item.course_code) seenCodes.add(item.course_code);
-      if (item.planned_term == null) drawer.push(item);
-      else byTerm[item.planned_term].push(item);
+      if (item.originType === "official") continue;
+      seenCodes.add(item.courseCode);
+      const term = item.actualTerm ?? item.plannedTerm;
+      if (term == null) drawer.push(item);
+      else byTerm[term].push(item);
     }
 
     // 自定义课程不只存在于'计划修读'里；已修读/正在修读的 custom 课也应该出现在
     // '我的计划'时间轴上，否则时间轴合计和旅迹页口径会断开。
     for (const item of done) {
-      if (
-        item.source !== "manual" ||
-        !item.course_code ||
-        item.category_code == null ||
-        item.course_nature == null ||
-        seenCodes.has(item.course_code)
-      ) {
-        continue;
-      }
-      const normalized: PersonalPlanItem = {
-        item_type: "manual",
-        course_code: item.course_code,
-        planned_term: item.term_number,
-        course_name: item.course_name,
-        credits: item.credits,
-        lecture_hours: 0,
-        experiment_hours: 0,
-        extra_hours: 0,
-        prerequisite_course_code: null,
-        prerequisite_course_name: null,
-        category_code: item.category_code,
-        category_name: CATEGORY_STYLE[item.category_code]?.name ?? item.category_code,
-        course_nature: item.course_nature,
-        offered_term: null,
-        course_category: null,
-        score: item.score,
-        note: item.note,
-        is_interdisciplinary: item.is_interdisciplinary,
-        assigned_to: item.assigned_to,
-        credit_count_to: item.credit_count_to,
-      };
-      if (normalized.planned_term == null) drawer.push(normalized);
-      else byTerm[normalized.planned_term].push(normalized);
+      if (item.originType === "official" || seenCodes.has(item.courseCode)) continue;
+      const term = item.actualTerm ?? item.plannedTerm;
+      if (term == null) drawer.push(item);
+      else byTerm[term].push(item);
     }
 
     for (const t of TERMS) {
-      byTerm[t].sort((a, b) => a.course_name.localeCompare(b.course_name, "zh"));
+      byTerm[t].sort((a, b) => a.courseName.localeCompare(b.courseName, "zh"));
     }
-    drawer.sort((a, b) => a.course_name.localeCompare(b.course_name, "zh"));
+    drawer.sort((a, b) => a.courseName.localeCompare(b.courseName, "zh"));
     return { byTerm, drawer };
   }, [personalPlan, done]);
 
   const totals = useMemo(() => {
-    const requiredTotal = reqs.reduce((s, r) => s + r.required_credits, 0);
+    const requiredTotal = reqs.reduce((s, r) => s + r.requiredCredits, 0);
     const officialPlanTotal = courses.reduce((s, c) => s + c.credits, 0);
 
     const completedTotal = done.reduce(
@@ -261,8 +229,8 @@ export default function Timeline({
     if (viewMode !== "personal") return;
     const payload: DragPayload = {
       kind: "official",
-      courseCode: item.course.course_code,
-      courseName: item.course.course_name,
+      courseCode: item.course.courseCode,
+      courseName: item.course.courseName,
       fromTerm: item.plannedTerm,
     };
     event.dataTransfer.effectAllowed = "move";
@@ -273,13 +241,13 @@ export default function Timeline({
 
   const startManualDrag = (
     event: React.DragEvent<HTMLDivElement>,
-    item: PersonalPlanItem
+    item: Course
   ) => {
     const payload: DragPayload = {
       kind: "manual",
-      courseCode: item.course_code ?? "",
-      courseName: item.course_name,
-      fromTerm: item.planned_term,
+      courseCode: item.courseCode,
+      courseName: item.courseName,
+      fromTerm: item.actualTerm ?? item.plannedTerm,
     };
     event.dataTransfer.effectAllowed = "move";
     event.dataTransfer.setData("application/x-study-journey", JSON.stringify(payload));
@@ -295,7 +263,7 @@ export default function Timeline({
     }
     try {
       if (dragging.kind === "official") {
-        const course = courses.find((c) => c.course_code === dragging.courseCode);
+        const course = courses.find((c) => c.courseCode === dragging.courseCode);
         if (!course) return;
         await api.upsertPersonalOfficial({
           course_code: dragging.courseCode,
@@ -391,12 +359,12 @@ export default function Timeline({
   const trashDrawerColumns = getDrawerColumns(trashCount, viewportWidth);
   const anyDrawerOpen = isPersonal ? activeDrawer != null : pendingIsOpen;
 
-  const moveOfficialToTrash = async (course: CourseWithCategory) => {
-    if (!window.confirm(`将「${course.course_name}」移入垃圾篓？`)) return;
+  const moveOfficialToTrash = async (course: Course) => {
+    if (!window.confirm(`将「${course.courseName}」移入垃圾篓？`)) return;
     try {
-      await api.trashOfficial(course.course_code);
+      await api.trashOfficial(course.courseCode);
       await refetchTimelineData();
-      setHint(`已移入垃圾篓：${course.course_name}`);
+      setHint(`已移入垃圾篓：${course.courseName}`);
     } catch (e: any) {
       setHint(String(e?.message ?? e));
     }
@@ -432,23 +400,23 @@ export default function Timeline({
     setHint("课程信息已保存");
   };
 
-  const restoreTrashItem = async (item: TrashItem) => {
+  const restoreTrashItem = async (item: Course) => {
     try {
       await api.restoreTrashItem(item);
       await refetchTimelineData();
-      setHint(`已恢复：${item.course_name}`);
+      setHint(`已恢复：${item.courseName}`);
     } catch (e: any) {
       setHint(String(e?.message ?? e));
     }
   };
 
-  const permanentlyDeleteTrashItem = async (item: TrashItem) => {
+  const permanentlyDeleteTrashItem = async (item: Course) => {
     const label = item.source === "program" ? "从我的计划中永久移除" : "永久删除";
-    if (!window.confirm(`${label}「${item.course_name}」？此操作无法从垃圾篓恢复。`)) return;
+    if (!window.confirm(`${label}「${item.courseName}」？此操作无法从垃圾篓恢复。`)) return;
     try {
       await api.permanentlyDeleteTrashItem(item);
       await refetchTimelineData();
-      setHint(`${label}：${item.course_name}`);
+      setHint(`${label}：${item.courseName}`);
     } catch (e: any) {
       setHint(String(e?.message ?? e));
     }
@@ -829,7 +797,7 @@ function OfficialTermColumn({
   onOpenSchedule,
 }: {
   term: number;
-  courses: CourseWithCategory[];
+  courses: Course[];
   completedByCode: Map<string, number | null>;
   displayOptions: CourseCardDisplayOptions;
   onSaveCourse: (courseCode: string, patch: PlanCoursePatch) => Promise<void>;
@@ -840,13 +808,13 @@ function OfficialTermColumn({
     <TermFrame term={term} credits={credits} onOpenSchedule={onOpenSchedule}>
       {courses.map((course) => (
         <CourseCard
-          key={`${term}-${course.course_code}`}
+          key={`${term}-${course.courseCode}`}
           course={course}
-          completedScore={completedByCode.get(course.course_code)}
-          plannedTerm={course.planned_term}
+          completedScore={completedByCode.get(course.courseCode)}
+          plannedTerm={course.plannedTerm}
           displayOptions={displayOptions}
           editable
-          onSave={(patch) => onSaveCourse(course.course_code, patch)}
+          onSave={(patch) => onSaveCourse(course.courseCode, patch)}
         />
       ))}
       {courses.length === 0 && <EmptyTerm />}
@@ -874,7 +842,7 @@ function PersonalTermColumn({
 }: {
   term: number;
   officialItems: PlannedOfficial[];
-  manualItems: PersonalPlanItem[];
+  manualItems: Course[];
   completedByCode: Map<string, number | null>;
   displayOptions: CourseCardDisplayOptions;
   dragging: DragPayload | null;
@@ -885,11 +853,11 @@ function PersonalTermColumn({
   ) => void;
   onStartManualDrag: (
     event: React.DragEvent<HTMLDivElement>,
-    item: PersonalPlanItem
+    item: Course
   ) => void;
   onDragEnd: () => void;
   onAdd: () => void;
-  onDeleteOfficial: (course: CourseWithCategory) => Promise<void>;
+  onDeleteOfficial: (course: Course) => Promise<void>;
   onSaveOfficial: (courseCode: string, patch: PlanCoursePatch) => Promise<void>;
   onSaveManual: (courseCode: string, patch: PlanCoursePatch) => Promise<void>;
   onDeleteManual: (courseCode: string) => Promise<void>;
@@ -919,15 +887,15 @@ function PersonalTermColumn({
     >
       {officialItems.map((item) => (
         <CourseCard
-          key={`personal-${item.course.course_code}`}
+          key={`personal-${item.course.courseCode}`}
           course={item.course}
-          completedScore={completedByCode.get(item.course.course_code)}
+          completedScore={completedByCode.get(item.course.courseCode)}
           draggable
           warning={item.warning ?? undefined}
           plannedTerm={item.plannedTerm}
           displayOptions={displayOptions}
           editable
-          onSave={(patch) => onSaveOfficial(item.course.course_code, patch)}
+          onSave={(patch) => onSaveOfficial(item.course.courseCode, patch)}
           onDragStart={(event) => onStartOfficialDrag(event, item)}
           onDragEnd={onDragEnd}
           onDelete={() => { void onDeleteOfficial(item.course); }}
@@ -938,16 +906,16 @@ function PersonalTermColumn({
         <div className="pt-1 mt-1 border-t border-dashed border-sub/20 flex flex-col gap-1.5">
           {manualItems.map((item) => (
             <ManualCourseCard
-              key={`plan-manual-${item.course_code}`}
+              key={`plan-manual-${item.courseCode}`}
               course={item}
               draggable
               displayOptions={displayOptions}
               editable
-              onSave={(patch) => onSaveManual(item.course_code ?? "", patch)}
+              onSave={(patch) => onSaveManual(item.courseCode, patch)}
               onDragStart={(event) => onStartManualDrag(event, item)}
               onDragEnd={onDragEnd}
               onDelete={async (courseCode) => {
-                if (!window.confirm(`将「${item.course_name}」移入垃圾篓？`)) return;
+                if (!window.confirm(`将「${item.courseName}」移入垃圾篓？`)) return;
                 await onDeleteManual(courseCode);
               }}
             />
@@ -1264,9 +1232,9 @@ function TrashDrawerContent({
   onEmpty,
   columns,
 }: {
-  items: TrashItem[];
-  onRestore: (item: TrashItem) => Promise<void>;
-  onPermanentDelete: (item: TrashItem) => Promise<void>;
+  items: Course[];
+  onRestore: (item: Course) => Promise<void>;
+  onPermanentDelete: (item: Course) => Promise<void>;
   onRestoreAll: () => Promise<void>;
   onEmpty: () => Promise<void>;
   columns: number;
@@ -1307,7 +1275,7 @@ function TrashDrawerContent({
       </div>
       <DrawerCourseGrid columns={columns}>
         {items.map((item) => (
-          <DrawerCourseItem key={`${item.source}-${item.course_code ?? "custom"}`}>
+          <DrawerCourseItem key={`${item.source}-${item.courseCode}`}>
             <TrashCourseCard
               item={item}
               onRestore={() => onRestore(item)}
@@ -1325,34 +1293,32 @@ function TrashCourseCard({
   onRestore,
   onPermanentDelete,
 }: {
-  item: TrashItem;
+  item: Course;
   onRestore: () => Promise<void>;
   onPermanentDelete: () => Promise<void>;
 }) {
-  const style = CATEGORY_STYLE[item.category_code];
-  const isRequired = item.course_nature === "必修";
+  const style = CATEGORY_STYLE[item.categoryCode];
+  const isRequired = item.requirementType === "必修";
   const hover = useHoverIntentTriangle<HTMLDivElement>({ width: 280 });
   const hoverItem: CourseHoverInfo = {
     source: item.source,
-    course_code: item.course_code,
-    course_name: item.course_name,
+    courseCode: item.courseCode,
+    courseName: item.courseName,
     credits: item.credits,
-    lecture_hours: item.lecture_hours ?? 0,
-    experiment_hours: item.experiment_hours ?? 0,
-    extra_hours: item.extra_hours ?? 0,
-    prerequisite_course_code: item.prerequisite_course_code ?? null,
-    prerequisite_course_name: item.prerequisite_course_name ?? null,
-    category_code: item.category_code,
-    category_name: item.category_name,
-    course_nature: item.course_nature,
-    offered_term: item.offered_term ?? null,
-    planned_term: item.planned_term,
+    lectureHours: item.lectureHours,
+    experimentHours: item.experimentHours,
+    extraHours: item.extraHours,
+    prerequisiteCourseCode: item.prerequisiteCourseCode,
+    prerequisiteCourseName: item.prerequisiteCourseName,
+    categoryCode: item.categoryCode,
+    categoryName: item.categoryName,
+    requirementType: item.requirementType,
+    officialTerm: item.officialTerm,
+    plannedTerm: item.plannedTerm,
     score: item.score,
-    note: item.note ?? null,
-    is_interdisciplinary: item.is_interdisciplinary ?? 0,
-    assigned_to: item.assigned_to ?? null,
-    credit_count_to: item.credit_count_to ?? null,
-    deleted_at: item.deleted_at,
+    note: item.note,
+    creditCountTo: item.creditCountTo,
+    deletedAt: item.deletedAt,
   };
 
   return (
@@ -1368,10 +1334,10 @@ function TrashCourseCard({
         }}
       >
         <div className="text-[9px] text-sub/80 tabular-nums">
-          {item.source === "program" ? item.course_code : "自定义"}
+          {item.source === "program" ? item.courseCode : "自定义"}
         </div>
         <div className="mt-0.5 font-medium" style={{ color: style.text }}>
-          {item.course_name}
+          {item.courseName}
         </div>
         <div className="mt-1 flex items-center justify-between text-[10px]">
           <span className="tabular-nums" style={{ color: style.text }}>
@@ -1381,7 +1347,7 @@ function TrashCourseCard({
             className={isRequired ? "rounded-sm px-1 text-white" : "text-sub"}
             style={isRequired ? { backgroundColor: style.color } : undefined}
           >
-            {item.course_nature}
+            {item.requirementType}
           </span>
         </div>
         {item.score != null && (
@@ -1439,7 +1405,7 @@ function OfficialDrawerContent({
   onSaveCourse,
   columns,
 }: {
-  courses: CourseWithCategory[];
+  courses: Course[];
   completedByCode: Map<string, number | null>;
   displayOptions: CourseCardDisplayOptions;
   onSaveCourse: (courseCode: string, patch: PlanCoursePatch) => Promise<void>;
@@ -1455,14 +1421,14 @@ function OfficialDrawerContent({
   return (
     <DrawerCourseGrid columns={columns}>
       {courses.map((course) => (
-        <DrawerCourseItem key={`official-drawer-${course.course_code}`}>
+        <DrawerCourseItem key={`official-drawer-${course.courseCode}`}>
           <CourseCard
             course={course}
-            completedScore={completedByCode.get(course.course_code)}
-            plannedTerm={course.planned_term}
+            completedScore={completedByCode.get(course.courseCode)}
+            plannedTerm={course.plannedTerm}
             displayOptions={displayOptions}
             editable
-            onSave={(patch) => onSaveCourse(course.course_code, patch)}
+            onSave={(patch) => onSaveCourse(course.courseCode, patch)}
           />
         </DrawerCourseItem>
       ))}
@@ -1486,7 +1452,7 @@ function PersonalDrawerContent({
   columns,
 }: {
   officialItems: PlannedOfficial[];
-  manualItems: PersonalPlanItem[];
+  manualItems: Course[];
   completedByCode: Map<string, number | null>;
   displayOptions: CourseCardDisplayOptions;
   onStartOfficialDrag: (
@@ -1495,11 +1461,11 @@ function PersonalDrawerContent({
   ) => void;
   onStartManualDrag: (
     event: React.DragEvent<HTMLDivElement>,
-    item: PersonalPlanItem
+    item: Course
   ) => void;
   onDragEnd: () => void;
   onAdd: () => void;
-  onDeleteOfficial: (course: CourseWithCategory) => Promise<void>;
+  onDeleteOfficial: (course: Course) => Promise<void>;
   onSaveOfficial: (courseCode: string, patch: PlanCoursePatch) => Promise<void>;
   onSaveManual: (courseCode: string, patch: PlanCoursePatch) => Promise<void>;
   onDeleteManual: (courseCode: string) => Promise<void>;
@@ -1516,15 +1482,15 @@ function PersonalDrawerContent({
       {!empty && (
         <DrawerCourseGrid columns={columns}>
           {officialItems.map((item) => (
-            <DrawerCourseItem key={`personal-drawer-${item.course.course_code}`}>
+            <DrawerCourseItem key={`personal-drawer-${item.course.courseCode}`}>
               <CourseCard
                 course={item.course}
-                completedScore={completedByCode.get(item.course.course_code)}
+                completedScore={completedByCode.get(item.course.courseCode)}
                 plannedTerm={item.plannedTerm}
                 draggable
                 displayOptions={displayOptions}
                 editable
-                onSave={(patch) => onSaveOfficial(item.course.course_code, patch)}
+                onSave={(patch) => onSaveOfficial(item.course.courseCode, patch)}
                 onDragStart={(event) => onStartOfficialDrag(event, item)}
                 onDragEnd={onDragEnd}
                 onDelete={() => { void onDeleteOfficial(item.course); }}
@@ -1532,17 +1498,17 @@ function PersonalDrawerContent({
             </DrawerCourseItem>
           ))}
           {manualItems.map((item) => (
-            <DrawerCourseItem key={`drawer-manual-${item.course_code}`}>
+            <DrawerCourseItem key={`drawer-manual-${item.courseCode}`}>
               <ManualCourseCard
                 course={item}
                 draggable
                 displayOptions={displayOptions}
                 editable
-                onSave={(patch) => onSaveManual(item.course_code ?? "", patch)}
+                onSave={(patch) => onSaveManual(item.courseCode, patch)}
                 onDragStart={(event) => onStartManualDrag(event, item)}
                 onDragEnd={onDragEnd}
                 onDelete={async (courseCode) => {
-                  if (!window.confirm(`将「${item.course_name}」移入垃圾篓？`)) return;
+                  if (!window.confirm(`将「${item.courseName}」移入垃圾篓？`)) return;
                   await onDeleteManual(courseCode);
                 }}
               />
@@ -1851,26 +1817,26 @@ function emptyTermBuckets<T>(): Record<number, T[]> {
   return { 1: [], 2: [], 3: [], 4: [], 5: [], 6: [], 7: [], 8: [] };
 }
 
-function sortOfficial(arr: CourseWithCategory[]) {
+function sortOfficial(arr: Course[]) {
   arr.sort((a, b) => {
-    if (a.course_nature !== b.course_nature) {
-      return a.course_nature === "必修" ? -1 : 1;
+    if (a.requirementType !== b.requirementType) {
+      return a.requirementType === "必修" ? -1 : 1;
     }
-    return a.category_name.localeCompare(b.category_name, "zh");
+    return a.categoryName.localeCompare(b.categoryName, "zh");
   });
 }
 
 function sortPlanned(arr: PlannedOfficial[]) {
   arr.sort((a, b) => {
-    if (a.course.course_nature !== b.course.course_nature) {
-      return a.course.course_nature === "必修" ? -1 : 1;
+    if (a.course.requirementType !== b.course.requirementType) {
+      return a.course.requirementType === "必修" ? -1 : 1;
     }
-    return a.course.category_name.localeCompare(b.course.category_name, "zh");
+    return a.course.categoryName.localeCompare(b.course.categoryName, "zh");
   });
 }
 
-function allowedTerms(course: CourseWithCategory): number[] {
-  const parsed = parseOfferedTerm(course.offered_term);
+function allowedTerms(course: Course): number[] {
+  const parsed = parseOfferedTerm(course.officialTerm);
   if (parsed.isFlexible || parsed.primary == null) return TERMS;
   if (parsed.rangeEnd != null) {
     return TERMS.filter((t) => t >= parsed.primary! && t <= parsed.rangeEnd!);
@@ -1879,10 +1845,10 @@ function allowedTerms(course: CourseWithCategory): number[] {
 }
 
 function placementWarning(
-  course: CourseWithCategory,
+  course: Course,
   term: number,
   plannedTermByCode: Map<string, number | null>,
-  allCourses: CourseWithCategory[]
+  allCourses: Course[]
 ): string | null {
   const warnings: string[] = [];
   const allowed = allowedTerms(course);
@@ -1890,13 +1856,13 @@ function placementWarning(
     warnings.push(`开课建议：${formatAllowedTerms(allowed)}`);
   }
 
-  if (course.prerequisite_course_code) {
-    const prereqTerm = plannedTermByCode.get(course.prerequisite_course_code);
+  if (course.prerequisiteCourseCode) {
+    const prereqTerm = plannedTermByCode.get(course.prerequisiteCourseCode);
     const prereq = allCourses.find(
-      (c) => c.course_code === course.prerequisite_course_code
+      (c) => c.courseCode === course.prerequisiteCourseCode
     );
     if (prereqTerm != null && prereqTerm >= term) {
-      warnings.push(`先修「${prereq?.course_name ?? "未命名课程"}」不早于本课`);
+      warnings.push(`先修「${prereq?.courseName ?? "未命名课程"}」不早于本课`);
     }
   }
 
