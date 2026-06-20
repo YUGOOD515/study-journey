@@ -144,6 +144,11 @@ def pick(row: pd.Series, *names: str) -> Any:
     return None
 
 
+def section_code_or_source_row(value: Any, source_row: int) -> str:
+    text = clean_text(value)
+    return text if text is not None else f"__missing_source_row_{source_row}"
+
+
 WEEKDAY_MAP = {
     "一": 1,
     "二": 2,
@@ -371,9 +376,10 @@ def import_final(conn: sqlite3.Connection, source: SourceFile) -> dict[str, int]
 
     for index, row in table.iterrows():
         course_code = clean_text(pick(row, "课程编号", "课程号"))
-        section_code = clean_text(pick(row, "课序号"))
+        source_row = int(index) + 1
+        section_code = section_code_or_source_row(pick(row, "课序号"), source_row)
         course_name = clean_text(pick(row, "课程名称", "课程名"))
-        if not course_code or not section_code or not course_name:
+        if not course_code or not course_name:
             skipped += 1
             continue
 
@@ -403,7 +409,7 @@ def import_final(conn: sqlite3.Connection, source: SourceFile) -> dict[str, int]
                 clean_text(pick(row, "课程属性")),
                 clean_text(pick(row, "性别要求")),
                 clean_text(pick(row, "选课开放")),
-                int(index) + 1,
+                source_row,
                 clean_text(pick(row, "上课地点")),
                 clean_text(pick(row, "分组名称")),
             ),
