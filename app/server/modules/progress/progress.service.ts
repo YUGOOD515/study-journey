@@ -7,7 +7,6 @@ import type {
   StudyStatus,
 } from "../courses/course.types";
 import { CustomCourseRepository } from "../courses/custom-course.repository";
-import { ProgramCourseRepository } from "../courses/program-course.repository";
 import {
   RequirementRepository,
   type RequirementRow,
@@ -92,9 +91,7 @@ const STATUS_PRIORITY: Record<StudyStatus, number> = {
 };
 
 function activeCourses(): Course[] {
-  const program = ProgramCourseRepository.find({ limit: 1000 });
-  const custom = CustomCourseRepository.find({ limit: 1000 });
-  return [...program, ...custom];
+  return CustomCourseRepository.find({ limit: 1000 });
 }
 
 function statusCreditBucketField(
@@ -123,35 +120,13 @@ function emptyBucket(req: RequirementRow): Bucket {
 
 type CreditField = "earned" | "inProgress" | "planned" | null;
 
-/** 解析 official_term 的默认开课学期（与前端 lib/offeredTerm 同口径）。 */
-function defaultTermFromOfficial(official: string | null): number | null {
-  if (!official) return null;
-  const s = official.trim();
-  if (!s || s.toUpperCase() === "A") return null;
-  const single = /^(\d+)$/.exec(s);
-  if (single) return parseInt(single[1], 10);
-  const range = /^(\d+)\s*-\s*(\d+)$/.exec(s);
-  if (range) {
-    const a = parseInt(range[1], 10);
-    const b = parseInt(range[2], 10);
-    if (a === 1 && b === 8) return null; // 全学期视为灵活
-    return a;
-  }
-  return null;
-}
-
 /**
  * 课程在“我的计划”时间轴上的学期；null = 未落位（灵活/抽屉）。与时间轴页同口径。
  *
- * 关键：计划修读的官方课等价于时间轴里的 override，plannedTerm 即最终结果（可能为 null=用户主动放进抽屉），
- * 不再回退默认开课学期；其余官方课才用 actual ?? planned ?? 默认。
+ * 我的计划已经是最终用户状态；未落位课程不回退官方默认学期。
  */
 function placementTerm(course: Course): number | null {
-  if (course.source === "program") {
-    if (course.studyStatus === "计划修读") return course.plannedTerm;
-    return course.actualTerm ?? course.plannedTerm ?? defaultTermFromOfficial(course.officialTerm);
-  }
-  return course.plannedTerm;
+  return course.actualTerm ?? course.plannedTerm;
 }
 
 /**
@@ -324,8 +299,7 @@ export const ProgressService = {
     }));
 
     for (const c of activeCourses()) {
-      // program 用 actualTerm 优先，custom 用 plannedTerm（mapper 已经统一为相同字段）
-      const t = c.source === "program" ? c.actualTerm ?? c.plannedTerm : c.plannedTerm;
+      const t = c.actualTerm ?? c.plannedTerm;
       if (!t || t < 1 || t > 8) continue;
       const bucket = terms[t - 1];
       bucket.courseCount += 1;

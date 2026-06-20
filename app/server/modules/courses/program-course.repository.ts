@@ -55,11 +55,6 @@ function whereForFilter(filter: ProgramCourseFilter): { sql: string; params: unk
 
   if (filter.inTrash) {
     clauses.push("pc.is_deleted = 1");
-  } else {
-    clauses.push("pc.is_deleted = 0");
-  }
-  if (!filter.includePermanentlyDeleted) {
-    clauses.push("pc.is_permanently_deleted = 0");
   }
   if (filter.category) {
     clauses.push("pc.category_code = ?");
@@ -110,10 +105,8 @@ export const ProgramCourseRepository = {
     return row?.n ?? 0;
   },
 
-  findByCode(code: string, opts?: { includeTrash?: boolean; includePermanentlyDeleted?: boolean }): Course | null {
+  findByCode(code: string, _opts?: { includeTrash?: boolean; includePermanentlyDeleted?: boolean }): Course | null {
     const clauses: string[] = ["pc.course_code = ?"];
-    if (!opts?.includeTrash) clauses.push("pc.is_deleted = 0");
-    if (!opts?.includePermanentlyDeleted) clauses.push("pc.is_permanently_deleted = 0");
     const stmt = db.prepare(`${SELECT_PROGRAM} WHERE ${clauses.join(" AND ")}`);
     const row = stmt.get(code) as unknown as ProgramRow | undefined;
     return row ? mapProgramRow(row) : null;
@@ -122,7 +115,7 @@ export const ProgramCourseRepository = {
   /** 用于先修课校验：检查目标 course_code 是否在 program 表里且未永久删除。 */
   exists(code: string): boolean {
     const stmt = db.prepare(
-      `SELECT 1 FROM plan_program_courses WHERE course_code = ? AND is_permanently_deleted = 0`
+      `SELECT 1 FROM plan_program_courses WHERE course_code = ?`
     );
     return !!stmt.get(code);
   },

@@ -24,6 +24,8 @@ export type CreditCountTo = "通识教育-选修" | "大类平台-选修";
  */
 export interface Course {
   source: CourseSource;
+  originType?: "official" | "manual" | "raw";
+  officialCourseCode?: string | null;
   courseCode: string;
   sectionCode: string | null;
   courseName: string;

@@ -2,6 +2,8 @@ import type { CategoryCode } from "../../db";
 import type { Course, CreditCountTo, RequirementType, StudyStatus } from "./course.types";
 
 interface BaseRow {
+  origin_type?: string;
+  official_course_code?: string | null;
   category_code: string;
   category_name: string;
   requirement_type: string;
@@ -36,12 +38,17 @@ export interface ProgramRow extends BaseRow {
 }
 
 export interface CustomRow extends BaseRow {
-  term_number: number | null;
+  planned_term: number | null;
+  actual_term: number | null;
+  official_term: string | null;
+  preference_level: number | null;
 }
 
 export function mapProgramRow(row: ProgramRow): Course {
   return {
     source: "program",
+    originType: "official",
+    officialCourseCode: row.course_code,
     courseCode: row.course_code,
     sectionCode: row.section_code,
     courseName: row.course_name,
@@ -85,6 +92,8 @@ export function mapProgramRow(row: ProgramRow): Course {
 export function mapCustomRow(row: CustomRow): Course {
   return {
     source: "custom",
+    originType: row.origin_type as Course["originType"],
+    officialCourseCode: row.official_course_code ?? null,
     courseCode: row.course_code,
     sectionCode: row.section_code,
     courseName: row.course_name,
@@ -100,9 +109,9 @@ export function mapCustomRow(row: CustomRow): Course {
     experimentHours: row.experiment_hours,
     extraHours: row.extra_hours,
 
-    plannedTerm: row.term_number,
-    actualTerm: row.term_number,
-    officialTerm: null,
+    plannedTerm: row.planned_term,
+    actualTerm: row.actual_term,
+    officialTerm: row.official_term,
 
     studyStatus: row.study_status as StudyStatus,
     score: row.score,
@@ -117,7 +126,7 @@ export function mapCustomRow(row: CustomRow): Course {
     deletedAt: row.deleted_at,
     deletedNote: row.deleted_note,
 
-    preferenceLevel: null,
+    preferenceLevel: row.preference_level,
     note: row.note,
 
     createdAt: row.created_at,

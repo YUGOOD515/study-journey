@@ -8,10 +8,6 @@ import {
   CustomCourseRepository,
   type CustomCourseFilter,
 } from "../courses/custom-course.repository";
-import {
-  ProgramCourseRepository,
-  type ProgramCourseFilter,
-} from "../courses/program-course.repository";
 
 function softDelete(course: Course, note: string | null): void {
   const patch = {
@@ -19,33 +15,28 @@ function softDelete(course: Course, note: string | null): void {
     deleted_at: new Date().toISOString().replace("T", " ").slice(0, 19),
     deleted_note: note,
   };
-  if (course.source === "program") ProgramCourseRepository.update(course.courseCode, patch);
-  else CustomCourseRepository.update(course.courseCode, patch);
+  if (course.source === "program") {
+    throw fail.precondition("官方培养计划是只读的，请在我的计划中删除对应课程", { courseCode: course.courseCode });
+  }
+  CustomCourseRepository.update(course.courseCode, patch);
 }
 
 function restoreOne(course: Course): void {
   if (course.source === "program") {
-    ProgramCourseRepository.update(course.courseCode, {
-      is_deleted: 0,
-      is_permanently_deleted: 0,
-      deleted_at: null,
-      deleted_note: null,
-    });
-  } else {
-    CustomCourseRepository.update(course.courseCode, {
-      is_deleted: 0,
-      deleted_at: null,
-      deleted_note: null,
-    });
+    throw fail.precondition("官方培养计划是只读的，请恢复我的计划中的课程", { courseCode: course.courseCode });
   }
+  CustomCourseRepository.update(course.courseCode, {
+    is_deleted: 0,
+    deleted_at: null,
+    deleted_note: null,
+  });
 }
 
 function purgeOne(course: Course): void {
   if (course.source === "program") {
-    ProgramCourseRepository.update(course.courseCode, { is_permanently_deleted: 1 });
-  } else {
-    CustomCourseRepository.delete(course.courseCode);
+    throw fail.precondition("官方培养计划是只读的，请永久删除我的计划中的课程", { courseCode: course.courseCode });
   }
+  CustomCourseRepository.delete(course.courseCode);
 }
 
 function requireExisting(code: string, includeTrash: boolean): Course {
@@ -56,9 +47,8 @@ function requireExisting(code: string, includeTrash: boolean): Course {
 
 function listAllInTrash(): Course[] {
   const trashFilter = { inTrash: true, limit: 1000 };
-  const program = ProgramCourseRepository.find(trashFilter as ProgramCourseFilter);
   const custom = CustomCourseRepository.find(trashFilter as CustomCourseFilter);
-  return [...program, ...custom].sort((a, b) => {
+  return custom.sort((a, b) => {
     const ad = a.deletedAt ?? "";
     const bd = b.deletedAt ?? "";
     return bd.localeCompare(ad) || a.courseName.localeCompare(b.courseName, "zh-Hans-CN");
@@ -69,7 +59,7 @@ export const TrashService = {
   list(query: Record<string, unknown> = {}): Course[] {
     const source = query.source;
     if (source === "program") {
-      return ProgramCourseRepository.find({ inTrash: true, limit: 1000 });
+      return [];
     }
     if (source === "custom") {
       return CustomCourseRepository.find({ inTrash: true, limit: 1000 });

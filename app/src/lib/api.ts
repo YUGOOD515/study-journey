@@ -175,7 +175,7 @@ function toSemesterCourse(course: Course): SemesterCourse | null {
     return null;
   }
   return {
-    source: course.source === "program" ? "official" : "manual",
+    source: course.originType === "official" ? "official" : "manual",
     term_number: term,
     course_code: course.courseCode,
     score: course.score,
@@ -191,11 +191,10 @@ function toSemesterCourse(course: Course): SemesterCourse | null {
 }
 
 function toPersonalPlanItem(course: Course): PersonalPlanItem | null {
-  if (course.studyStatus !== "计划修读") return null;
   return {
-    item_type: course.source === "program" ? "official" : "manual",
+    item_type: course.originType === "official" ? "official" : "manual",
     course_code: course.courseCode,
-    planned_term: course.plannedTerm,
+    planned_term: course.actualTerm ?? course.plannedTerm,
     course_name: course.courseName,
     credits: course.credits,
     lecture_hours: course.lectureHours,
@@ -421,7 +420,7 @@ export const api = {
   },
 
   personalPlan: async () => {
-    const courses = await fetchCourses("status=计划修读&limit=1000");
+    const courses = await fetchCourses("limit=1000");
     return courses.map(toPersonalPlanItem).filter((x): x is PersonalPlanItem => x !== null);
   },
 
@@ -615,7 +614,10 @@ export const api = {
     batchId: number;
     sourceRow: number;
     courseCode: string;
+    courseName: string;
     sectionCode: string | null;
+    existsInProgram: boolean;
+    existsInCustom: boolean;
     termNumber: number;
     categoryCode: CategoryCode;
     courseNature: CourseNature;

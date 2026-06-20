@@ -24,16 +24,14 @@ export function resolveCourse(code: string, opts: ResolveOptions = {}): Course {
 }
 
 export function resolveCourseOrNull(code: string, opts: ResolveOptions = {}): Course | null {
-  if (isCustomCode(code)) {
-    return CustomCourseRepository.findByCode(code, { includeTrash: opts.includeTrash });
-  }
+  const custom = CustomCourseRepository.findByCode(code, { includeTrash: opts.includeTrash });
+  if (custom) return custom;
+
   const program = ProgramCourseRepository.findByCode(code, {
     includeTrash: opts.includeTrash,
     includePermanentlyDeleted: opts.includePermanentlyDeleted,
   });
   if (program) return program;
 
-  // 历史数据里存在“培养方案外课程但仍使用学校 course_code”的记录，
-  // 例如用户手动录入的通选课 B0480240。不能只靠 CUSTOM-* 前缀分流。
-  return CustomCourseRepository.findByCode(code, { includeTrash: opts.includeTrash });
+  return null;
 }
