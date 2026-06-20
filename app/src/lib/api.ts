@@ -3,18 +3,13 @@ import type {
   ActualCourseMeeting,
   Course,
   CourseNature,
-  CourseWithCategory,
   CreditAssignmentTarget,
   CreditCountTo,
-  PersonalPlanItem,
   PlanCoursePatch,
-  ProgramRequirement,
   ProgressResponse,
   RawCourseSearchResult,
   RequirementType,
-  SemesterCourse,
   StudyStatus,
-  TrashItem,
 } from "../types";
 
 type LegacyManualPatch = PlanCoursePatch & { term_number?: number | null };
@@ -34,7 +29,7 @@ interface ApiErrorEnvelope {
   };
 }
 
-interface RequirementDto {
+export interface RequirementDto {
   categoryCode: string;
   categoryName: string;
   requirementTypeCode: "required" | "elective" | "interdisciplinary";
@@ -116,142 +111,6 @@ function assignmentToCreditCountTo(
   assignedTo: CreditAssignmentTarget | undefined | null
 ): CreditCountTo {
   return assignedTo === "elective" ? "通识教育-选修" : "大类平台-选修";
-}
-
-function creditCountToToAssignment(
-  creditCountTo: CreditCountTo | null | undefined
-): CreditAssignmentTarget | null {
-  if (creditCountTo === "通识教育-选修") return "elective";
-  if (creditCountTo === "大类平台-选修") return "interdisciplinary";
-  return null;
-}
-
-function isInterdisciplinary(course: Course): 0 | 1 {
-  return course.requirementType === "经法管融通" ||
-    Boolean(course.courseSubcategory?.includes("经法管融通")) ||
-    Boolean(course.creditCountTo)
-    ? 1
-    : 0;
-}
-
-function toCourseWithCategory(course: Course): CourseWithCategory {
-  rememberCourse(course);
-  return {
-    course_code: course.courseCode,
-    course_name: course.courseName,
-    credits: course.credits,
-    lecture_hours: course.lectureHours,
-    experiment_hours: course.experimentHours,
-    extra_hours: course.extraHours,
-    prerequisite_course_code: course.prerequisiteCourseCode,
-    prerequisite_course_name: course.prerequisiteCourseName,
-    category_code: course.categoryCode,
-    category_name: course.categoryName,
-    course_nature: visibleNature(course.requirementType),
-    offered_term: course.officialTerm,
-    course_category: course.courseSubcategory,
-    planned_term: course.plannedTerm,
-    actual_term: course.actualTerm,
-    study_status: course.studyStatus,
-    score: course.score,
-    note: course.note,
-    credit_count_to: course.creditCountTo,
-    is_interdisciplinary: isInterdisciplinary(course),
-    assigned_to: creditCountToToAssignment(course.creditCountTo),
-    is_deleted: course.isDeleted ? 1 : 0,
-    is_permanently_deleted: course.isPermanentlyDeleted ? 1 : 0,
-    deleted_at: course.deletedAt,
-  };
-}
-
-function toSemesterCourse(course: Course): SemesterCourse | null {
-  const term = course.actualTerm ?? course.plannedTerm;
-  if (term == null) return null;
-  if (
-    course.studyStatus !== "正在修读" &&
-    course.studyStatus !== "已修读" &&
-    course.studyStatus !== "未通过"
-  ) {
-    return null;
-  }
-  return {
-    source: course.originType === "official" ? "official" : "manual",
-    term_number: term,
-    course_code: course.courseCode,
-    score: course.score,
-    course_name: course.courseName,
-    credits: course.credits,
-    category_code: course.categoryCode,
-    course_nature: visibleNature(course.requirementType),
-    note: course.note,
-    is_interdisciplinary: isInterdisciplinary(course),
-    assigned_to: creditCountToToAssignment(course.creditCountTo),
-    credit_count_to: course.creditCountTo,
-  };
-}
-
-function toPersonalPlanItem(course: Course): PersonalPlanItem | null {
-  return {
-    item_type: course.originType === "official" ? "official" : "manual",
-    course_code: course.courseCode,
-    planned_term: course.actualTerm ?? course.plannedTerm,
-    course_name: course.courseName,
-    credits: course.credits,
-    lecture_hours: course.lectureHours,
-    experiment_hours: course.experimentHours,
-    extra_hours: course.extraHours,
-    prerequisite_course_code: course.prerequisiteCourseCode,
-    prerequisite_course_name: course.prerequisiteCourseName,
-    category_code: course.categoryCode,
-    category_name: course.categoryName,
-    course_nature: visibleNature(course.requirementType),
-    offered_term: course.officialTerm,
-    course_category: course.courseSubcategory,
-    score: course.score,
-    note: course.note,
-    is_interdisciplinary: isInterdisciplinary(course),
-    assigned_to: creditCountToToAssignment(course.creditCountTo),
-    credit_count_to: course.creditCountTo,
-  };
-}
-
-function toTrashItem(course: Course): TrashItem {
-  return {
-    source: course.source,
-    course_code: course.courseCode,
-    course_name: course.courseName,
-    credits: course.credits,
-    category_code: course.categoryCode,
-    category_name: course.categoryName,
-    course_nature: visibleNature(course.requirementType),
-    course_category: course.courseSubcategory,
-    planned_term: course.plannedTerm,
-    actual_term: course.actualTerm,
-    score: course.score,
-    note: course.note,
-    lecture_hours: course.lectureHours,
-    experiment_hours: course.experimentHours,
-    extra_hours: course.extraHours,
-    prerequisite_course_code: course.prerequisiteCourseCode,
-    prerequisite_course_name: course.prerequisiteCourseName,
-    offered_term: course.officialTerm,
-    deleted_at: course.deletedAt,
-    deleted_note: course.deletedNote,
-    is_interdisciplinary: isInterdisciplinary(course),
-    assigned_to: creditCountToToAssignment(course.creditCountTo),
-    credit_count_to: course.creditCountTo,
-  };
-}
-
-function toLegacyRequirement(req: RequirementDto): ProgramRequirement {
-  return {
-    category_code: req.categoryCode,
-    category_name: req.categoryName,
-    requirement_type: req.requirementTypeCode,
-    requirement_name: req.requirementName,
-    required_credits: req.requiredCredits,
-    source: req.source,
-  };
 }
 
 function toCreateCustomBody(input: {
@@ -396,14 +255,12 @@ async function updateCourse(code: string, patch: PlanCoursePatch): Promise<Cours
 }
 
 export const api = {
-  coursesWithCategory: async () => {
-    const courses = await fetchCourses("source=program&limit=1000");
-    return courses.map(toCourseWithCategory);
+  coursesWithCategory: async (): Promise<Course[]> => {
+    return fetchCourses("source=program&limit=1000");
   },
 
-  programRequirements: async () => {
-    const reqs = await getJSON<RequirementDto[]>("/api/requirements");
-    return reqs.map(toLegacyRequirement);
+  programRequirements: async (): Promise<RequirementDto[]> => {
+    return getJSON<RequirementDto[]>("/api/requirements");
   },
 
   /** 进度/学分统计的唯一真相源（后端计算，详见 docs/16）。 */
@@ -414,19 +271,18 @@ export const api = {
   /** 把课程号直接返回（不再合成 number id，统一使用 courseCode 寻址）。 */
   idForCourse: (courseCode: string, _source: "program" | "custom"): string => courseCode,
 
-  semesterCourses: async () => {
+  semesterCourses: async (): Promise<Course[]> => {
     const courses = await fetchCourses("status=正在修读,已修读,未通过&limit=1000");
-    return courses.map(toSemesterCourse).filter((x): x is SemesterCourse => x !== null);
+    return courses.filter((c) => (c.actualTerm ?? c.plannedTerm) != null);
   },
 
-  personalPlan: async () => {
-    const courses = await fetchCourses("limit=1000");
-    return courses.map(toPersonalPlanItem).filter((x): x is PersonalPlanItem => x !== null);
+  personalPlan: async (): Promise<Course[]> => {
+    return fetchCourses("limit=1000");
   },
 
-  trash: async () => {
+  trash: async (): Promise<Course[]> => {
     const courses = await getJSON<Course[]>("/api/trash");
-    return rememberCourses(courses).map(toTrashItem);
+    return rememberCourses(courses);
   },
 
   upsertOfficial: async (input: {
@@ -652,8 +508,8 @@ export const api = {
     return { ok: true as const };
   },
 
-  restoreTrashItem: async (item: TrashItem) => {
-    const code = item.course_code!;
+  restoreTrashItem: async (item: Course) => {
+    const code = item.courseCode;
     const course = await send<Course>(
       `/api/trash/${encodeURIComponent(code)}/restore`,
       "POST"
@@ -662,8 +518,8 @@ export const api = {
     return { ok: true as const, changes: 1 };
   },
 
-  permanentlyDeleteTrashItem: async (item: TrashItem) => {
-    const code = item.course_code!;
+  permanentlyDeleteTrashItem: async (item: Course) => {
+    const code = item.courseCode;
     await send<{ courseCode: string; source: string; status: string }>(
       `/api/trash/${encodeURIComponent(code)}`,
       "DELETE"
