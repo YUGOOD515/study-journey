@@ -1,12 +1,12 @@
-import type { CourseCardDisplayOptions, CourseWithCategory, PlanCoursePatch } from "../types";
+import type { CourseCardDisplayOptions, Course, PlanCoursePatch } from "../types";
 import { CATEGORY_STYLE } from "../lib/categoryStyle";
 import { DEFAULT_COURSE_CARD_DISPLAY_OPTIONS } from "../lib/courseCardDisplay";
 import { formatCredits } from "../lib/credits";
-import { CourseHoverCard, type CourseHoverInfo } from "./CourseHoverCard";
+import { CourseHoverCard } from "./CourseHoverCard";
 import { useHoverIntentTriangle } from "../hooks/useHoverIntentTriangle";
 
 interface Props {
-  course: CourseWithCategory;
+  course: Course;
   completedScore?: number | null;
   draggable?: boolean;
   plannedTerm?: number | null;
@@ -36,34 +36,17 @@ export function CourseCard({
   onDelete,
   deleteTitle = "移入垃圾篓",
 }: Props) {
-  const style = CATEGORY_STYLE[course.category_code];
-  const isRequired = course.course_nature === "必修";
+  const style = CATEGORY_STYLE[course.categoryCode];
+  const isRequired = course.requirementType === "必修";
 
   const bg = isRequired ? style.bgSoft : style.bgGhost;
   const borderStyle = isRequired ? "solid" : "dashed";
   const hover = useHoverIntentTriangle<HTMLDivElement>({ width: 280 });
   const score = completedScore ?? course.score ?? null;
 
-  const hoverItem: CourseHoverInfo = {
-    source: "program",
-    course_code: course.course_code,
-    course_name: course.course_name,
-    credits: course.credits,
-    lecture_hours: course.lecture_hours,
-    experiment_hours: course.experiment_hours,
-    extra_hours: course.extra_hours,
-    prerequisite_course_code: course.prerequisite_course_code,
-    prerequisite_course_name: course.prerequisite_course_name,
-    category_code: course.category_code,
-    category_name: course.category_name,
-    course_nature: course.course_nature,
-    offered_term: course.offered_term,
-    planned_term: plannedTerm !== undefined ? plannedTerm : course.planned_term,
-    score,
-    note: course.note ?? null,
-    is_interdisciplinary: course.is_interdisciplinary ?? 0,
-    assigned_to: course.assigned_to ?? null,
-    credit_count_to: course.credit_count_to ?? null,
+  const hoverItem: Course = {
+    ...course,
+    plannedTerm: plannedTerm !== undefined ? plannedTerm : course.plannedTerm,
   };
 
   return (
@@ -89,11 +72,11 @@ export function CourseCard({
       >
         {displayOptions.showCourseCode && (
           <div className="text-[9px] text-sub/80 tabular-nums">
-            {course.course_code}
+            {course.courseCode}
           </div>
         )}
         <div className="font-medium mt-0.5" style={{ color: style.text }}>
-          {course.course_name}
+          {course.courseName}
         </div>
         {(displayOptions.showCredits || displayOptions.showNature) && (
           <div className="flex items-center justify-between mt-1 text-[10px]">
@@ -109,7 +92,7 @@ export function CourseCard({
                 className={isRequired ? "px-1 rounded-sm text-white" : "text-sub"}
                 style={isRequired ? { backgroundColor: style.color } : undefined}
               >
-                {course.course_nature}
+                {course.requirementType}
               </span>
             )}
           </div>

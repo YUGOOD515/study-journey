@@ -1,20 +1,13 @@
-import type {
-  CourseCardDisplayOptions,
-  PersonalPlanItem,
-  PlanCoursePatch,
-  SemesterCourse,
-} from "../types";
+import type { CourseCardDisplayOptions, Course, PlanCoursePatch } from "../types";
 import { CATEGORY_STYLE } from "../lib/categoryStyle";
 import { DEFAULT_COURSE_CARD_DISPLAY_OPTIONS } from "../lib/courseCardDisplay";
 import { formatCredits } from "../lib/credits";
 import { TERM_LABEL } from "../lib/offeredTerm";
-import { CourseHoverCard, type CourseHoverInfo } from "./CourseHoverCard";
+import { CourseHoverCard } from "./CourseHoverCard";
 import { useHoverIntentTriangle } from "../hooks/useHoverIntentTriangle";
 
-type ManualLike = SemesterCourse | PersonalPlanItem;
-
 interface Props {
-  course: ManualLike;
+  course: Course;
   onDelete?: (courseCode: string) => void;
   draggable?: boolean;
   displayOptions?: CourseCardDisplayOptions;
@@ -34,40 +27,12 @@ export function ManualCourseCard({
   onDragStart,
   onDragEnd,
 }: Props) {
-  const termNumber =
-    "planned_term" in course ? course.planned_term : course.term_number;
-  const label = "planned_term" in course ? "计划" : "手动";
-  const style = course.category_code
-    ? CATEGORY_STYLE[course.category_code]
-    : CATEGORY_STYLE.general_education;
-  const isRequired = course.course_nature === "必修";
-  const score = "score" in course ? course.score : null;
+  const termNumber = course.actualTerm ?? course.plannedTerm;
+  const label = course.studyStatus === "计划修读" ? "计划" : "手动";
+  const style = CATEGORY_STYLE[course.categoryCode] ?? CATEGORY_STYLE.general_education;
+  const isRequired = course.requirementType === "必修";
+  const score = course.score ?? null;
   const hover = useHoverIntentTriangle<HTMLDivElement>({ width: 280 });
-
-  const hoverItem: CourseHoverInfo = {
-    source: "custom",
-    course_code: course.course_code ?? null,
-    course_name: course.course_name,
-    credits: course.credits,
-    lecture_hours: "lecture_hours" in course ? course.lecture_hours : 0,
-    experiment_hours: "experiment_hours" in course ? course.experiment_hours : 0,
-    extra_hours: "extra_hours" in course ? course.extra_hours : 0,
-    prerequisite_course_code: "prerequisite_course_code" in course ? course.prerequisite_course_code : null,
-    prerequisite_course_name: "prerequisite_course_name" in course ? course.prerequisite_course_name : null,
-    category_code: course.category_code ?? "general_education",
-    category_name:
-      "category_name" in course && course.category_name
-        ? course.category_name
-        : style.name,
-    course_nature: (course.course_nature ?? "选修") as CourseHoverInfo["course_nature"],
-    offered_term: "offered_term" in course ? course.offered_term : null,
-    planned_term: termNumber,
-    score,
-    note: "note" in course ? course.note : null,
-    is_interdisciplinary: "is_interdisciplinary" in course ? course.is_interdisciplinary ?? 0 : 0,
-    assigned_to: "assigned_to" in course ? course.assigned_to ?? null : null,
-    credit_count_to: "credit_count_to" in course ? course.credit_count_to ?? null : null,
-  };
 
   return (
     <>
@@ -97,7 +62,7 @@ export function ManualCourseCard({
         )}
 
         <div className="font-medium mt-0.5" style={{ color: style.text }}>
-          {course.course_name}
+          {course.courseName}
         </div>
 
         {(displayOptions.showCredits || displayOptions.showNature) && (
@@ -109,8 +74,8 @@ export function ManualCourseCard({
             ) : (
               <span />
             )}
-            {displayOptions.showNature && course.course_nature && (
-              <span className="text-sub">{course.course_nature}</span>
+            {displayOptions.showNature && (
+              <span className="text-sub">{course.requirementType}</span>
             )}
           </div>
         )}
@@ -121,14 +86,14 @@ export function ManualCourseCard({
           </div>
         )}
 
-        {course.course_code != null && onDelete && (
+        {onDelete && (
           <button
             type="button"
             onMouseDown={(event) => event.stopPropagation()}
             onClick={(event) => {
               event.stopPropagation();
               hover.close();
-              onDelete(course.course_code!);
+              onDelete(course.courseCode);
             }}
             className="absolute -right-1.5 -top-1.5 w-4 h-4 rounded-full bg-card border border-sub/25 text-sub hover:text-ink hover:border-sub/50 transition-colors text-[10px] leading-none"
             title="移入垃圾篓"
@@ -143,7 +108,7 @@ export function ManualCourseCard({
           position={hover.position}
           popoverRef={hover.popoverRef}
           visible={hover.visible}
-          item={hoverItem}
+          item={course}
           editable={editable}
           onSave={onSave}
           onMouseEnter={hover.keepOpen}

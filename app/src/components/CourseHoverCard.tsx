@@ -10,26 +10,23 @@ import { CourseEditFields } from "./CourseEditFields";
 
 export interface CourseHoverInfo {
   source: "program" | "custom";
-  id?: number | null;
-  course_code: string | null;
-  course_name: string;
+  courseCode?: string | null;
+  courseName: string;
   credits: number;
-  lecture_hours?: number | null;
-  experiment_hours?: number | null;
-  extra_hours?: number | null;
-  prerequisite_course_code?: string | null;
-  prerequisite_course_name?: string | null;
-  category_code: CategoryCode;
-  category_name: string;
-  course_nature: CourseNature;
-  offered_term?: string | null;
-  planned_term?: number | null;
+  lectureHours?: number | null;
+  experimentHours?: number | null;
+  extraHours?: number | null;
+  prerequisiteCourseCode?: string | null;
+  prerequisiteCourseName?: string | null;
+  categoryCode: CategoryCode;
+  categoryName: string;
+  requirementType: CourseNature;
+  officialTerm?: string | null;
+  plannedTerm?: number | null;
   score?: number | null;
   note?: string | null;
-  is_interdisciplinary?: number | null;
-  assigned_to?: CreditAssignmentTarget | null;
-  credit_count_to?: string | null;
-  deleted_at?: string | null;
+  creditCountTo?: string | null;
+  deletedAt?: string | null;
 }
 
 type Mode = "normal" | "trash";
@@ -53,6 +50,14 @@ type Props = {
   onMouseLeave?: React.MouseEventHandler<HTMLDivElement>;
 };
 
+function creditCountToToAssignment(
+  creditCountTo: string | null | undefined
+): CreditAssignmentTarget | null {
+  if (creditCountTo === "通识教育-选修") return "elective";
+  if (creditCountTo === "大类平台-选修") return "interdisciplinary";
+  return null;
+}
+
 export function CourseHoverCard({
   position,
   popoverRef,
@@ -66,7 +71,7 @@ export function CourseHoverCard({
   onMouseEnter,
   onMouseLeave,
 }: Props) {
-  const style = CATEGORY_STYLE[item.category_code] ?? CATEGORY_STYLE.general_education;
+  const style = CATEGORY_STYLE[item.categoryCode] ?? CATEGORY_STYLE.general_education;
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -77,22 +82,19 @@ export function CourseHoverCard({
     if (!editing) setDraft(initialDraft(item));
   }, [
     editing,
-    item.id,
-    item.course_code,
-    item.course_name,
+    item.courseCode,
+    item.courseName,
     item.credits,
-    item.lecture_hours,
-    item.experiment_hours,
-    item.extra_hours,
-    item.planned_term,
-    item.prerequisite_course_code,
+    item.lectureHours,
+    item.experimentHours,
+    item.extraHours,
+    item.plannedTerm,
+    item.prerequisiteCourseCode,
     item.score,
     item.note,
-    item.category_code,
-    item.course_nature,
-    item.is_interdisciplinary,
-    item.assigned_to,
-    item.credit_count_to,
+    item.categoryCode,
+    item.requirementType,
+    item.creditCountTo,
   ]);
 
   useLayoutEffect(() => {
@@ -115,13 +117,13 @@ export function CourseHoverCard({
       window.cancelAnimationFrame(frame);
       window.removeEventListener("resize", updatePosition);
     };
-  }, [editing, draft, item.course_code, item.course_name, mode, popoverRef, position.top]);
+  }, [editing, draft, item.courseCode, item.courseName, mode, popoverRef, position.top]);
 
-  const offeredText = useMemo(() => formatOfferedTerm(item.offered_term), [item.offered_term]);
-  const plannedText = item.planned_term == null ? "待安排 / 未设置" : `第 ${item.planned_term} 学期`;
+  const offeredText = useMemo(() => formatOfferedTerm(item.officialTerm), [item.officialTerm]);
+  const plannedText = item.plannedTerm == null ? "待安排 / 未设置" : `第 ${item.plannedTerm} 学期`;
   const scoreText = item.score == null ? "未填写" : String(item.score);
-  const isInter = Number(item.is_interdisciplinary ?? 0) === 1 || Boolean(item.credit_count_to);
-  const assignmentText = isInter ? assignmentLabel(item.assigned_to) : null;
+  const isInter = item.requirementType === "经法管融通" || Boolean(item.creditCountTo);
+  const assignmentText = isInter ? assignmentLabel(creditCountToToAssignment(item.creditCountTo)) : null;
 
   const reset = () => {
     setDraft(initialDraft(item));
@@ -170,10 +172,10 @@ export function CourseHoverCard({
     >
       <div className="mb-2 flex items-baseline justify-between gap-2 border-b border-sub/15 pb-2">
         <div className="min-w-0 text-[13px] font-medium" style={{ color: style.text }}>
-          {editing ? "编辑课程" : item.course_name}
+          {editing ? "编辑课程" : item.courseName}
         </div>
         <div className="shrink-0 text-[10px] text-sub tabular-nums">
-          {item.course_code ?? "自定义"}
+          {item.courseCode ?? "自定义"}
         </div>
       </div>
 
@@ -212,7 +214,7 @@ export function CourseHoverCard({
           <Row label="类别">
             <span className="inline-flex items-center gap-1.5">
               <span className="inline-block h-2 w-2 rounded-sm" style={{ backgroundColor: style.color }} />
-              {item.category_name} · {item.course_nature}
+              {item.categoryName} · {item.requirementType}
             </span>
           </Row>
           {isInter && (
@@ -225,21 +227,21 @@ export function CourseHoverCard({
           </Row>
           <Row label="学时">
             <span className="tabular-nums text-sub">
-              讲 {item.lecture_hours ?? 0} / 实 {item.experiment_hours ?? 0} / 外 {item.extra_hours ?? 0}
+              讲 {item.lectureHours ?? 0} / 实 {item.experimentHours ?? 0} / 外 {item.extraHours ?? 0}
             </span>
           </Row>
           <Row label="计划学期">
             <span className="tabular-nums">{plannedText}</span>
           </Row>
-          {item.offered_term !== undefined && item.offered_term !== null && (
+          {item.officialTerm !== undefined && item.officialTerm !== null && (
             <Row label="开课学期">
               <span className="tabular-nums">{offeredText}</span>
             </Row>
           )}
           <Row label="先修">
-            {item.prerequisite_course_code || item.prerequisite_course_name ? (
+            {item.prerequisiteCourseCode || item.prerequisiteCourseName ? (
               <span style={{ color: style.text }}>
-                {item.prerequisite_course_name ?? item.prerequisite_course_code}
+                {item.prerequisiteCourseName ?? item.prerequisiteCourseCode}
               </span>
             ) : (
               <span className="text-sub/60">无</span>
@@ -253,9 +255,9 @@ export function CourseHoverCard({
               <span className="text-sub">{item.note}</span>
             </Row>
           )}
-          {mode === "trash" && item.deleted_at && (
+          {mode === "trash" && item.deletedAt && (
             <Row label="删除时间">
-              <span className="text-sub/70 tabular-nums">{item.deleted_at}</span>
+              <span className="text-sub/70 tabular-nums">{item.deletedAt}</span>
             </Row>
           )}
 
@@ -296,19 +298,19 @@ export function CourseHoverCard({
 }
 
 function initialDraft(item: CourseHoverInfo): CourseEditDraft {
-  const isInter = Number(item.is_interdisciplinary ?? 0) === 1 || Boolean(item.credit_count_to);
+  const isInter = item.requirementType === "经法管融通" || Boolean(item.creditCountTo);
   return {
-    course_name: item.course_name,
-    category_code: item.category_code,
-    course_nature: isInter ? "选修" : item.course_nature,
+    course_name: item.courseName,
+    category_code: item.categoryCode,
+    course_nature: isInter ? "选修" : item.requirementType,
     is_interdisciplinary: isInter ? 1 : 0,
-    assigned_to: item.assigned_to ?? "interdisciplinary",
+    assigned_to: creditCountToToAssignment(item.creditCountTo) ?? "interdisciplinary",
     credits: String(item.credits ?? 0),
-    lecture_hours: String(item.lecture_hours ?? 0),
-    experiment_hours: String(item.experiment_hours ?? 0),
-    extra_hours: String(item.extra_hours ?? 0),
-    planned_term: item.planned_term ?? null,
-    prerequisite_course_code: item.prerequisite_course_code ?? "",
+    lecture_hours: String(item.lectureHours ?? 0),
+    experiment_hours: String(item.experimentHours ?? 0),
+    extra_hours: String(item.extraHours ?? 0),
+    planned_term: item.plannedTerm ?? null,
+    prerequisite_course_code: item.prerequisiteCourseCode ?? "",
     score: item.score == null ? "" : String(item.score),
     note: item.note ?? "",
   };

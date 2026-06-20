@@ -7,9 +7,8 @@ import { useHoverIntentTriangle } from "../hooks/useHoverIntentTriangle";
 import type {
   ActualCourseMeeting,
   CategoryCode,
+  Course,
   CourseNature,
-  CourseWithCategory,
-  SemesterCourse,
 } from "../types";
 
 const TERMS = [1, 2, 3, 4, 5, 6, 7, 8];
@@ -79,8 +78,8 @@ export default function TermSchedule({
   onBack: () => void;
 }) {
   const [allMeetings, setAllMeetings] = useState<ActualCourseMeeting[]>([]);
-  const [programCourses, setProgramCourses] = useState<CourseWithCategory[]>([]);
-  const [records, setRecords] = useState<SemesterCourse[]>([]);
+  const [programCourses, setProgramCourses] = useState<Course[]>([]);
+  const [records, setRecords] = useState<Course[]>([]);
   const [selectedWeek, setSelectedWeek] = useState(1);
   const [display, setDisplay] = useState(DEFAULT_DISPLAY);
   const [loading, setLoading] = useState(true);
@@ -790,17 +789,16 @@ function groupCourses(
 }
 
 function buildVisualMap(
-  programCourses: CourseWithCategory[],
-  records: SemesterCourse[]
+  programCourses: Course[],
+  records: Course[]
 ): Map<string, CourseVisual> {
   const map = new Map<string, CourseVisual>();
   for (const course of programCourses) {
-    map.set(course.course_code, makeVisual(course.category_code, course.course_nature));
+    map.set(course.courseCode, makeVisual(course.categoryCode, course.requirementType));
   }
   for (const record of records) {
-    if (!record.course_code || !record.category_code || !record.course_nature) continue;
-    if (!map.has(record.course_code)) {
-      map.set(record.course_code, makeVisual(record.category_code, record.course_nature));
+    if (!map.has(record.courseCode)) {
+      map.set(record.courseCode, makeVisual(record.categoryCode, record.requirementType));
     }
   }
   return map;
@@ -825,26 +823,20 @@ function hoverInfoForMeeting(
   if (matched) {
     return {
       ...matched,
-      course_name: matched.course_name || meeting.course_name,
-      planned_term: matched.planned_term ?? meeting.term,
+      courseName: matched.courseName || meeting.course_name,
+      plannedTerm: matched.plannedTerm ?? meeting.term,
     };
   }
   const visual = visualForMeeting(meeting, visualByCode);
   return {
     source: "program",
-    course_code: meeting.course_code,
-    course_name: meeting.course_name,
+    courseCode: meeting.course_code,
+    courseName: meeting.course_name,
     credits: 0,
-    lecture_hours: 0,
-    experiment_hours: 0,
-    extra_hours: 0,
-    prerequisite_course_code: null,
-    prerequisite_course_name: null,
-    category_code: visual.categoryCode,
-    category_name: visual.style.name,
-    course_nature: visual.nature,
-    offered_term: null,
-    planned_term: meeting.term,
+    categoryCode: visual.categoryCode,
+    categoryName: visual.style.name,
+    requirementType: visual.nature,
+    plannedTerm: meeting.term,
     score: null,
     note: [
       meeting.teacher ? `教师：${meeting.teacher}` : null,
@@ -853,9 +845,6 @@ function hoverInfoForMeeting(
     ]
       .filter(Boolean)
       .join("；"),
-    is_interdisciplinary: 0,
-    assigned_to: null,
-    credit_count_to: null,
   };
 }
 
@@ -870,64 +859,53 @@ function makeVisual(categoryCode: CategoryCode, nature: CourseNature): CourseVis
 }
 
 function buildHoverInfoMap(
-  programCourses: CourseWithCategory[],
-  records: SemesterCourse[]
+  programCourses: Course[],
+  records: Course[]
 ): Map<string, CourseHoverInfo> {
   const map = new Map<string, CourseHoverInfo>();
-  const recordByCode = new Map<string, SemesterCourse>();
+  const recordByCode = new Map<string, Course>();
   for (const record of records) {
-    if (record.course_code) recordByCode.set(record.course_code, record);
+    recordByCode.set(record.courseCode, record);
   }
 
   for (const course of programCourses) {
-    const record = recordByCode.get(course.course_code);
-    map.set(course.course_code, {
-      source: "program",
-      course_code: course.course_code,
-      course_name: course.course_name,
+    const record = recordByCode.get(course.courseCode);
+    map.set(course.courseCode, {
+      source: course.source,
+      courseCode: course.courseCode,
+      courseName: course.courseName,
       credits: course.credits,
-      lecture_hours: course.lecture_hours,
-      experiment_hours: course.experiment_hours,
-      extra_hours: course.extra_hours,
-      prerequisite_course_code: course.prerequisite_course_code,
-      prerequisite_course_name: course.prerequisite_course_name,
-      category_code: course.category_code,
-      category_name: course.category_name,
-      course_nature: course.course_nature,
-      offered_term: course.offered_term,
-      planned_term: course.actual_term ?? course.planned_term ?? record?.term_number ?? null,
+      lectureHours: course.lectureHours,
+      experimentHours: course.experimentHours,
+      extraHours: course.extraHours,
+      prerequisiteCourseCode: course.prerequisiteCourseCode,
+      prerequisiteCourseName: course.prerequisiteCourseName,
+      categoryCode: course.categoryCode,
+      categoryName: course.categoryName,
+      requirementType: course.requirementType,
+      officialTerm: course.officialTerm,
+      plannedTerm: course.actualTerm ?? course.plannedTerm ?? record?.actualTerm ?? record?.plannedTerm ?? null,
       score: record?.score ?? course.score ?? null,
       note: record?.note ?? course.note ?? null,
-      is_interdisciplinary: course.is_interdisciplinary ?? 0,
-      assigned_to: course.assigned_to ?? null,
-      credit_count_to: course.credit_count_to ?? null,
+      creditCountTo: course.creditCountTo,
     });
   }
 
   for (const record of records) {
-    if (!record.course_code || !record.category_code || !record.course_nature) continue;
-    if (map.has(record.course_code)) continue;
-    const style = CATEGORY_STYLE[record.category_code] ?? CATEGORY_STYLE.general_education;
-    map.set(record.course_code, {
-      source: record.source === "manual" ? "custom" : "program",
-      course_code: record.course_code,
-      course_name: record.course_name,
+    if (map.has(record.courseCode)) continue;
+    const style = CATEGORY_STYLE[record.categoryCode] ?? CATEGORY_STYLE.general_education;
+    map.set(record.courseCode, {
+      source: record.source,
+      courseCode: record.courseCode,
+      courseName: record.courseName,
       credits: record.credits,
-      lecture_hours: 0,
-      experiment_hours: 0,
-      extra_hours: 0,
-      prerequisite_course_code: null,
-      prerequisite_course_name: null,
-      category_code: record.category_code,
-      category_name: style.name,
-      course_nature: record.course_nature,
-      offered_term: null,
-      planned_term: record.term_number,
+      categoryCode: record.categoryCode,
+      categoryName: style.name,
+      requirementType: record.requirementType,
+      plannedTerm: record.actualTerm ?? record.plannedTerm,
       score: record.score,
       note: record.note,
-      is_interdisciplinary: record.is_interdisciplinary ?? 0,
-      assigned_to: record.assigned_to ?? null,
-      credit_count_to: record.credit_count_to ?? null,
+      creditCountTo: record.creditCountTo,
     });
   }
 
