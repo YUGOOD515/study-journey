@@ -1,46 +1,27 @@
-import { Router } from "express";
-import { created, handle, ok } from "../../lib/response";
+import type { App } from "../../app-types";
+import { created, ok, queryObject, readJson } from "../../lib/response";
 import { CourseService } from "./course.service";
 
-export const courseRouter = Router();
+export function registerCourseRoutes(app: App) {
+  app.get("/courses", async (c) => {
+    const { data, total } = await CourseService.list(c.var.ctx, queryObject(c));
+    return ok(c, data, { total });
+  });
 
-courseRouter.get(
-  "/",
-  handle((req, res) => {
-    const { data, total } = CourseService.list(req.query as Record<string, unknown>);
-    ok(res, data, { total });
-  })
-);
+  app.post("/courses/from-raw", async (c) => {
+    return created(c, await CourseService.createCustomFromRaw(c.var.ctx, await readJson(c)));
+  });
 
-courseRouter.get(
-  "/:code",
-  handle((req, res) => {
-    const includeTrash = req.query.includeTrash === "true";
-    const data = CourseService.getByCode(String(req.params.code), { includeTrash });
-    ok(res, data);
-  })
-);
+  app.post("/courses", async (c) => {
+    return created(c, await CourseService.createCustom(c.var.ctx, await readJson(c)));
+  });
 
-courseRouter.post(
-  "/from-raw",
-  handle((req, res) => {
-    const data = CourseService.createCustomFromRaw(req.body);
-    created(res, data);
-  })
-);
+  app.get("/courses/:code", async (c) => {
+    const includeTrash = c.req.query("includeTrash") === "true";
+    return ok(c, await CourseService.getByCode(c.var.ctx, c.req.param("code"), { includeTrash }));
+  });
 
-courseRouter.post(
-  "/",
-  handle((req, res) => {
-    const data = CourseService.createCustom(req.body);
-    created(res, data);
-  })
-);
-
-courseRouter.patch(
-  "/:code",
-  handle((req, res) => {
-    const data = CourseService.updateFields(String(req.params.code), req.body);
-    ok(res, data);
-  })
-);
+  app.patch("/courses/:code", async (c) => {
+    return ok(c, await CourseService.updateFields(c.var.ctx, c.req.param("code"), await readJson(c)));
+  });
+}

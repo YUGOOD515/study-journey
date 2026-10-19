@@ -1,15 +1,31 @@
 import { type MouseEvent as ReactMouseEvent, useEffect, useMemo, useRef, useState } from "react";
+import { CalendarX2, ChevronLeft, ChevronRight, SlidersHorizontal } from "lucide-react";
 import { api } from "../lib/api";
+import { cn } from "../lib/cn";
 import { CATEGORY_STYLE, type CategoryStyle } from "../lib/categoryStyle";
 import { TERM_LABEL } from "../lib/offeredTerm";
-import { CourseHoverCard, type CourseHoverInfo } from "../components/CourseHoverCard";
+import {
+  CourseDetailDialog,
+  CourseHoverCard,
+  type CourseHoverInfo,
+} from "../components/CourseHoverCard";
 import { useHoverIntentTriangle } from "../hooks/useHoverIntentTriangle";
-import type {
-  ActualCourseMeeting,
-  CategoryCode,
-  Course,
-  CourseNature,
-} from "../types";
+import { useIsMobile } from "../hooks/useMediaQuery";
+import {
+  Button,
+  EmptyState,
+  IconButton,
+  Menu,
+  MenuCheckboxItem,
+  MenuContent,
+  MenuLabel,
+  MenuTrigger,
+  PageError,
+  Panel,
+  Skeleton,
+  Stat,
+} from "../components/ui";
+import type { ActualCourseMeeting, CategoryCode, Course, CourseNature } from "../types";
 
 const TERMS = [1, 2, 3, 4, 5, 6, 7, 8];
 
@@ -61,6 +77,18 @@ const DEFAULT_DISPLAY: Record<DisplayKey, boolean> = {
   weeks: false,
 };
 
+const DISPLAY_STORAGE_KEY = "study-journey-schedule-display";
+
+function loadDisplay(): Record<DisplayKey, boolean> {
+  try {
+    const raw = window.localStorage.getItem(DISPLAY_STORAGE_KEY);
+    if (raw) return { ...DEFAULT_DISPLAY, ...JSON.parse(raw) };
+  } catch {
+    /* ignore */
+  }
+  return DEFAULT_DISPLAY;
+}
+
 interface CourseVisual {
   categoryCode: CategoryCode;
   nature: CourseNature;
@@ -70,20 +98,23 @@ interface CourseVisual {
 
 export default function TermSchedule({
   termNumber,
+  currentTerm,
   onTermChange,
-  onBack,
 }: {
   termNumber: number;
+  /** 按入学年份推算的“本学期” */
+  currentTerm: number;
   onTermChange: (term: number) => void;
-  onBack: () => void;
 }) {
   const [allMeetings, setAllMeetings] = useState<ActualCourseMeeting[]>([]);
   const [programCourses, setProgramCourses] = useState<Course[]>([]);
   const [records, setRecords] = useState<Course[]>([]);
   const [selectedWeek, setSelectedWeek] = useState(1);
-  const [display, setDisplay] = useState(DEFAULT_DISPLAY);
+  const [display, setDisplay] = useState(loadDisplay);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
+  const isMobile = useIsMobile();
 
   useEffect(() => {
     setLoading(true);
@@ -100,171 +131,218 @@ export default function TermSchedule({
       })
       .catch((e) => setErr(String(e?.message ?? e)))
       .finally(() => setLoading(false));
-  }, []);
+  }, [reloadKey]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(DISPLAY_STORAGE_KEY, JSON.stringify(display));
+    } catch {
+      /* ignore */
+    }
+  }, [display]);
 
   const meetings = useMemo(
     () => allMeetings.filter((meeting) => meeting.term === termNumber),
-    [allMeetings, termNumber]
+    [allMeetings, termNumber],
   );
   const availability = useMemo(() => summarizeAvailability(allMeetings), [allMeetings]);
   const visualByCode = useMemo(
     () => buildVisualMap(programCourses, records),
-    [programCourses, records]
+    [programCourses, records],
   );
   const hoverInfoByCode = useMemo(
     () => buildHoverInfoMap(programCourses, records),
-    [programCourses, records]
+    [programCourses, records],
   );
   const meta = meetings[0];
   const weeks = useMemo(() => {
     const maxWeek = meetings.reduce((max, row) => Math.max(max, row.end_week), 16);
     return Array.from({ length: maxWeek }, (_, i) => i + 1);
   }, [meetings]);
-  const courses = useMemo(
-    () => groupCourses(meetings, visualByCode),
-    [meetings, visualByCode]
-  );
+  const courses = useMemo(() => groupCourses(meetings, visualByCode), [meetings, visualByCode]);
   const weekMeetings = useMemo(
     () =>
       meetings.filter(
-        (meeting) =>
-          meeting.start_week <= selectedWeek && meeting.end_week >= selectedWeek
+        (meeting) => meeting.start_week <= selectedWeek && meeting.end_week >= selectedWeek,
       ),
-    [meetings, selectedWeek]
+    [meetings, selectedWeek],
   );
 
   useEffect(() => {
     const minWeek = meetings.reduce(
       (min, row) => Math.min(min, row.start_week),
-      Number.POSITIVE_INFINITY
+      Number.POSITIVE_INFINITY,
     );
     setSelectedWeek(Number.isFinite(minWeek) ? minWeek : 1);
   }, [termNumber, meetings]);
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center text-sub">
-        加载中...
-      </div>
-    );
-  }
+  const firstWeek = weeks[0] ?? 1;
+  const lastWeek = weeks[weeks.length - 1] ?? 1;
+  const stepWeek = (delta: number) =>
+    setSelectedWeek((week) => Math.min(lastWeek, Math.max(firstWeek, week + delta)));
 
-  if (err) {
-    return (
-      <div className="min-h-screen flex items-center justify-center text-red-500">
-        加载失败：{err}
-      </div>
-    );
-  }
+  if (err) return <PageError message={err} onRetry={() => setReloadKey((k) => k + 1)} />;
+
+  const hasData = meetings.length > 0;
 
   return (
-    <div className="min-h-screen px-8 py-6">
-      <header className="mb-4 flex items-start justify-between gap-6">
-        <div>
-          <button
-            type="button"
-            onClick={onBack}
-            className="mb-3 h-7 rounded-md border border-sub/15 px-3 text-xs text-sub transition-colors hover:border-sub/35 hover:bg-sub/5 hover:text-ink"
-          >
-            返回时间轴
-          </button>
+    <div className="mx-auto min-h-[calc(100dvh-3rem)] max-w-[1600px] px-3 py-4 sm:px-6 sm:py-6 lg:px-8">
+      <header className="mb-4 flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
+        <div className="min-w-0">
           <h1 className="text-lg text-ink">学期课表</h1>
           <div className="mt-0.5 text-[11px] text-sub">
             {TERM_LABEL[termNumber]}
-            {meta
-              ? ` · ${meta.academic_year} ${meta.semester === "fall" ? "第一学期" : "第二学期"}`
-              : " · 暂无实际课表数据"}
+            {termNumber === currentTerm && " · 本学期"}
+            {loading
+              ? ""
+              : meta
+                ? ` · ${meta.academic_year} ${meta.semester === "fall" ? "第一学期" : "第二学期"}`
+                : " · 暂无实际课表数据"}
           </div>
         </div>
-        <div className="flex items-center gap-6 pt-1 text-xs">
-          <ScheduleStat label="课程" value={`${courses.length} 门`} />
-          <ScheduleStat label="片段" value={`${meetings.length} 条`} />
-          <ScheduleStat label="当前周" value={`第 ${selectedWeek} 周`} />
+        <div className="flex items-end gap-5 text-xs">
+          <Stat label="课程" value={loading ? "–" : `${courses.length} 门`} />
+          <Stat label="本周安排" value={loading ? "–" : `${weekMeetings.length} 条`} />
           <DisplayMenu value={display} onChange={setDisplay} />
         </div>
       </header>
 
-      <div className="grid grid-cols-[380px_minmax(0,1fr)] items-start gap-5">
-        <section className="rounded-xl border border-sub/15 bg-card p-4">
-          <div className="mb-3 flex items-end justify-between gap-4">
-            <div>
+      <TermSelector
+        value={termNumber}
+        currentTerm={currentTerm}
+        availability={availability}
+        onChange={onTermChange}
+      />
+
+      {loading ? (
+        <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
+          <Skeleton className="h-[480px] rounded-xl" />
+          <Skeleton className="hidden h-[480px] rounded-xl lg:block" />
+        </div>
+      ) : !hasData ? (
+        <Panel className="mt-4">
+          <EmptyState
+            icon={<CalendarX2 size={28} strokeWidth={1.5} />}
+            title={`${TERM_LABEL[termNumber]}还没有实际课表数据`}
+            description="实际课表来自教务系统导出的上课安排。可以切换到其他学期查看；有数据的学期在上方以深色显示。"
+            className="py-16"
+          />
+        </Panel>
+      ) : (
+        <div className="mt-4 grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
+          <Panel className="min-w-0 p-3 sm:p-4">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <WeekNavigator
+                week={selectedWeek}
+                first={firstWeek}
+                last={lastWeek}
+                onStep={stepWeek}
+              />
+              <div className="num text-[11px] text-sub">{weekMeetings.length} 条上课安排</div>
+            </div>
+            {isMobile ? (
+              <DayList
+                meetings={weekMeetings}
+                display={display}
+                visualByCode={visualByCode}
+                hoverInfoByCode={hoverInfoByCode}
+              />
+            ) : (
+              <div className="scroll-fade-x -mx-1 overflow-x-auto px-1 pb-1">
+                <div className="min-w-[760px]">
+                  <WeeklyGrid
+                    meetings={weekMeetings}
+                    display={display}
+                    visualByCode={visualByCode}
+                    hoverInfoByCode={hoverInfoByCode}
+                  />
+                </div>
+              </div>
+            )}
+          </Panel>
+
+          <Panel className="min-w-0 p-3 sm:p-4 lg:sticky lg:top-16">
+            <div className="mb-1">
               <h2 className="text-sm text-ink">课程周次分布</h2>
               <div className="mt-0.5 text-[10px] text-sub">
-                长条表示开课周段；颜色沿用时间轴，实线为必修，虚线为选修
+                长条为开课周段，点击轨道切换周次；实线必修，虚线选修
               </div>
             </div>
-            <div className="shrink-0 rounded-md border border-sub/15 px-2 py-1 text-[11px] text-sub tabular-nums">
-              第 {selectedWeek} 周
-            </div>
-          </div>
-
-          <TermSelector
-            value={termNumber}
-            availability={availability}
-            onChange={onTermChange}
-          />
-
-          {meetings.length === 0 ? (
-            <div className="mt-3 rounded-lg border border-dashed border-sub/20 p-6 text-center text-xs text-sub">
-              暂无实际课表数据
-            </div>
-          ) : (
             <CourseWeekTracks
               courses={courses}
               weeks={weeks}
               selectedWeek={selectedWeek}
               onSelectWeek={setSelectedWeek}
             />
-          )}
-        </section>
-
-        <section className="min-w-0 rounded-xl border border-sub/15 bg-card p-4">
-          {meetings.length === 0 ? (
-            <div className="flex min-h-[520px] items-center justify-center rounded-lg border border-dashed border-sub/20 text-sm text-sub">
-              这个学期还没有导入实际课表数据
-            </div>
-          ) : (
-            <>
-            <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-sm text-ink">第 {selectedWeek} 周课表</h2>
-              <div className="text-[11px] text-sub tabular-nums">
-                {weekMeetings.length} 条上课安排
-              </div>
-            </div>
-            <WeeklyGrid
-              meetings={weekMeetings}
-              display={display}
-              visualByCode={visualByCode}
-              hoverInfoByCode={hoverInfoByCode}
-            />
-            </>
-          )}
-        </section>
-      </div>
+          </Panel>
+        </div>
+      )}
     </div>
   );
 }
 
-function ScheduleStat({ label, value }: { label: string; value: string }) {
+function WeekNavigator({
+  week,
+  first,
+  last,
+  onStep,
+}: {
+  week: number;
+  first: number;
+  last: number;
+  onStep: (delta: number) => void;
+}) {
   return (
-    <div className="flex flex-col items-end">
-      <div className="text-[10px] uppercase tracking-wide text-sub">{label}</div>
-      <div className="text-base text-ink tabular-nums">{value}</div>
+    <div className="flex items-center gap-1">
+      <IconButton
+        label="上一周"
+        size="sm"
+        variant="secondary"
+        disabled={week <= first}
+        onClick={() => onStep(-1)}
+      >
+        <ChevronLeft size={15} />
+      </IconButton>
+      <div className="num min-w-[92px] text-center text-sm text-ink">
+        第 {week} 周<span className="text-[11px] text-faint"> / {last}</span>
+      </div>
+      <IconButton
+        label="下一周"
+        size="sm"
+        variant="secondary"
+        disabled={week >= last}
+        onClick={() => onStep(1)}
+      >
+        <ChevronRight size={15} />
+      </IconButton>
     </div>
   );
 }
 
 function TermSelector({
   value,
+  currentTerm,
   availability,
   onChange,
 }: {
   value: number;
+  currentTerm: number;
   availability: Map<number, { courses: number; meetings: number }>;
   onChange: (term: number) => void;
 }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const active = ref.current?.querySelector<HTMLElement>("[data-active='true']");
+    active?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [value]);
+
   return (
-    <div className="grid grid-cols-4 gap-1 rounded-lg border border-sub/15 bg-sub/5 p-1">
+    <div
+      ref={ref}
+      role="tablist"
+      aria-label="选择学期"
+      className="no-scrollbar -mx-3 flex gap-1 overflow-x-auto px-3 sm:mx-0 sm:grid sm:grid-cols-8 sm:overflow-visible sm:rounded-lg sm:border sm:border-sub/15 sm:bg-sub/5 sm:p-1"
+    >
       {TERMS.map((term) => {
         const stats = availability.get(term);
         const active = term === value;
@@ -272,17 +350,24 @@ function TermSelector({
           <button
             key={term}
             type="button"
+            role="tab"
+            aria-selected={active}
+            data-active={active}
             onClick={() => onChange(term)}
-            className={
-              "group relative h-8 rounded-md border px-1.5 text-center transition-all duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] " +
-              (active
+            title={stats ? `${stats.courses} 门课程` : "暂无课表数据"}
+            className={cn(
+              "relative flex h-8 shrink-0 items-center justify-center gap-1 rounded-md border px-3 text-xs transition-colors sm:px-1.5",
+              active
                 ? "border-brand/55 bg-card text-ink shadow-sm"
                 : stats
-                ? "border-transparent text-sub hover:border-sub/20 hover:bg-card hover:text-ink"
-                : "border-transparent text-sub/45 hover:border-sub/15 hover:bg-card/70 hover:text-sub")
-            }
+                  ? "border-sub/15 bg-card text-sub hover:border-sub/30 hover:text-ink sm:border-transparent sm:bg-transparent sm:hover:bg-card"
+                  : "border-sub/10 text-faint hover:text-sub sm:border-transparent",
+            )}
           >
-            <span className="block truncate text-xs leading-7">{TERM_LABEL[term]}</span>
+            {TERM_LABEL[term]}
+            {term === currentTerm && (
+              <span className="h-1.5 w-1.5 rounded-full bg-brand" aria-label="本学期" />
+            )}
           </button>
         );
       })}
@@ -297,60 +382,27 @@ function DisplayMenu({
   value: Record<DisplayKey, boolean>;
   onChange: (next: Record<DisplayKey, boolean>) => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const onMouseDown = (event: MouseEvent) => {
-      if (!ref.current?.contains(event.target as Node)) setOpen(false);
-    };
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpen(false);
-    };
-    document.addEventListener("mousedown", onMouseDown);
-    document.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("mousedown", onMouseDown);
-      document.removeEventListener("keydown", onKeyDown);
-    };
-  }, [open]);
-
   return (
-    <div ref={ref} className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen((current) => !current)}
-        className="h-7 rounded-lg border border-sub/15 bg-card px-3 text-xs text-sub transition-colors hover:border-sub/30 hover:bg-sub/5 hover:text-ink"
-      >
-        显示内容
-      </button>
-      {open && (
-        <div
-          className="absolute right-0 top-full z-40 mt-1 w-36 rounded-lg border border-sub/15 bg-card p-1"
-          style={{
-            boxShadow: "0 14px 34px rgb(var(--shadow-rgb) / var(--shadow-soft))",
-          }}
-        >
-          {DISPLAY_ITEMS.map((item) => (
-            <label
-              key={item.key}
-              className="flex h-8 cursor-pointer items-center gap-2 rounded-md px-2 text-xs text-ink hover:bg-sub/5"
-            >
-              <input
-                type="checkbox"
-                checked={value[item.key]}
-                onChange={(event) =>
-                  onChange({ ...value, [item.key]: event.currentTarget.checked })
-                }
-                className="h-3.5 w-3.5 accent-[rgb(var(--brand)/1)]"
-              />
-              <span>{item.label}</span>
-            </label>
-          ))}
-        </div>
-      )}
-    </div>
+    <Menu>
+      <MenuTrigger asChild>
+        <Button size="sm" variant="secondary" icon={<SlidersHorizontal size={13} />}>
+          <span className="hidden sm:inline">显示内容</span>
+        </Button>
+      </MenuTrigger>
+      <MenuContent>
+        <MenuLabel>课程卡片显示</MenuLabel>
+        {DISPLAY_ITEMS.map((item) => (
+          <MenuCheckboxItem
+            key={item.key}
+            checked={value[item.key]}
+            onCheckedChange={(checked) => onChange({ ...value, [item.key]: Boolean(checked) })}
+            onSelect={(event) => event.preventDefault()}
+          >
+            {item.label}
+          </MenuCheckboxItem>
+        ))}
+      </MenuContent>
+    </Menu>
   );
 }
 
@@ -455,14 +507,14 @@ function CourseWeekTracks({
         </div>
 
         <div className="space-y-2">
-        {courses.map((course) => (
-          <CourseWeekRow
-            key={course.key}
-            course={course}
-            weeks={weeks}
-            selectedWeek={selectedWeek}
-          />
-        ))}
+          {courses.map((course) => (
+            <CourseWeekRow
+              key={course.key}
+              course={course}
+              weeks={weeks}
+              selectedWeek={selectedWeek}
+            />
+          ))}
         </div>
       </div>
     </div>
@@ -485,7 +537,11 @@ function CourseWeekRow({
       <div className="flex min-w-0 items-center gap-1.5">
         <span className="h-2 w-2 shrink-0 rounded-sm" style={{ backgroundColor: style.color }} />
         <div className="min-w-0">
-          <div className="truncate text-[11px]" style={{ color: style.text }} title={course.courseName}>
+          <div
+            className="truncate text-[11px]"
+            style={{ color: style.text }}
+            title={course.courseName}
+          >
             {course.courseName}
           </div>
           <div className="text-[9px] text-sub">{isRequired ? "必修" : "选修"}</div>
@@ -500,9 +556,7 @@ function CourseWeekRow({
               left: `${weekStartPercent(span.start, weeks)}%`,
               width: `${weekSpanPercent(span.start, span.end, weeks)}%`,
               backgroundColor:
-                selectedWeek >= span.start && selectedWeek <= span.end
-                  ? style.color
-                  : style.bgSoft,
+                selectedWeek >= span.start && selectedWeek <= span.end ? style.color : style.bgSoft,
               borderColor: style.border,
               borderStyle: isRequired ? "solid" : "dashed",
             }}
@@ -547,33 +601,43 @@ function WeeklyGrid({
   visualByCode: Map<string, CourseVisual>;
   hoverInfoByCode: Map<string, CourseHoverInfo>;
 }) {
+  const today = todayWeekday();
   return (
-    <div>
-      <div className="w-full">
-        <div className="mb-2 grid grid-cols-[86px_repeat(7,minmax(0,1fr))] gap-3">
-          <div />
-          {WEEKDAYS.map((day) => (
-            <div key={day.value} className="px-1 text-center text-xs text-sub">
-              {day.label}
-            </div>
-          ))}
-        </div>
-        <div className="grid grid-cols-[86px_repeat(7,minmax(0,1fr))] gap-3">
-          <TimeAxis />
-          {WEEKDAYS.map((day) => (
-            <DayColumn
-              key={day.value}
-              day={day.value}
-              meetings={meetings}
-              display={display}
-              visualByCode={visualByCode}
-              hoverInfoByCode={hoverInfoByCode}
-            />
-          ))}
-        </div>
+    <div className="w-full">
+      <div className="mb-1.5 grid grid-cols-[72px_repeat(7,minmax(0,1fr))] gap-1.5">
+        <div />
+        {WEEKDAYS.map((day) => (
+          <div
+            key={day.value}
+            className={cn(
+              "rounded-md py-1 text-center text-xs",
+              day.value === today ? "bg-brand/10 text-brand" : "text-sub",
+            )}
+          >
+            {day.label}
+          </div>
+        ))}
+      </div>
+      <div className="grid grid-cols-[72px_repeat(7,minmax(0,1fr))] gap-1.5">
+        <TimeAxis />
+        {WEEKDAYS.map((day) => (
+          <DayColumn
+            key={day.value}
+            day={day.value}
+            meetings={meetings}
+            display={display}
+            visualByCode={visualByCode}
+            hoverInfoByCode={hoverInfoByCode}
+          />
+        ))}
       </div>
     </div>
   );
+}
+
+function todayWeekday() {
+  const day = new Date().getDay();
+  return day === 0 ? 7 : day;
 }
 
 function TimeAxis() {
@@ -581,10 +645,8 @@ function TimeAxis() {
     <div className="grid auto-rows-[58px]">
       {PERIODS.map((period) => (
         <div key={period.value} className="border-t border-sub/10 pt-1 first:border-t-0">
-          <div className="text-[11px] text-ink tabular-nums">第 {period.value} 节</div>
-          <div className="mt-0.5 text-[9px] leading-tight text-sub tabular-nums">
-            {period.time}
-          </div>
+          <div className="num text-[11px] text-ink">第 {period.value} 节</div>
+          <div className="num mt-0.5 text-[9px] leading-tight text-sub">{period.time}</div>
         </div>
       ))}
     </div>
@@ -604,20 +666,17 @@ function DayColumn({
   visualByCode: Map<string, CourseVisual>;
   hoverInfoByCode: Map<string, CourseHoverInfo>;
 }) {
-  const dayMeetings = mergeParallelMeetings(
-    meetings.filter((meeting) => meeting.weekday === day)
-  );
+  const dayMeetings = mergeParallelMeetings(meetings.filter((meeting) => meeting.weekday === day));
   return (
     <div
       className="relative grid auto-rows-[58px] rounded-lg bg-sub/[0.025]"
       style={{
-        backgroundImage:
-          "linear-gradient(to bottom, rgb(var(--sub) / 0.10) 1px, transparent 1px)",
+        backgroundImage: "linear-gradient(to bottom, rgb(var(--sub) / 0.10) 1px, transparent 1px)",
         backgroundSize: "100% 58px",
       }}
     >
       {dayMeetings.length === 0 && (
-        <div className="row-start-1 row-end-[13] flex items-center justify-center text-[10px] text-sub/45">
+        <div className="row-start-1 row-end-[13] flex items-center justify-center text-[10px] text-faint">
           无课
         </div>
       )}
@@ -635,20 +694,110 @@ function DayColumn({
   );
 }
 
+/** 手机：按天查看 */
+function DayList({
+  meetings,
+  display,
+  visualByCode,
+  hoverInfoByCode,
+}: {
+  meetings: ActualCourseMeeting[];
+  display: Record<DisplayKey, boolean>;
+  visualByCode: Map<string, CourseVisual>;
+  hoverInfoByCode: Map<string, CourseHoverInfo>;
+}) {
+  const byDay = useMemo(() => {
+    const map = new Map<number, ActualCourseMeeting[]>();
+    for (const day of WEEKDAYS) {
+      map.set(
+        day.value,
+        mergeParallelMeetings(meetings.filter((m) => m.weekday === day.value)).sort(
+          (a, b) => a.start_period - b.start_period,
+        ),
+      );
+    }
+    return map;
+  }, [meetings]);
+  const today = todayWeekday();
+  const [day, setDay] = useState(today);
+  const rows = byDay.get(day) ?? [];
+
+  return (
+    <div>
+      <div className="mb-3 grid grid-cols-7 gap-1" role="tablist" aria-label="选择星期">
+        {WEEKDAYS.map((item) => {
+          const count = byDay.get(item.value)?.length ?? 0;
+          const active = item.value === day;
+          return (
+            <button
+              key={item.value}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              onClick={() => setDay(item.value)}
+              className={cn(
+                "flex h-12 flex-col items-center justify-center rounded-lg border text-xs transition-colors",
+                active ? "border-brand/50 bg-brand/10 text-brand" : "border-sub/15 text-sub",
+                count === 0 && !active && "text-faint",
+              )}
+            >
+              <span>{item.label.slice(1)}</span>
+              <span className="num mt-0.5 text-[10px]">{count > 0 ? count : "–"}</span>
+              {item.value === today && <span className="sr-only">今天</span>}
+            </button>
+          );
+        })}
+      </div>
+      {rows.length === 0 ? (
+        <EmptyState title="这天没有课" description="切换到其他日期或周次看看" className="py-12" />
+      ) : (
+        <div className="space-y-2">
+          {rows.map((meeting, index) => (
+            <div
+              key={`${meeting.id}-${index}`}
+              className="grid grid-cols-[64px_minmax(0,1fr)] gap-2"
+            >
+              <div className="pt-1.5">
+                <div className="num text-xs text-ink">
+                  {meeting.start_period}-{meeting.end_period} 节
+                </div>
+                <div className="num mt-0.5 text-[10px] text-sub">
+                  {PERIODS[meeting.start_period - 1]?.time.split("-")[0]}–
+                  {PERIODS[meeting.end_period - 1]?.time.split("-")[1]}
+                </div>
+              </div>
+              <ScheduleCourseCard
+                meeting={meeting}
+                visual={visualForMeeting(meeting, visualByCode)}
+                hoverInfo={hoverInfoForMeeting(meeting, visualByCode, hoverInfoByCode)}
+                display={display}
+                comfortable
+              />
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ScheduleCourseCard({
   meeting,
   visual,
   hoverInfo,
   display,
   gridRow,
+  comfortable = false,
 }: {
   meeting: ActualCourseMeeting;
   visual: CourseVisual;
   hoverInfo: CourseHoverInfo;
   display: Record<DisplayKey, boolean>;
   gridRow?: string;
+  comfortable?: boolean;
 }) {
   const hover = useHoverIntentTriangle<HTMLDivElement>({ width: 280 });
+  const [detailOpen, setDetailOpen] = useState(false);
   const details = [
     display.location && meeting.location_text,
     display.teacher && meeting.teacher,
@@ -662,9 +811,24 @@ function ScheduleCourseCard({
     <>
       <div
         ref={hover.anchorRef}
+        role="button"
+        tabIndex={0}
         onMouseEnter={hover.open}
         onMouseLeave={hover.startGuardedClose}
-        className="motion-list-item m-0.5 overflow-hidden rounded-md px-2 py-1.5 text-[11px] leading-snug transition-all hover:-translate-y-0.5 hover:shadow-sm"
+        onClick={() => {
+          hover.close();
+          setDetailOpen(true);
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            setDetailOpen(true);
+          }
+        }}
+        className={cn(
+          "motion-list-item cursor-pointer overflow-hidden rounded-md px-2 py-1.5 leading-snug outline-none transition-all hover:-translate-y-0.5 hover:shadow-sm focus-visible:ring-2 focus-visible:ring-brand/50",
+          comfortable ? "text-xs" : "m-0.5 text-[11px]",
+        )}
         style={{
           gridRow,
           backgroundColor: visual.isRequired ? visual.style.bgSoft : visual.style.bgGhost,
@@ -674,11 +838,18 @@ function ScheduleCourseCard({
         <div className="font-medium" style={{ color: visual.style.text }}>
           {meeting.course_name}
         </div>
-        <div className="mt-0.5 text-[10px] text-sub tabular-nums">
-          第 {meeting.start_period}-{meeting.end_period} 节
-        </div>
+        {!comfortable && (
+          <div className="num mt-0.5 text-[10px] text-sub">
+            第 {meeting.start_period}-{meeting.end_period} 节
+          </div>
+        )}
         {details.length > 0 && (
-          <div className="mt-1 space-y-0.5 text-[10px] text-sub/80">
+          <div
+            className={cn(
+              "mt-1 text-[10px] text-sub",
+              comfortable ? "flex flex-wrap gap-x-3 gap-y-0.5" : "space-y-0.5",
+            )}
+          >
             {details.map((item, index) => (
               <div key={index} className="truncate" title={String(item)}>
                 {item}
@@ -698,6 +869,7 @@ function ScheduleCourseCard({
           onMouseLeave={hover.scheduleClose}
         />
       )}
+      <CourseDetailDialog open={detailOpen} onOpenChange={setDetailOpen} item={hoverInfo} />
     </>
   );
 }
@@ -753,13 +925,13 @@ function summarizeAvailability(meetings: ActualCourseMeeting[]) {
     [...map.entries()].map(([term, row]) => [
       term,
       { courses: row.courses, meetings: row.meetings },
-    ])
+    ]),
   );
 }
 
 function groupCourses(
   meetings: ActualCourseMeeting[],
-  visualByCode: Map<string, CourseVisual>
+  visualByCode: Map<string, CourseVisual>,
 ): GroupedCourse[] {
   const map = new Map<string, GroupedCourse>();
   for (const meeting of meetings) {
@@ -788,10 +960,7 @@ function groupCourses(
   });
 }
 
-function buildVisualMap(
-  programCourses: Course[],
-  records: Course[]
-): Map<string, CourseVisual> {
+function buildVisualMap(programCourses: Course[], records: Course[]): Map<string, CourseVisual> {
   const map = new Map<string, CourseVisual>();
   for (const course of programCourses) {
     map.set(course.courseCode, makeVisual(course.categoryCode, course.requirementType));
@@ -806,7 +975,7 @@ function buildVisualMap(
 
 function visualForMeeting(
   meeting: ActualCourseMeeting,
-  visualByCode: Map<string, CourseVisual>
+  visualByCode: Map<string, CourseVisual>,
 ): CourseVisual {
   return (
     visualByCode.get(meeting.course_code) ??
@@ -817,7 +986,7 @@ function visualForMeeting(
 function hoverInfoForMeeting(
   meeting: ActualCourseMeeting,
   visualByCode: Map<string, CourseVisual>,
-  hoverInfoByCode: Map<string, CourseHoverInfo>
+  hoverInfoByCode: Map<string, CourseHoverInfo>,
 ): CourseHoverInfo {
   const matched = hoverInfoByCode.get(meeting.course_code);
   if (matched) {
@@ -860,7 +1029,7 @@ function makeVisual(categoryCode: CategoryCode, nature: CourseNature): CourseVis
 
 function buildHoverInfoMap(
   programCourses: Course[],
-  records: Course[]
+  records: Course[],
 ): Map<string, CourseHoverInfo> {
   const map = new Map<string, CourseHoverInfo>();
   const recordByCode = new Map<string, Course>();
@@ -884,7 +1053,12 @@ function buildHoverInfoMap(
       categoryName: course.categoryName,
       requirementType: course.requirementType,
       officialTerm: course.officialTerm,
-      plannedTerm: course.actualTerm ?? course.plannedTerm ?? record?.actualTerm ?? record?.plannedTerm ?? null,
+      plannedTerm:
+        course.actualTerm ??
+        course.plannedTerm ??
+        record?.actualTerm ??
+        record?.plannedTerm ??
+        null,
       score: record?.score ?? course.score ?? null,
       note: record?.note ?? course.note ?? null,
       creditCountTo: course.creditCountTo,

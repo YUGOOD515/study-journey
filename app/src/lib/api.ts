@@ -11,6 +11,7 @@ import type {
   RequirementType,
   StudyStatus,
 } from "../types";
+import { UNAUTHORIZED_EVENT } from "./auth";
 
 type LegacyManualPatch = PlanCoursePatch & { term_number?: number | null };
 
@@ -45,9 +46,18 @@ async function request<T>(
   path: string,
   options: RequestInit = {}
 ): Promise<T> {
-  const r = await fetch(path, options);
+  const r = await fetch(path, { credentials: "same-origin", ...options });
   const text = await r.text();
-  const body = text ? JSON.parse(text) : null;
+  let body: unknown;
+  try {
+    body = text ? JSON.parse(text) : null;
+  } catch {
+    body = null;
+  }
+
+  if (r.status === 401) {
+    window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
+  }
 
   if (!r.ok) {
     const err = body as ApiErrorEnvelope | null;
@@ -65,8 +75,23 @@ async function request<T>(
   return body as T;
 }
 
+// ---- GET 缓存：同一路径并发请求合并，短时间内切换页面复用结果；任何写操作后清空 ----
+const GET_TTL_MS = 30_000;
+const getCache = new Map<string, { at: number; promise: Promise<unknown> }>();
+
+export function invalidateApiCache() {
+  getCache.clear();
+}
+
 function getJSON<T>(path: string): Promise<T> {
-  return request<T>(path);
+  const hit = getCache.get(path);
+  if (hit && Date.now() - hit.at < GET_TTL_MS) return hit.promise as Promise<T>;
+  const promise = request<T>(path).catch((e) => {
+    getCache.delete(path);
+    throw e;
+  });
+  getCache.set(path, { at: Date.now(), promise });
+  return promise;
 }
 
 async function send<T>(
@@ -74,11 +99,16 @@ async function send<T>(
   method: "POST" | "PUT" | "PATCH" | "DELETE",
   body?: unknown
 ): Promise<T> {
-  return request<T>(path, {
-    method,
-    headers: body !== undefined ? { "Content-Type": "application/json" } : undefined,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
+  invalidateApiCache();
+  try {
+    return await request<T>(path, {
+      method,
+      headers: body !== undefined ? { "Content-Type": "application/json" } : undefined,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+  } finally {
+    invalidateApiCache();
+  }
 }
 
 function rememberCourse(course: Course): Course {

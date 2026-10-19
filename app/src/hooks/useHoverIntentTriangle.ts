@@ -17,6 +17,28 @@ interface Options {
 
 const EXIT_DURATION_MS = 180;
 
+/**
+ * 触屏点按会合成 mouseenter，导致悬浮卡误弹出。
+ * 记录最近一次指针类型：最近是触控/笔，或设备不支持悬停时，不打开悬浮卡。
+ */
+let lastPointerType: string = "mouse";
+let lastPointerAt = 0;
+if (typeof window !== "undefined") {
+  const track = (event: PointerEvent) => {
+    lastPointerType = event.pointerType || "mouse";
+    lastPointerAt = Date.now();
+  };
+  window.addEventListener("pointerdown", track, { capture: true, passive: true });
+  window.addEventListener("pointermove", track, { capture: true, passive: true });
+}
+
+export function canHover() {
+  if (typeof window === "undefined") return false;
+  if (window.matchMedia?.("(hover: none)").matches) return false;
+  if (lastPointerType !== "mouse" && Date.now() - lastPointerAt < 1500) return false;
+  return true;
+}
+
 function triangleArea(a: Point, b: Point, c: Point) {
   return Math.abs((a.x * (b.y - c.y) + b.x * (c.y - a.y) + c.x * (a.y - b.y)) / 2);
 }
@@ -97,7 +119,7 @@ export function useHoverIntentTriangle<T extends HTMLElement>({
 
   const open = useCallback(() => {
     const el = anchorRef.current;
-    if (!el) return;
+    if (!el || !canHover()) return;
     clearCloseTimer();
     clearHideTimer();
     clearOpenFrame();

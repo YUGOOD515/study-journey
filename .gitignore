@@ -23,3 +23,21 @@ build/
 # OS
 .DS_Store
 Thumbs.db
+
+# 个人数据 / 本地数据库（不要提交）
+db/*.sqlite
+db/*.sqlite-*
+.d1-data/
+
+# Cloudflare / Wrangler
+.wrangler/
+app/.wrangler/
+app/.dev.vars
+.dev.vars
+
+# 工具产物
+.playwright-cli/
+*.tsbuildinfo
+fetch/outputs/timetable/
+fetch/outputs/outputs.zip
+seeds/v2_001_insert_data.sql
