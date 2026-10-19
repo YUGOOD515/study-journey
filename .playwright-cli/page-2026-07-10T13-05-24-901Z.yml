@@ -1,0 +1,286 @@
+- generic [ref=e3]:
+  - navigation [ref=e4]:
+    - generic [ref=e5]:
+      - link "学旅" [ref=e6] [cursor=pointer]:
+        - /url: "#"
+      - generic [ref=e7]:
+        - button "时间轴" [ref=e8] [cursor=pointer]
+        - button "旅迹" [ref=e9] [cursor=pointer]
+        - button "学期课表" [ref=e10] [cursor=pointer]
+    - button "主题：跟随系统（点击切换）" [ref=e12] [cursor=pointer]
+  - main [ref=e16]:
+    - generic [ref=e732]:
+      - generic [ref=e733]:
+        - generic [ref=e734]: Study Journey
+        - generic [ref=e735]:
+          - heading "旅迹" [level=1] [ref=e736]
+          - generic [ref=e737]: 已修在前 · 计划在后 · 点课程可填成绩
+      - generic [ref=e739]:
+        - generic [ref=e744]:
+          - generic [ref=e745]: 50%
+          - generic [ref=e746]: 完成
+        - generic [ref=e747]:
+          - generic [ref=e748]:
+            - generic [ref=e749]:
+              - generic [ref=e750]: 已修
+              - generic [ref=e752]: "80.25"
+            - generic [ref=e753]:
+              - generic [ref=e754]: 在修
+              - generic [ref=e756]: "23"
+            - generic [ref=e757]:
+              - generic [ref=e758]: 计划
+              - generic [ref=e760]: "67.25"
+            - generic [ref=e761]:
+              - generic [ref=e762]: 待修
+              - generic [ref=e764]: "4"
+          - generic [ref=e769]:
+            - generic [ref=e770]: 共需 160 学分
+            - generic [ref=e771]: 我的计划合计 170.5 学分
+      - generic [ref=e772]:
+        - generic [ref=e773]:
+          - heading "学分流向 · 经法管融通" [level=2] [ref=e774]
+          - generic [ref=e776]: 点击课程或连线切换归属 · 计入「大类平台」上限 6 学分，超出自动计入「通识教育·选修」
+        - img [ref=e777]:
+          - generic "金融创新与金融法典型案例分析 · 2 学分 → 经法管融通 点击切换归属" [ref=e778] [cursor=pointer]
+          - generic "税法（税） · 2 学分 → 经法管融通 点击切换归属" [ref=e779] [cursor=pointer]
+          - generic [ref=e780] [cursor=pointer]: 金融创新与金… · 2 ✓
+          - generic [ref=e782] [cursor=pointer]: 税法（税） · 2
+          - generic [ref=e784]:
+            - generic: 大类·经法管融通
+            - generic: 2/6 学分
+          - generic [ref=e787]:
+            - generic: 通识教育 · 选修
+            - generic: 8.5/16 学分
+      - generic [ref=e790]: 培养方案 · 五大板块
+      - generic [ref=e791]:
+        - generic [ref=e792]:
+          - generic [ref=e794]:
+            - heading "通识教育" [level=2] [ref=e797]
+            - generic [ref=e798]:
+              - text: "37.25"
+              - generic [ref=e799]: / 48
+              - generic [ref=e800]: 78%
+          - generic [ref=e801]: 计划预览 +24.25 学分
+          - generic [ref=e806]:
+            - generic [ref=e807]:
+              - button "选修 6 已修 · 8 计划 8.5+21/1653%" [active] [ref=e808] [cursor=pointer]:
+                - generic [ref=e809]:
+                  - generic [ref=e810]:
+                    - generic [ref=e811]: 选修
+                    - generic [ref=e812]: 6 已修 · 8 计划
+                  - generic [ref=e813]:
+                    - text: "8.5"
+                    - generic [ref=e814]: "+21"
+                    - text: /16
+                    - generic [ref=e815]: 53%
+              - generic [ref=e996]:
+                - generic [ref=e997]:
+                  - generic [ref=e998]: 已修
+                  - generic [ref=e999]:
+                    - button "自 国家蓝图与青年未来：“十五五规划的时代解读” 2 95" [ref=e1000] [cursor=pointer]:
+                      - generic [ref=e1001]: 自
+                      - generic [ref=e1002]: 国家蓝图与青年未来：“十五五规划的时代解读”
+                      - generic [ref=e1003]: "2"
+                      - generic [ref=e1004]: "95"
+                    - button "自 职场高情商工作技巧 1 95" [ref=e1005] [cursor=pointer]:
+                      - generic [ref=e1006]: 自
+                      - generic [ref=e1007]: 职场高情商工作技巧
+                      - generic [ref=e1008]: "1"
+                      - generic [ref=e1009]: "95"
+                    - button "自 Python数据科学导论 2 99" [ref=e1010] [cursor=pointer]:
+                      - generic [ref=e1011]: 自
+                      - generic [ref=e1012]: Python数据科学导论
+                      - generic [ref=e1013]: "2"
+                      - generic [ref=e1014]: "99"
+                    - button "自 定向越野 1 98.2" [ref=e1015] [cursor=pointer]:
+                      - generic [ref=e1016]: 自
+                      - generic [ref=e1017]: 定向越野
+                      - generic [ref=e1018]: "1"
+                      - generic [ref=e1019]: "98.2"
+                    - button "自 团建活动的设计与实施 0.5 91" [ref=e1020] [cursor=pointer]:
+                      - generic [ref=e1021]: 自
+                      - generic [ref=e1022]: 团建活动的设计与实施
+                      - generic [ref=e1023]: "0.5"
+                      - generic [ref=e1024]: "91"
+                    - button "自 走进民航 2 99" [ref=e1025] [cursor=pointer]:
+                      - generic [ref=e1026]: 自
+                      - generic [ref=e1027]: 走进民航
+                      - generic [ref=e1028]: "2"
+                      - generic [ref=e1029]: "99"
+                - generic [ref=e1030]:
+                  - generic [ref=e1031]: 计划修读
+                  - generic [ref=e1032]:
+                    - button "机器学习理论与实践 4 大三上 填成绩" [ref=e1033] [cursor=pointer]:
+                      - generic [ref=e1034]: 机器学习理论与实践
+                      - generic [ref=e1035]: "4"
+                      - generic [ref=e1036]: 大三上
+                      - generic [ref=e1037]: 填成绩
+                    - button "Python数据分析 3 大二下 填成绩" [ref=e1038] [cursor=pointer]:
+                      - generic [ref=e1039]: Python数据分析
+                      - generic [ref=e1040]: "3"
+                      - generic [ref=e1041]: 大二下
+                      - generic [ref=e1042]: 填成绩
+                    - button "户外运动 1 大二下 填成绩" [ref=e1043] [cursor=pointer]:
+                      - generic [ref=e1044]: 户外运动
+                      - generic [ref=e1045]: "1"
+                      - generic [ref=e1046]: 大二下
+                      - generic [ref=e1047]: 填成绩
+                    - button "编译原理 3 大二下 填成绩" [ref=e1048] [cursor=pointer]:
+                      - generic [ref=e1049]: 编译原理
+                      - generic [ref=e1050]: "3"
+                      - generic [ref=e1051]: 大二下
+                      - generic [ref=e1052]: 填成绩
+                    - button "数据结构 4 大二下 填成绩" [ref=e1053] [cursor=pointer]:
+                      - generic [ref=e1054]: 数据结构
+                      - generic [ref=e1055]: "4"
+                      - generic [ref=e1056]: 大二下
+                      - generic [ref=e1057]: 填成绩
+                    - button "机器学习与深度学习 2 大二下 填成绩" [ref=e1058] [cursor=pointer]:
+                      - generic [ref=e1059]: 机器学习与深度学习
+                      - generic [ref=e1060]: "2"
+                      - generic [ref=e1061]: 大二下
+                      - generic [ref=e1062]: 填成绩
+                    - button "人工智能程序概论 2 大二下 填成绩" [ref=e1063] [cursor=pointer]:
+                      - generic [ref=e1064]: 人工智能程序概论
+                      - generic [ref=e1065]: "2"
+                      - generic [ref=e1066]: 大二下
+                      - generic [ref=e1067]: 填成绩
+                    - button "人工智能程序设计 2 大二下 填成绩" [ref=e1068] [cursor=pointer]:
+                      - generic [ref=e1069]: 人工智能程序设计
+                      - generic [ref=e1070]: "2"
+                      - generic [ref=e1071]: 大二下
+                      - generic [ref=e1072]: 填成绩
+            - button "必修 14 已修 · 6 计划 28.75+3.25/3290%" [ref=e820] [cursor=pointer]:
+              - generic [ref=e821]:
+                - generic [ref=e822]:
+                  - generic [ref=e823]: 必修
+                  - generic [ref=e824]: 14 已修 · 6 计划
+                - generic [ref=e825]:
+                  - text: "28.75"
+                  - generic [ref=e826]: "+3.25"
+                  - text: /32
+                  - generic [ref=e827]: 90%
+        - generic [ref=e832]:
+          - generic [ref=e834]:
+            - heading "大类平台" [level=2] [ref=e837]
+            - generic [ref=e838]:
+              - text: "32"
+              - generic [ref=e839]: / 46
+              - generic [ref=e840]: 70%
+          - generic [ref=e841]: 计划预览 +13 学分
+          - generic [ref=e846]:
+            - button "选修 3 已修 · 1 计划 9+2/1090%" [ref=e848] [cursor=pointer]:
+              - generic [ref=e849]:
+                - generic [ref=e850]:
+                  - generic [ref=e851]: 选修
+                  - generic [ref=e852]: 3 已修 · 1 计划
+                - generic [ref=e853]:
+                  - text: "9"
+                  - generic [ref=e854]: "+2"
+                  - text: /10
+                  - generic [ref=e855]: 90%
+            - button "大类平台（经法管融通） 1 已修 · 1 计划 2+2/633%" [ref=e860] [cursor=pointer]:
+              - generic [ref=e861]:
+                - generic [ref=e862]:
+                  - generic [ref=e863]: 大类平台（经法管融通）
+                  - generic [ref=e864]: 1 已修 · 1 计划
+                - generic [ref=e865]:
+                  - text: "2"
+                  - generic [ref=e866]: "+2"
+                  - text: /6
+                  - generic [ref=e867]: 33%
+            - button "必修 6 已修 · 3 计划 21+9/3070%" [ref=e872] [cursor=pointer]:
+              - generic [ref=e873]:
+                - generic [ref=e874]:
+                  - generic [ref=e875]: 必修
+                  - generic [ref=e876]: 6 已修 · 3 计划
+                - generic [ref=e877]:
+                  - text: "21"
+                  - generic [ref=e878]: "+9"
+                  - text: /30
+                  - generic [ref=e879]: 70%
+        - generic [ref=e884]:
+          - generic [ref=e886]:
+            - heading "专业教育" [level=2] [ref=e889]
+            - generic [ref=e890]:
+              - text: "4"
+              - generic [ref=e891]: / 38
+              - generic [ref=e892]: 11%
+          - generic [ref=e893]: 计划预览 +34 学分
+          - generic [ref=e898]:
+            - button "选修 0 已修 · 9 计划 0+20/200%" [ref=e900] [cursor=pointer]:
+              - generic [ref=e901]:
+                - generic [ref=e902]:
+                  - generic [ref=e903]: 选修
+                  - generic [ref=e904]: 0 已修 · 9 计划
+                - generic [ref=e905]:
+                  - text: "0"
+                  - generic [ref=e906]: "+20"
+                  - text: /20
+                  - generic [ref=e907]: 0%
+            - button "必修 1 已修 · 6 计划 4+14/1822%" [ref=e911] [cursor=pointer]:
+              - generic [ref=e912]:
+                - generic [ref=e913]:
+                  - generic [ref=e914]: 必修
+                  - generic [ref=e915]: 1 已修 · 6 计划
+                - generic [ref=e916]:
+                  - text: "4"
+                  - generic [ref=e917]: "+14"
+                  - text: /18
+                  - generic [ref=e918]: 22%
+        - generic [ref=e923]:
+          - generic [ref=e925]:
+            - heading "素质教育" [level=2] [ref=e928]
+            - generic [ref=e929]:
+              - text: "5"
+              - generic [ref=e930]: / 12
+              - generic [ref=e931]: 42%
+          - generic [ref=e932]: 计划预览 +7 学分
+          - generic [ref=e937]:
+            - button "选修 0 已修 · 1 计划 0+6/60%" [ref=e939] [cursor=pointer]:
+              - generic [ref=e940]:
+                - generic [ref=e941]:
+                  - generic [ref=e942]: 选修
+                  - generic [ref=e943]: 0 已修 · 1 计划
+                - generic [ref=e944]:
+                  - text: "0"
+                  - generic [ref=e945]: "+6"
+                  - text: /6
+                  - generic [ref=e946]: 0%
+            - button "必修 4 已修 · 1 计划 5+1/683%" [ref=e950] [cursor=pointer]:
+              - generic [ref=e951]:
+                - generic [ref=e952]:
+                  - generic [ref=e953]: 必修
+                  - generic [ref=e954]: 4 已修 · 1 计划
+                - generic [ref=e955]:
+                  - text: "5"
+                  - generic [ref=e956]: "+1"
+                  - text: /6
+                  - generic [ref=e957]: 83%
+        - generic [ref=e961]:
+          - generic [ref=e963]:
+            - heading "实践教育" [level=2] [ref=e966]
+            - generic [ref=e967]:
+              - text: "2"
+              - generic [ref=e968]: / 16
+              - generic [ref=e969]: 13%
+          - generic [ref=e970]: 计划预览 +12 学分
+          - generic [ref=e974]:
+            - button "选修 0 已修 · 0 计划 0/00%" [ref=e976] [cursor=pointer]:
+              - generic [ref=e977]:
+                - generic [ref=e978]:
+                  - generic [ref=e979]: 选修
+                  - generic [ref=e980]: 0 已修 · 0 计划
+                - generic [ref=e981]:
+                  - text: 0/0
+                  - generic [ref=e982]: 0%
+            - button "必修 1 已修 · 4 计划 2+12/1613%" [ref=e985] [cursor=pointer]:
+              - generic [ref=e986]:
+                - generic [ref=e987]:
+                  - generic [ref=e988]: 必修
+                  - generic [ref=e989]: 1 已修 · 4 计划
+                - generic [ref=e990]:
+                  - text: "2"
+                  - generic [ref=e991]: "+12"
+                  - text: /16
+                  - generic [ref=e992]: 13%
