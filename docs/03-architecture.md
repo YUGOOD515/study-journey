@@ -20,15 +20,15 @@ SQLite 数据库
 
 ```text
 项目根目录/
-├─ app/                 # 正式运行应用
-│  ├─ server/           # Express 后端
+├─ app/                 # 正式运行应用（wrangler.jsonc）
+│  ├─ server/           # Cloudflare Worker + Hono 后端
 │  └─ src/              # React 前端
-├─ db/                  # SQLite 主库与数据库文件
-├─ migrations/          # 数据库结构迁移 SQL
-├─ scripts/             # Python 数据导入脚本
-├─ seeds/               # 初始化/历史种子数据
+├─ d1/migrations/       # 线上 D1 迁移（以此为准）
+├─ db/                  # 本地 SQLite 导入库（不进 Git）
+├─ migrations/          # 本地导入库建表脚本
+├─ scripts/             # 数据导入、D1 种子生成、部署脚本
 ├─ src_data/            # 学校原始 Excel 文件
-└─ docs/                # 当前正式文档
+└─ docs/                # 文档（archive/ 为历史计划）
 ```
 
 ### 2.1 `app/`
@@ -148,8 +148,6 @@ plan_custom_courses           # 用户自选/自定义课程
 |---|---|---|
 | `app/server/index.ts` 过大 | 改一个接口容易影响其他接口 | 高 |
 | `Timeline.tsx` 过大 | 前端交互难以维护 | 高 |
-| `migrations/` 中 v1 和 v2 混杂 | 新开发者难以判断哪些迁移仍有效 | 中 |
-| `seeds/` 中旧种子数据仍保留 | 与 v2 数据库关系不清楚 | 中 |
 | `db.ts` 启动时自动补字段 | 开发方便，但结构变更不够显式 | 中 |
 | raw 表与 plan 表关联规则散在代码中 | 后续候选课程功能容易重复写逻辑 | 中 |
 

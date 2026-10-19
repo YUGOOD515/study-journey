@@ -35,13 +35,12 @@ cd app && npm run deploy                   # 合并到主干后发布生产
 ```text
 项目根目录/
 ├─ app/          # React 前端 + Worker 后端（wrangler.jsonc）
-├─ d1/           # D1 迁移
+├─ d1/           # 线上 D1 迁移（以此为准）
+├─ migrations/   # 本地 SQLite 导入库的建表脚本（只用于学校数据导入 → 生成 D1 种子）
 ├─ scripts/      # 学校数据导入、D1 种子生成、Cloudflare 部署脚本
-├─ migrations/   # 旧版本地 SQLite 迁移（历史）
-├─ seeds/        # 旧版种子数据（历史）
 ├─ src_data/     # 学校原始 Excel 数据
-├─ fetch/        # 教务数据抓取脚本
-└─ docs/         # 文档
+├─ fetch/        # 教务数据抓取脚本（输出写到 fetch/outputs/，不进 Git）
+└─ docs/         # 文档（docs/archive/ 为历史计划与分析）
 ```
 
 ## 数据与隐私
@@ -63,6 +62,5 @@ cd app && npm run deploy                   # 合并到主干后发布生产
 7. [数据库设计说明](docs/06-database-design.md)
 8. [数据导入与 raw 表说明](docs/07-data-import-and-raw-tables.md)
 9. [API 接口说明](docs/08-api-reference.md)
-10. [维护与重构计划](docs/09-maintenance-and-refactor-plan.md)
-11. [Cloudflare 部署与多用户架构](docs/18-cloudflare-deployment.md) ← 运行、部署、数据以此为准
+10. [Cloudflare 部署与多用户架构](docs/18-cloudflare-deployment.md) ← 运行、部署、数据以此为准
 
