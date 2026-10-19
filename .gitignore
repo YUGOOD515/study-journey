@@ -38,6 +38,5 @@ app/.dev.vars
 # 工具产物
 .playwright-cli/
 *.tsbuildinfo
-fetch/outputs/timetable/
-fetch/outputs/outputs.zip
+fetch/outputs/
 seeds/v2_001_insert_data.sql
