@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { PenLine } from "lucide-react";
 import { api } from "../lib/api";
 import { CATEGORY_STYLE } from "../lib/categoryStyle";
 import { formatCredits, roundCredits } from "../lib/credits";
@@ -15,12 +15,15 @@ import { TERM_LABEL } from "../lib/offeredTerm";
 import { ProgressBar } from "../components/ProgressBar";
 import { InterdisciplinaryFlow, type FlowItem } from "../components/InterdisciplinaryFlow";
 import { myPlanTotalCredits } from "../lib/planTotal";
+import { useEditMode } from "../lib/editMode";
+import { Button, inputClass, notify, PageError, Popover, PopoverContent, PopoverTrigger, Skeleton } from "../components/ui";
 import type {
   Course,
   ProgressResponse,
 } from "../types";
 
 export default function Trail() {
+  const { editing } = useEditMode();
   const [progress, setProgress] = useState<ProgressResponse | null>(null);
   const [planInputs, setPlanInputs] = useState<{
     courses: Course[];
@@ -145,17 +148,17 @@ export default function Trail() {
     [refetchTrailData]
   );
 
+  if (err) return <PageError message={err} onRetry={() => window.location.reload()} />;
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center text-sub">
-        加载中…
-      </div>
-    );
-  }
-  if (err) {
-    return (
-      <div className="min-h-screen flex items-center justify-center text-red-500">
-        加载失败：{err}
+      <div className="mx-auto max-w-6xl px-3 py-6 sm:px-6 sm:py-9">
+        <Skeleton className="h-7 w-24" />
+        <Skeleton className="mt-6 h-[180px] rounded-2xl" />
+        <div className="mt-8 grid gap-4 lg:grid-cols-2">
+          {[0, 1, 2, 3].map((i) => (
+            <Skeleton key={i} className="h-[220px] rounded-2xl" />
+          ))}
+        </div>
       </div>
     );
   }
@@ -176,23 +179,23 @@ export default function Trail() {
         }}
       />
 
-      <div className="relative max-w-5xl mx-auto px-6 md:px-8 py-9">
+      <div className="relative mx-auto max-w-6xl px-3 py-6 sm:px-6 sm:py-9 lg:px-8">
         {/* 标题 */}
         <header className="trail-rise" style={{ animationDelay: "0ms" }}>
-          <div className="text-[10px] tracking-[0.32em] text-sub/60 uppercase mb-1.5">
+          <div className="text-[10px] tracking-[0.32em] text-faint uppercase mb-1.5">
             Study Journey
           </div>
           <div className="flex items-baseline gap-3 flex-wrap">
             <h1 className="text-2xl text-ink tracking-tight">旅迹</h1>
-            <span className="text-[11px] text-sub/80">
-              已修在前 · 计划在后 · 点课程可填成绩
+            <span className="text-[11px] text-sub">
+              {editing ? "已修在前 · 计划在后 · 点课程可填成绩" : "已修在前 · 计划在后 · 查看中，切换到编辑后可填成绩"}
             </span>
           </div>
         </header>
 
         {/* 总览 */}
         <section
-          className="trail-rise mt-6 bg-card border border-sub/15 rounded-2xl p-6 md:p-8"
+          className="trail-rise mt-6 rounded-2xl border border-sub/15 bg-card p-4 sm:p-6 md:p-8"
           style={{
             animationDelay: "70ms",
             boxShadow:
@@ -231,7 +234,7 @@ export default function Trail() {
         {/* 经法管融通学分流向（仅当有该类课程时显示） */}
         {flowItems.length > 0 && (
           <section
-            className="trail-rise mt-5 bg-card border border-sub/15 rounded-2xl p-5 w-fit max-w-full"
+            className="trail-rise mt-5 rounded-2xl border border-sub/15 bg-card p-4 sm:p-5"
             style={{ animationDelay: "130ms" }}
           >
             <div className="mb-3">
@@ -242,13 +245,14 @@ export default function Trail() {
                 />
                 学分流向 · 经法管融通
               </h2>
-              <div className="text-[10px] text-sub/70 mt-1">
-                点击课程或连线切换归属 · 计入「大类平台」上限 {interOverflow?.cap ?? 6} 学分，超出自动计入「通识教育·选修」
+              <div className="text-[10px] text-sub mt-1">
+                {editing ? "点击课程或连线切换归属 · " : ""}计入「大类平台」上限 {interOverflow?.cap ?? 6} 学分，超出自动计入「通识教育·选修」
               </div>
             </div>
             <InterdisciplinaryFlow
               items={flowItems}
               onToggle={toggleItem}
+              disabled={!editing}
               interdisciplinaryTotal={interdisciplinaryTotal}
               electiveTotalByCategory={electiveTotalByCategory}
             />
@@ -263,7 +267,7 @@ export default function Trail() {
         )}
 
         {/* 五大板块 */}
-        <div className="mt-8 mb-3 text-[10px] tracking-[0.28em] text-sub/55 uppercase">
+        <div className="mt-8 mb-3 text-[10px] tracking-[0.28em] text-faint uppercase">
           培养方案 · 五大板块
         </div>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -321,7 +325,7 @@ function Ring({ pct }: { pct: number }) {
           {pct.toFixed(0)}
           <span className="text-sm text-sub align-top ml-0.5">%</span>
         </span>
-        <span className="text-[10px] text-sub/65 mt-1 tracking-[0.2em]">完成</span>
+        <span className="text-[10px] text-faint mt-1 tracking-[0.2em]">完成</span>
       </div>
     </div>
   );
@@ -341,7 +345,7 @@ function Stat({
 }) {
   return (
     <div className="flex flex-col gap-1.5">
-      <div className="flex items-center gap-1.5 text-[10px] text-sub/80">
+      <div className="flex items-center gap-1.5 text-[10px] text-sub">
         {muted ? (
           <span className="inline-block w-1.5 h-1.5 rounded-full border border-sub/45" />
         ) : (
@@ -402,13 +406,13 @@ function CategoryCard({
         </div>
         <div className="text-xs text-sub tabular-nums">
           <span className="text-ink text-lg mr-0.5">{formatCredits(bundle.totalEarned)}</span>
-          <span className="text-sub/55">/ {formatCredits(bundle.totalRequired)}</span>
+          <span className="text-faint">/ {formatCredits(bundle.totalRequired)}</span>
           <span className="ml-2" style={{ color: style.text }}>
             {pct.toFixed(0)}%
           </span>
         </div>
       </div>
-      <div className="mb-3 h-[14px] text-[10px] text-sub/65 tabular-nums">
+      <div className="mb-3 h-[14px] text-[10px] text-faint tabular-nums">
         {preview > 0 ? `计划预览 +${formatCredits(preview)} 学分` : ""}
       </div>
       <ProgressBar
@@ -435,6 +439,8 @@ function CategoryCard({
           return (
             <div key={key}>
               <button
+                type="button"
+                aria-expanded={isOpen}
                 onClick={() => onToggle(key)}
                 className="w-full text-left group/row"
               >
@@ -443,18 +449,18 @@ function CategoryCard({
                     <span className="text-sub group-hover/row:text-ink transition-colors truncate">
                       {row.requirementName}
                     </span>
-                    <span className="text-sub/50 tabular-nums shrink-0">
+                    <span className="text-faint tabular-nums shrink-0">
                       {row.earnedCourses.length} 已修 · {row.plannedCourses.length} 计划
                     </span>
                   </div>
                   <div className="tabular-nums shrink-0" style={{ color: style.text }}>
                     {formatCredits(row.earnedCredits)}
                     {rowPreview > 0 && (
-                      <span className="text-sub/65 ml-0.5">+{formatCredits(rowPreview)}</span>
+                      <span className="text-faint ml-0.5">+{formatCredits(rowPreview)}</span>
                     )}
-                    <span className="text-sub/45 mx-1">/</span>
+                    <span className="text-faint mx-1">/</span>
                     <span className="text-sub">{formatCredits(row.requiredCredits)}</span>
-                    <span className="text-sub/50 ml-1.5 text-[10px]">{rowPct.toFixed(0)}%</span>
+                    <span className="text-faint ml-1.5 text-[10px]">{rowPct.toFixed(0)}%</span>
                   </div>
                 </div>
                 <ProgressBar
@@ -494,7 +500,7 @@ function CourseStatusList({
 }) {
   if (row.earnedCourses.length === 0 && row.plannedCourses.length === 0) {
     return (
-      <div className="mt-2 text-[11px] text-sub/60 italic px-1">
+      <div className="mt-2 text-[11px] text-faint italic px-1">
         暂无已修或计划课程
       </div>
     );
@@ -539,13 +545,13 @@ function CourseGroup({
 }) {
   return (
     <div className="flex items-start gap-2">
-      <div className="w-14 shrink-0 pt-1 text-[10px] text-sub/65">{label}</div>
+      <div className="w-14 shrink-0 pt-1 text-[10px] text-faint">{label}</div>
       <div className="flex flex-wrap gap-1.5">{children}</div>
     </div>
   );
 }
 
-// ── 可点击的"成绩药丸" + popover 输入框 ─────────────────
+// ── 成绩药丸：编辑模式下点击弹出成绩输入（Radix Popover） ─────────────────
 function ScorePill({
   course,
   color,
@@ -555,55 +561,46 @@ function ScorePill({
   color: string;
   onRefetch: () => Promise<void>;
 }) {
-  const btnRef = useRef<HTMLButtonElement>(null);
-  const [anchor, setAnchor] = useState<DOMRect | null>(null);
-
+  const { editing } = useEditMode();
+  const [open, setOpen] = useState(false);
   const score = course.score;
   const hasScore = score != null;
 
-  const open = () => {
-    const r = btnRef.current?.getBoundingClientRect();
-    if (r) setAnchor(r);
-  };
-  const close = () => setAnchor(null);
-
-  return (
-    <>
-      <button
-        ref={btnRef}
-        type="button"
-        onClick={open}
-        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] bg-sub/10 hover:bg-sub/20 transition-colors cursor-pointer"
-        style={{ color }}
-        title={course.source === "official" ? course.courseCode ?? "" : "手动添加"}
+  const pill = (
+    <button
+      type="button"
+      disabled={!editing}
+      className="inline-flex min-h-[26px] items-center gap-1 rounded-md bg-sub/10 px-2 py-0.5 text-[11px] transition-colors enabled:hover:bg-sub/20 disabled:cursor-default data-[state=open]:bg-sub/20"
+      style={{ color }}
+      title={course.source === "official" ? course.courseCode ?? "" : "手动添加"}
+    >
+      {course.source === "manual" && <span className="rounded-sm bg-sub/10 px-1 text-[9px] text-sub">自</span>}
+      <span>{course.courseName}</span>
+      <span className="num text-sub">{formatCredits(course.credits)}</span>
+      <span
+        className="num ml-1 border-l border-sub/25 pl-1.5 text-[10px]"
+        style={{ color: hasScore ? color : "rgb(var(--faint) / 1)" }}
       >
-        {course.source === "manual" && (
-          <span className="px-1 rounded-sm bg-sub/10 text-[9px] text-sub">自</span>
-        )}
-        <span>{course.courseName}</span>
-        <span className="text-sub/70 tabular-nums">{formatCredits(course.credits)}</span>
-        <span
-          className="ml-1 pl-1.5 border-l border-sub/25 tabular-nums text-[10px]"
-          style={{ color: hasScore ? color : "rgb(var(--sub) / 0.55)" }}
-        >
-          {hasScore ? score : "—"}
-        </span>
-      </button>
-      {anchor &&
-        createPortal(
-          <ScorePopover
-            anchor={anchor}
-            course={course}
-            initialScore={score ?? null}
-            onClose={close}
-            onSaved={async () => {
-              await onRefetch();
-              close();
-            }}
-          />,
-          document.body
-        )}
-    </>
+        {hasScore ? score : "—"}
+      </span>
+    </button>
+  );
+
+  if (!editing) return pill;
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>{pill}</PopoverTrigger>
+      <PopoverContent align="start" className="w-[260px] p-3">
+        <ScoreForm
+          course={course}
+          initialScore={score ?? null}
+          onSaved={async () => {
+            await onRefetch();
+            setOpen(false);
+          }}
+        />
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -616,90 +613,63 @@ function PlannedCoursePill({
   color: string;
   onRefetch: () => Promise<void>;
 }) {
-  const btnRef = useRef<HTMLButtonElement>(null);
-  const [anchor, setAnchor] = useState<DOMRect | null>(null);
+  const { editing } = useEditMode();
+  const [open, setOpen] = useState(false);
 
-  const open = () => {
-    const r = btnRef.current?.getBoundingClientRect();
-    if (r) setAnchor(r);
-  };
-  const close = () => setAnchor(null);
+  const pill = (
+    <button
+      type="button"
+      disabled={!editing}
+      className="inline-flex min-h-[26px] items-center gap-1 rounded-md border border-dashed bg-sub/5 px-2 py-0.5 text-[11px] transition-colors enabled:hover:bg-sub/10 disabled:cursor-default data-[state=open]:bg-sub/10"
+      style={{ color, borderColor: "rgb(var(--sub) / 0.25)" }}
+      title={course.source === "official" ? course.courseCode ?? "" : "计划课程"}
+    >
+      <span>{course.courseName}</span>
+      <span className="num text-sub">{formatCredits(course.credits)}</span>
+      <span className="num text-faint">
+        {course.plannedTerm == null ? "待安排" : TERM_LABEL[course.plannedTerm]}
+      </span>
+      {editing && (
+        <span className="ml-1 inline-flex items-center gap-0.5 border-l border-sub/25 pl-1.5 text-[10px] text-sub">
+          <PenLine size={10} />
+          成绩
+        </span>
+      )}
+    </button>
+  );
 
+  if (!editing) return pill;
   return (
-    <>
-      <button
-        ref={btnRef}
-        type="button"
-        onClick={open}
-        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border border-dashed text-[11px] bg-sub/5 hover:bg-sub/10 transition-colors cursor-pointer"
-        style={{ color, borderColor: "rgb(var(--sub) / 0.25)" }}
-        title={course.source === "official" ? course.courseCode ?? "" : "计划课程"}
-      >
-        <span>{course.courseName}</span>
-        <span className="text-sub/70 tabular-nums">{formatCredits(course.credits)}</span>
-        <span className="text-sub/55 tabular-nums">
-          {course.plannedTerm == null ? "待安排" : TERM_LABEL[course.plannedTerm]}
-        </span>
-        <span className="ml-1 pl-1.5 border-l border-sub/25 tabular-nums text-[10px] text-sub/70">
-          填成绩
-        </span>
-      </button>
-      {anchor &&
-        createPortal(
-          <ScorePopover
-            anchor={anchor}
-            course={course}
-            initialScore={null}
-            onClose={close}
-            onSaved={async () => {
-              await onRefetch();
-              close();
-            }}
-          />,
-          document.body
-        )}
-    </>
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>{pill}</PopoverTrigger>
+      <PopoverContent align="start" className="w-[260px] p-3">
+        <ScoreForm
+          course={course}
+          initialScore={null}
+          onSaved={async () => {
+            await onRefetch();
+            setOpen(false);
+          }}
+        />
+      </PopoverContent>
+    </Popover>
   );
 }
 
 type ScoreEditableCourse = EarnedCourse | PlannedCourse;
 
-function ScorePopover({
-  anchor,
+function ScoreForm({
   course,
   initialScore,
-  onClose,
   onSaved,
 }: {
-  anchor: DOMRect;
   course: ScoreEditableCourse;
   initialScore: number | null;
-  onClose: () => void;
   onSaved: () => Promise<void>;
 }) {
-  const [val, setVal] = useState<string>(
-    initialScore != null ? String(initialScore) : ""
-  );
+  const [val, setVal] = useState<string>(initialScore != null ? String(initialScore) : "");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const rootRef = useRef<HTMLDivElement>(null);
-
-  // 点击外部 / Esc 关闭
-  useEffect(() => {
-    const onDocClick = (e: MouseEvent) => {
-      if (!rootRef.current) return;
-      if (!rootRef.current.contains(e.target as Node)) onClose();
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    document.addEventListener("mousedown", onDocClick);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDocClick);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [onClose]);
 
   const persist = async (newScore: number | null) => {
     const isPlanned = isPlannedCourse(course);
@@ -708,7 +678,7 @@ function ScorePopover({
       return;
     }
     if (isPlanned && course.plannedTerm == null) {
-      setErr("「待安排」的课程需先拖到某个学期后才能填成绩");
+      setErr("「待安排」的课程需先安排到某个学期后才能填成绩");
       return;
     }
 
@@ -721,8 +691,7 @@ function ScorePopover({
         }
         const plannedTerm = course.plannedTerm;
         if (course.source === "manual") {
-          const courseNature =
-            course.courseNature === "跨专业" ? "选修" : course.courseNature;
+          const courseNature = course.courseNature === "跨专业" ? "选修" : course.courseNature;
           if (course.origin === "record") {
             if (!course.courseCode) throw new Error("手动课缺少 courseCode");
             await api.patchManual(course.courseCode, { score: newScore });
@@ -751,8 +720,10 @@ function ScorePopover({
         await api.patchOfficial(course.courseCode, { score: newScore });
       }
       await onSaved();
+      notify.success(newScore == null ? `已清空成绩：${course.courseName}` : `已保存成绩：${course.courseName} ${newScore}`);
     } catch (e: any) {
       setErr(String(e?.message ?? e));
+    } finally {
       setBusy(false);
     }
   };
@@ -772,33 +743,14 @@ function ScorePopover({
     void persist(n);
   };
 
-  // 默认放在按钮下方；右侧超出屏幕则左对齐到屏右边距
-  const W = 240;
-  const top = anchor.bottom + 6;
-  const screenW = typeof window !== "undefined" ? window.innerWidth : 1920;
-  const left = Math.min(anchor.left, screenW - W - 12);
-
   return (
-    <div
-      ref={rootRef}
-      className="fixed z-50 bg-card border border-sub/20 rounded-lg p-3"
-      style={{
-        top,
-        left,
-        width: W,
-        boxShadow:
-          "0 14px 36px rgb(var(--shadow-rgb) / var(--shadow-strong)), 0 2px 8px rgb(var(--shadow-rgb) / var(--shadow-soft))",
-      }}
-    >
-      <div className="flex items-baseline justify-between mb-2 gap-2">
-        <div className="text-[12px] text-ink truncate" title={course.courseName}>
+    <div>
+      <div className="mb-2 flex items-baseline justify-between gap-2">
+        <div className="truncate text-xs text-ink" title={course.courseName}>
           {course.courseName}
         </div>
-        <div className="text-[10px] text-sub tabular-nums shrink-0">
-          {formatCredits(course.credits)} 学分
-        </div>
+        <div className="num shrink-0 text-[10px] text-sub">{formatCredits(course.credits)} 学分</div>
       </div>
-
       <form onSubmit={onSubmit} className="flex items-center gap-1.5">
         <input
           type="number"
@@ -811,34 +763,27 @@ function ScorePopover({
           disabled={busy}
           onChange={(e) => setVal(e.target.value)}
           placeholder="0–100"
-          className="flex-1 px-2 py-1 rounded-md bg-bg border border-sub/30 text-ink text-[12px] tabular-nums focus:outline-none focus:border-brand"
+          aria-label="成绩"
+          className={inputClass + " num h-8 flex-1"}
         />
-        <button
-          type="submit"
-          disabled={busy}
-          className="px-2.5 py-1 rounded-md text-[11px] text-white disabled:opacity-50"
-          style={{ backgroundColor: "rgb(var(--brand) / 1)" }}
-        >
-          {busy ? "…" : "保存"}
-        </button>
+        <Button type="submit" size="md" variant="primary" loading={busy}>
+          保存
+        </Button>
       </form>
-
-      <div className="flex items-center justify-between mt-2 min-h-[14px]">
+      <div className="mt-2 flex min-h-[16px] items-center justify-between gap-2">
         {isPlannedCourse(course) ? (
-          <div className="text-[10px] text-sub/70">
-            保存后进入已修进度
-          </div>
+          <div className="text-[10px] text-sub">保存后进入已修进度</div>
         ) : (
           <button
             type="button"
             onClick={() => void persist(null)}
             disabled={busy}
-            className="text-[10px] text-sub hover:text-ink transition-colors disabled:opacity-50"
+            className="text-[10px] text-sub transition-colors hover:text-ink disabled:opacity-50"
           >
             清空分数
           </button>
         )}
-        {err && <div className="text-[10px] text-red-500">{err}</div>}
+        {err && <div className="text-right text-[10px] text-danger">{err}</div>}
       </div>
     </div>
   );
