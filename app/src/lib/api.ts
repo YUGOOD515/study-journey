@@ -75,8 +75,23 @@ async function request<T>(
   return body as T;
 }
 
+// ---- GET 缓存：同一路径并发请求合并，短时间内切换页面复用结果；任何写操作后清空 ----
+const GET_TTL_MS = 30_000;
+const getCache = new Map<string, { at: number; promise: Promise<unknown> }>();
+
+export function invalidateApiCache() {
+  getCache.clear();
+}
+
 function getJSON<T>(path: string): Promise<T> {
-  return request<T>(path);
+  const hit = getCache.get(path);
+  if (hit && Date.now() - hit.at < GET_TTL_MS) return hit.promise as Promise<T>;
+  const promise = request<T>(path).catch((e) => {
+    getCache.delete(path);
+    throw e;
+  });
+  getCache.set(path, { at: Date.now(), promise });
+  return promise;
 }
 
 async function send<T>(
@@ -84,11 +99,16 @@ async function send<T>(
   method: "POST" | "PUT" | "PATCH" | "DELETE",
   body?: unknown
 ): Promise<T> {
-  return request<T>(path, {
-    method,
-    headers: body !== undefined ? { "Content-Type": "application/json" } : undefined,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
+  invalidateApiCache();
+  try {
+    return await request<T>(path, {
+      method,
+      headers: body !== undefined ? { "Content-Type": "application/json" } : undefined,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+  } finally {
+    invalidateApiCache();
+  }
 }
 
 function rememberCourse(course: Course): Course {
