@@ -11,6 +11,7 @@ import type {
   RequirementType,
   StudyStatus,
 } from "../types";
+import { UNAUTHORIZED_EVENT } from "./auth";
 
 type LegacyManualPatch = PlanCoursePatch & { term_number?: number | null };
 
@@ -45,9 +46,18 @@ async function request<T>(
   path: string,
   options: RequestInit = {}
 ): Promise<T> {
-  const r = await fetch(path, options);
+  const r = await fetch(path, { credentials: "same-origin", ...options });
   const text = await r.text();
-  const body = text ? JSON.parse(text) : null;
+  let body: unknown;
+  try {
+    body = text ? JSON.parse(text) : null;
+  } catch {
+    body = null;
+  }
+
+  if (r.status === 401) {
+    window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
+  }
 
   if (!r.ok) {
     const err = body as ApiErrorEnvelope | null;

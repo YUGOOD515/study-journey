@@ -3,6 +3,8 @@ import Timeline from "./pages/Timeline";
 import TermSchedule from "./pages/TermSchedule";
 import Trail from "./pages/Trail";
 import { ThemeToggle } from "./components/ThemeToggle";
+import { AccountMenu } from "./components/AccountMenu";
+import type { Me } from "./lib/auth";
 
 type Tab = "timeline" | "trail" | "term-schedule";
 type MotionDirection = -1 | 1;
@@ -26,7 +28,7 @@ function getTabDirection(from: Tab, to: Tab): MotionDirection {
   return TAB_ORDER[to] >= TAB_ORDER[from] ? 1 : -1;
 }
 
-export default function App() {
+export default function App({ me, onSignedOut }: { me: Me; onSignedOut: () => void }) {
   const [tab, setTab] = useState<Tab>("timeline");
   const [scheduleTerm, setScheduleTerm] = useState(1);
   const [pageTransition, setPageTransition] = useState<PageTransitionState>({
@@ -117,6 +119,7 @@ export default function App() {
         </div>
         <div className="flex items-center gap-1">
           <ThemeToggle />
+          <AccountMenu me={me} onSignedOut={onSignedOut} />
         </div>
       </nav>
 
