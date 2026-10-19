@@ -2,6 +2,9 @@ import { useCallback, useEffect, useState } from "react";
 import App from "./App";
 import AuthPage from "./pages/AuthPage";
 import { authApi, UNAUTHORIZED_EVENT, type AppConfig, type Me } from "./lib/auth";
+import { invalidateApiCache } from "./lib/api";
+import { EditModeProvider } from "./lib/editMode";
+import { ConfirmProvider, PageError, Toaster, TooltipProvider } from "./components/ui";
 
 type State =
   | { status: "loading" }
@@ -14,6 +17,7 @@ export default function Root() {
   const [state, setState] = useState<State>({ status: "loading" });
 
   const refresh = useCallback(async () => {
+    invalidateApiCache();
     try {
       const [config, me] = await Promise.all([authApi.config(), authApi.me()]);
       setState(me ? { status: "signed-in", config, me } : { status: "signed-out", config });
@@ -29,33 +33,45 @@ export default function Root() {
   // 任意接口返回 401（会话过期、在别处退出）时回到登录页
   useEffect(() => {
     const onUnauthorized = () => {
+      invalidateApiCache();
       setState((s) => (s.status === "signed-in" ? { status: "signed-out", config: s.config } : s));
     };
     window.addEventListener(UNAUTHORIZED_EVENT, onUnauthorized);
     return () => window.removeEventListener(UNAUTHORIZED_EVENT, onUnauthorized);
   }, []);
 
+  let content: React.ReactNode;
   if (state.status === "loading") {
-    return <div className="min-h-screen flex items-center justify-center text-xs text-sub">加载中…</div>;
-  }
-  if (state.status === "error") {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center gap-3 text-xs text-sub">
-        <p>加载失败：{state.message}</p>
-        <button onClick={() => void refresh()} className="rounded-md border border-sub/25 px-3 py-1 hover:text-ink">
-          重试
-        </button>
+    content = (
+      <div className="flex min-h-screen items-center justify-center">
+        <span className="h-5 w-5 animate-spin rounded-full border-2 border-sub/20 border-t-brand" aria-label="加载中" />
       </div>
     );
+  } else if (state.status === "error") {
+    content = <PageError message={state.message} onRetry={() => void refresh()} />;
+  } else if (state.status === "signed-out") {
+    content = <AuthPage config={state.config} onSignedIn={refresh} />;
+  } else {
+    content = (
+      <EditModeProvider>
+        <App
+          key={state.me.id}
+          me={state.me}
+          onSignedOut={() => {
+            invalidateApiCache();
+            setState({ status: "signed-out", config: state.config });
+          }}
+        />
+      </EditModeProvider>
+    );
   }
-  if (state.status === "signed-out") {
-    return <AuthPage config={state.config} onSignedIn={refresh} />;
-  }
+
   return (
-    <App
-      key={state.me.id}
-      me={state.me}
-      onSignedOut={() => setState({ status: "signed-out", config: state.config })}
-    />
+    <TooltipProvider delayDuration={400}>
+      <ConfirmProvider>
+        {content}
+        <Toaster />
+      </ConfirmProvider>
+    </TooltipProvider>
   );
 }
