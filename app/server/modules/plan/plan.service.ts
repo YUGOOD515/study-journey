@@ -14,6 +14,9 @@ async function writeTerm(ctx: Ctx, course: Course, term: number | null, status: 
   }
   await CustomCourseRepository.update(ctx, course.courseCode, {
     planned_term: term,
+    // 计划/未修读状态下不存在“实际学期”，与 study-record 口径一致；
+    // 同时修复历史导入数据里残留的 actual_term（否则改计划学期后卡片不动）
+    actual_term: null,
     study_status: status,
   });
 }
