@@ -1,5 +1,7 @@
 # 运行与开发说明
 
+> **注意（多用户版）**：项目已迁移到 Cloudflare Workers + D1，本文中 Express、`DB_PATH`、单用户表的描述已过时，运行、部署与数据库以 [`18-cloudflare-deployment.md`](18-cloudflare-deployment.md) 为准。
+
 ## 1. 环境要求
 
 项目运行需要：
