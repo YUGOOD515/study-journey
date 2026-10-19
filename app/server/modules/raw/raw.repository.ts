@@ -1,4 +1,6 @@
-import { db } from "../../db";
+import type { Ctx } from "../../context";
+
+type SqlParam = string | number | null;
 
 export interface RawBatchRow {
   id: number;
@@ -155,29 +157,21 @@ function whereClause(parts: string[]): string {
 }
 
 export const RawRepository = {
-  baseEnrollmentYear(): number {
-    const row = db.prepare(
-      `SELECT MIN(CAST(substr(academic_year, 1, 4) AS INTEGER)) AS year
-         FROM raw_import_batches`
-    ).get() as unknown as { year: number | null } | undefined;
-    return row?.year ?? 2024;
-  },
-
-  listBatches(filter: { academicYear?: string; semester?: string; phase?: string; limit?: number; offset?: number }): RawBatchRow[] {
+  async listBatches(ctx: Ctx, filter: { academicYear?: string; semester?: string; phase?: string; limit?: number; offset?: number }): Promise<RawBatchRow[]> {
     const parts: string[] = [];
-    const params: unknown[] = [];
+    const params: SqlParam[] = [];
     if (filter.academicYear) { parts.push("academic_year = ?"); params.push(filter.academicYear); }
     if (filter.semester)     { parts.push("semester = ?");      params.push(filter.semester); }
     if (filter.phase)        { parts.push("phase = ?");         params.push(filter.phase); }
-    const stmt = db.prepare(
+    const sql = (
       `SELECT * FROM raw_import_batches${whereClause(parts)} ORDER BY id DESC LIMIT ${Number(filter.limit ?? 200)} OFFSET ${Number(filter.offset ?? 0)}`
     );
-    return stmt.all(...(params as never[])) as unknown as RawBatchRow[];
+    return ctx.db.all<RawBatchRow>(sql, params);
   },
 
-  listSections(filter: { batchId?: number; courseCode?: string; keyword?: string; teacher?: string; campus?: string; limit?: number; offset?: number }): RawSectionRow[] {
+  async listSections(ctx: Ctx, filter: { batchId?: number; courseCode?: string; keyword?: string; teacher?: string; campus?: string; limit?: number; offset?: number }): Promise<RawSectionRow[]> {
     const parts: string[] = [];
-    const params: unknown[] = [];
+    const params: SqlParam[] = [];
     if (filter.batchId !== undefined) { parts.push("s.batch_id = ?"); params.push(filter.batchId); }
     if (filter.courseCode) { parts.push("s.course_code = ?"); params.push(filter.courseCode); }
     if (filter.keyword) {
@@ -187,7 +181,7 @@ export const RawRepository = {
     }
     if (filter.teacher) { parts.push("s.teacher LIKE ?"); params.push(`%${filter.teacher}%`); }
     if (filter.campus)  { parts.push("s.campus = ?");      params.push(filter.campus); }
-    const stmt = db.prepare(
+    const sql = (
       `SELECT s.*, b.academic_year, b.semester, b.phase
          FROM raw_term_course_sections s
          JOIN raw_import_batches b ON b.id = s.batch_id
@@ -195,12 +189,12 @@ export const RawRepository = {
        ORDER BY s.batch_id DESC, s.course_code, s.section_code
        LIMIT ${Number(filter.limit ?? 200)} OFFSET ${Number(filter.offset ?? 0)}`
     );
-    return stmt.all(...(params as never[])) as unknown as RawSectionRow[];
+    return ctx.db.all<RawSectionRow>(sql, params);
   },
 
-  listAddedCourses(filter: { batchId?: number; courseCode?: string; keyword?: string; limit?: number; offset?: number }): RawAddedRow[] {
+  async listAddedCourses(ctx: Ctx, filter: { batchId?: number; courseCode?: string; keyword?: string; limit?: number; offset?: number }): Promise<RawAddedRow[]> {
     const parts: string[] = [];
-    const params: unknown[] = [];
+    const params: SqlParam[] = [];
     if (filter.batchId !== undefined) { parts.push("a.batch_id = ?"); params.push(filter.batchId); }
     if (filter.courseCode) { parts.push("a.course_code = ?"); params.push(filter.courseCode); }
     if (filter.keyword) {
@@ -208,7 +202,7 @@ export const RawRepository = {
       const k = `%${filter.keyword}%`;
       params.push(k, k);
     }
-    const stmt = db.prepare(
+    const sql = (
       `SELECT a.*, b.academic_year, b.semester, b.phase
          FROM raw_term_added_courses a
          JOIN raw_import_batches b ON b.id = a.batch_id
@@ -216,26 +210,26 @@ export const RawRepository = {
        ORDER BY a.batch_id DESC, a.course_code
        LIMIT ${Number(filter.limit ?? 200)} OFFSET ${Number(filter.offset ?? 0)}`
     );
-    return stmt.all(...(params as never[])) as unknown as RawAddedRow[];
+    return ctx.db.all<RawAddedRow>(sql, params);
   },
 
-  listCatalogPreviews(filter: { academicYear?: string; semester?: string; courseCode?: string; module?: string; limit?: number; offset?: number }): RawCatalogPreviewRow[] {
+  async listCatalogPreviews(ctx: Ctx, filter: { academicYear?: string; semester?: string; courseCode?: string; module?: string; limit?: number; offset?: number }): Promise<RawCatalogPreviewRow[]> {
     const parts: string[] = [];
-    const params: unknown[] = [];
+    const params: SqlParam[] = [];
     if (filter.academicYear) { parts.push("academic_year = ?"); params.push(filter.academicYear); }
     if (filter.semester)     { parts.push("semester = ?");      params.push(filter.semester); }
     if (filter.courseCode)   { parts.push("course_code = ?");   params.push(filter.courseCode); }
     if (filter.module)       { parts.push("(module_2024 = ? OR module_2022 = ?)"); params.push(filter.module, filter.module); }
-    const stmt = db.prepare(
+    const sql = (
       `SELECT * FROM raw_course_catalog_previews
        ${whereClause(parts)}
        ORDER BY academic_year DESC, semester, course_code
        LIMIT ${Number(filter.limit ?? 200)} OFFSET ${Number(filter.offset ?? 0)}`
     );
-    return stmt.all(...(params as never[])) as unknown as RawCatalogPreviewRow[];
+    return ctx.db.all<RawCatalogPreviewRow>(sql, params);
   },
 
-  listActualCourseMeetings(filter: {
+  async listActualCourseMeetings(ctx: Ctx, filter: {
     term?: number;
     week?: number;
     weekday?: number;
@@ -243,9 +237,10 @@ export const RawRepository = {
     onlyMyPlan?: boolean;
     limit?: number;
     offset?: number;
-  }): RawActualCourseMeetingRow[] {
+  }): Promise<RawActualCourseMeetingRow[]> {
     const parts: string[] = [];
-    const params: unknown[] = [];
+    parts.push("m.user_id = ?");
+    const params: SqlParam[] = [ctx.userId];
     if (filter.term !== undefined) { parts.push("m.term = ?"); params.push(filter.term); }
     if (filter.week !== undefined) {
       parts.push("m.start_week <= ? AND m.end_week >= ?");
@@ -257,37 +252,39 @@ export const RawRepository = {
       parts.push(`EXISTS (
         SELECT 1
           FROM my_plan_courses p
-         WHERE p.is_deleted = 0
+         WHERE p.user_id = m.user_id
+           AND p.is_deleted = 0
            AND p.course_code = m.course_code
            AND (p.section_code IS NULL OR p.section_code = m.section_code)
            AND (p.actual_term = m.term OR p.planned_term = m.term)
       )`);
     }
-    const stmt = db.prepare(
+    const sql = (
       `SELECT m.*, b.academic_year, b.semester, b.phase
-         FROM raw_actual_course_meetings m
+         FROM user_course_meetings m
          JOIN raw_import_batches b ON b.id = m.batch_id
        ${whereClause(parts)}
        ORDER BY m.term, m.weekday, m.start_period, m.end_period, m.course_code, m.section_code, m.meeting_no
        LIMIT ${Number(filter.limit ?? 500)} OFFSET ${Number(filter.offset ?? 0)}`
     );
-    return stmt.all(...(params as never[])) as unknown as RawActualCourseMeetingRow[];
+    return ctx.db.all<RawActualCourseMeetingRow>(sql, params);
   },
 
-  searchCourses(filter: {
+  async searchCourses(ctx: Ctx, filter: {
     keyword?: string;
     term?: number;
     source?: "all" | RawCourseSearchSource;
     limit?: number;
     offset?: number;
-  }): RawCourseSearchRow[] {
-    const baseYear = this.baseEnrollmentYear();
+  }): Promise<RawCourseSearchRow[]> {
+    const baseYear = Math.trunc(Number(ctx.enrollmentYear));
     const limit = Math.max(1, Math.min(Number(filter.limit ?? 40), 200));
     const offset = Math.max(0, Number(filter.offset ?? 0));
     const source = filter.source ?? "all";
     const rawTermExpr = `((CAST(substr(b.academic_year, 1, 4) AS INTEGER) - ${baseYear}) * 2 + CASE b.semester WHEN 'fall' THEN 1 ELSE 2 END)`;
-    const sectionParams: unknown[] = [];
-    const addedParams: unknown[] = [];
+    // SELECT 列表里的 exists_in_custom 子查询先于 WHERE 绑定参数。
+    const sectionParams: SqlParam[] = [ctx.userId];
+    const addedParams: SqlParam[] = [ctx.userId];
     const sectionWhere: string[] = [];
     const addedWhere: string[] = [];
 
@@ -348,7 +345,7 @@ export const RawRepository = {
         NULL AS remark1,
         NULL AS remark2,
         EXISTS(SELECT 1 FROM plan_program_courses p WHERE p.course_code = s.course_code OR TRIM(p.course_name) = TRIM(s.course_name)) AS exists_in_program,
-        EXISTS(SELECT 1 FROM my_plan_courses c WHERE c.is_deleted = 0 AND (c.course_code = s.course_code OR TRIM(c.course_name) = TRIM(s.course_name)) AND (c.planned_term = ${rawTermExpr} OR c.actual_term = ${rawTermExpr})) AS exists_in_custom
+        EXISTS(SELECT 1 FROM my_plan_courses c WHERE c.user_id = ? AND c.is_deleted = 0 AND (c.course_code = s.course_code OR TRIM(c.course_name) = TRIM(s.course_name)) AND (c.planned_term = ${rawTermExpr} OR c.actual_term = ${rawTermExpr})) AS exists_in_custom
       FROM raw_term_course_sections s
       JOIN raw_import_batches b ON b.id = s.batch_id
       ${whereClause(sectionWhere)}
@@ -383,14 +380,14 @@ export const RawRepository = {
         a.remark1,
         a.remark2,
         EXISTS(SELECT 1 FROM plan_program_courses p WHERE p.course_code = a.course_code OR TRIM(p.course_name) = TRIM(a.course_name)) AS exists_in_program,
-        EXISTS(SELECT 1 FROM my_plan_courses c WHERE c.is_deleted = 0 AND (c.course_code = a.course_code OR TRIM(c.course_name) = TRIM(a.course_name)) AND (c.planned_term = ${rawTermExpr} OR c.actual_term = ${rawTermExpr})) AS exists_in_custom
+        EXISTS(SELECT 1 FROM my_plan_courses c WHERE c.user_id = ? AND c.is_deleted = 0 AND (c.course_code = a.course_code OR TRIM(c.course_name) = TRIM(a.course_name)) AND (c.planned_term = ${rawTermExpr} OR c.actual_term = ${rawTermExpr})) AS exists_in_custom
       FROM raw_term_added_courses a
       JOIN raw_import_batches b ON b.id = a.batch_id
       ${whereClause(addedWhere)}
     `;
 
     let sql: string;
-    let params: unknown[];
+    let params: SqlParam[];
     if (source === "section") {
       sql = sectionSql;
       params = sectionParams;
@@ -402,7 +399,7 @@ export const RawRepository = {
       params = [...sectionParams, ...addedParams];
     }
 
-    const stmt = db.prepare(
+    const finalSql = (
       `WITH searched AS (${sql})
        SELECT * FROM searched
        ORDER BY
@@ -414,18 +411,18 @@ export const RawRepository = {
          source_row
        LIMIT ${limit} OFFSET ${offset}`
     );
-    return stmt.all(...(params as never[])) as unknown as RawCourseSearchRow[];
+    return ctx.db.all<RawCourseSearchRow>(finalSql, params);
   },
 
-  findSearchRowForAdd(input: {
+  async findSearchRowForAdd(ctx: Ctx, input: {
     sourceType: RawCourseSearchSource;
     batchId: number;
     sourceRow: number;
     courseCode: string;
     sectionCode?: string | null;
-  }): RawCourseSearchRow | null {
+  }): Promise<RawCourseSearchRow | null> {
     const source = input.sourceType;
-    const stmt = db.prepare(
+    const sql = (
       source === "section"
         ? `WITH row AS (
              SELECT s.*, b.academic_year, b.semester, b.phase
@@ -440,7 +437,7 @@ export const RawRepository = {
              department, course_attribute, enrollment_restriction, combined_class_name, group_name,
              NULL AS learning_platform, NULL AS module_2022, NULL AS module_2024, NULL AS remark1, NULL AS remark2,
              EXISTS(SELECT 1 FROM plan_program_courses p WHERE p.course_code = r.course_code) AS exists_in_program,
-             EXISTS(SELECT 1 FROM my_plan_courses c WHERE c.course_code = r.course_code) AS exists_in_custom
+             EXISTS(SELECT 1 FROM my_plan_courses c WHERE c.user_id = ? AND c.course_code = r.course_code) AS exists_in_custom
             FROM row r`
         : `WITH row AS (
              SELECT a.*, b.academic_year, b.semester, b.phase
@@ -456,73 +453,76 @@ export const RawRepository = {
              enrollment_restriction, NULL AS combined_class_name, NULL AS group_name,
              learning_platform, module_2022, module_2024, remark1, remark2,
              EXISTS(SELECT 1 FROM plan_program_courses p WHERE p.course_code = r.course_code) AS exists_in_program,
-             EXISTS(SELECT 1 FROM my_plan_courses c WHERE c.course_code = r.course_code) AS exists_in_custom
+             EXISTS(SELECT 1 FROM my_plan_courses c WHERE c.user_id = ? AND c.course_code = r.course_code) AS exists_in_custom
             FROM row r`
     );
-    const params = source === "section"
-      ? [input.batchId, input.sourceRow, input.courseCode, input.sectionCode]
-      : [input.batchId, input.sourceRow, input.courseCode];
-    const row = stmt.get(...(params as never[])) as unknown as RawCourseSearchRow | undefined;
-    return row ?? null;
+    // CTE 的 WHERE 参数在前，exists_in_custom 的 user_id 在后。
+    const params: SqlParam[] = source === "section"
+      ? [input.batchId, input.sourceRow, input.courseCode, input.sectionCode ?? null, ctx.userId]
+      : [input.batchId, input.sourceRow, input.courseCode, ctx.userId];
+    return ctx.db.first<RawCourseSearchRow>(sql, params);
   },
 
-  insertActualCourseMeetings(rows: RawActualMeetingInsertRow[]): number {
-    if (rows.length === 0) return 0;
-    const stmt = db.prepare(
-      `INSERT INTO raw_actual_course_meetings(
-          batch_id, term, course_code, section_code, meeting_no,
-          start_week, end_week, weekday, start_period, end_period, location_text,
-          course_name, teacher, class_group, course_nature, course_attribute,
-          class_time_raw, location_raw, source_sheet, source_row
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    );
+  /** 写入当前用户的课表片段；在 ctx.db.atomic 内时随批次提交。 */
+  async insertActualCourseMeetings(ctx: Ctx, rows: RawActualMeetingInsertRow[]): Promise<number> {
     let inserted = 0;
     for (const row of rows) {
-      const result = stmt.run(
-        row.batch_id,
-        row.term,
-        row.course_code,
-        row.section_code,
-        row.meeting_no,
-        row.start_week,
-        row.end_week,
-        row.weekday,
-        row.start_period,
-        row.end_period,
-        row.location_text,
-        row.course_name,
-        row.teacher,
-        row.class_group,
-        row.course_nature,
-        row.course_attribute,
-        row.class_time_raw,
-        row.location_raw,
-        row.source_sheet,
-        row.source_row
-      ) as unknown as { changes?: number };
-      inserted += Number(result.changes ?? 0);
+      inserted += await ctx.db.run(
+        `INSERT OR IGNORE INTO user_course_meetings(
+            user_id, batch_id, term, course_code, section_code, meeting_no,
+            start_week, end_week, weekday, start_period, end_period, location_text,
+            course_name, teacher, class_group, course_nature, course_attribute,
+            class_time_raw, location_raw, source_sheet, source_row
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          ctx.userId,
+          row.batch_id,
+          row.term,
+          row.course_code,
+          row.section_code,
+          row.meeting_no,
+          row.start_week,
+          row.end_week,
+          row.weekday,
+          row.start_period,
+          row.end_period,
+          row.location_text,
+          row.course_name,
+          row.teacher,
+          row.class_group,
+          row.course_nature,
+          row.course_attribute,
+          row.class_time_raw,
+          row.location_raw,
+          row.source_sheet,
+          row.source_row,
+        ]
+      );
     }
     return inserted;
   },
 
-  actualMeetingsExist(filter: { term: number; courseCode: string; sectionCode: string }): boolean {
-    const row = db.prepare(
-      `SELECT 1
-         FROM raw_actual_course_meetings
-        WHERE term = ? AND course_code = ? AND section_code = ?
-        LIMIT 1`
-    ).get(filter.term, filter.courseCode, filter.sectionCode);
+  async actualMeetingsExist(ctx: Ctx, filter: { term: number; courseCode: string; sectionCode: string }): Promise<boolean> {
+    const row = await ctx.db.first(
+      `SELECT 1 AS hit
+         FROM user_course_meetings
+        WHERE user_id = ? AND term = ? AND course_code = ? AND section_code = ?
+        LIMIT 1`,
+      [ctx.userId, filter.term, filter.courseCode, filter.sectionCode]
+    );
     return Boolean(row);
   },
 
-  findOpeningsByCode(code: string): {
+  async findOpeningsByCode(ctx: Ctx, code: string): Promise<{
     sections: RawSectionRow[];
     addedCourses: RawAddedRow[];
     catalogPreviews: RawCatalogPreviewRow[];
-  } {
-    const sections = this.listSections({ courseCode: code, limit: 1000 });
-    const addedCourses = this.listAddedCourses({ courseCode: code, limit: 1000 });
-    const catalogPreviews = this.listCatalogPreviews({ courseCode: code, limit: 1000 });
+  }> {
+    const [sections, addedCourses, catalogPreviews] = await Promise.all([
+      this.listSections(ctx, { courseCode: code, limit: 1000 }),
+      this.listAddedCourses(ctx, { courseCode: code, limit: 1000 }),
+      this.listCatalogPreviews(ctx, { courseCode: code, limit: 1000 }),
+    ]);
     return { sections, addedCourses, catalogPreviews };
   },
 };

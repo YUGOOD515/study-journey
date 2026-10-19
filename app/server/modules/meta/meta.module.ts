@@ -1,12 +1,7 @@
-import { Router } from "express";
-import { handle, ok } from "../../lib/response";
+import type { App } from "../../app-types";
+import { ok } from "../../lib/response";
 import { MetaService } from "./meta.service";
 
-export const metaRouter = Router();
-
-metaRouter.get(
-  "/categories",
-  handle((_req, res) => {
-    ok(res, MetaService.enums());
-  })
-);
+export function registerMetaRoutes(app: App) {
+  app.get("/meta/categories", (c) => ok(c, MetaService.enums()));
+}

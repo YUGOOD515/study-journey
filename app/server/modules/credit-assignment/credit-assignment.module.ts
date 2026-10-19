@@ -1,21 +1,13 @@
-import { Router } from "express";
-import { handle, ok } from "../../lib/response";
+import type { App } from "../../app-types";
+import { ok, readJson } from "../../lib/response";
 import { CreditAssignmentService } from "./credit-assignment.service";
 
-export const creditAssignmentRouter = Router({ mergeParams: true });
+export function registerCreditAssignmentRoutes(app: App) {
+  app.post("/courses/:code/credit-assignment", async (c) => {
+    return ok(c, await CreditAssignmentService.set(c.var.ctx, c.req.param("code"), await readJson(c)));
+  });
 
-creditAssignmentRouter.post(
-  "/:code/credit-assignment",
-  handle((req, res) => {
-    const data = CreditAssignmentService.set(String(req.params.code), req.body);
-    ok(res, data);
-  })
-);
-
-creditAssignmentRouter.delete(
-  "/:code/credit-assignment",
-  handle((req, res) => {
-    const data = CreditAssignmentService.clear(String(req.params.code));
-    ok(res, data);
-  })
-);
+  app.delete("/courses/:code/credit-assignment", async (c) => {
+    return ok(c, await CreditAssignmentService.clear(c.var.ctx, c.req.param("code")));
+  });
+}

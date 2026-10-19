@@ -1,25 +1,21 @@
-import { Router } from "express";
-import { handle, ok } from "../../lib/response";
+import type { App } from "../../app-types";
+import { ok, readJson } from "../../lib/response";
 import { RequirementService } from "./requirement.service";
 
-export const requirementRouter = Router();
+export function registerRequirementRoutes(app: App) {
+  app.get("/requirements", async (c) => {
+    const data = await RequirementService.list(c.var.ctx);
+    return ok(c, data, { total: data.length });
+  });
 
-requirementRouter.get(
-  "/",
-  handle((_req, res) => {
-    const data = RequirementService.list();
-    ok(res, data, { total: data.length });
-  })
-);
-
-requirementRouter.put(
-  "/:categoryCode/:requirementTypeCode",
-  handle((req, res) => {
-    const updated = RequirementService.updateThreshold(
-      String(req.params.categoryCode),
-      String(req.params.requirementTypeCode),
-      req.body
+  /** 修改的是当前用户自己的学分要求，不影响其他用户。 */
+  app.put("/requirements/:categoryCode/:requirementTypeCode", async (c) => {
+    const updated = await RequirementService.updateThreshold(
+      c.var.ctx,
+      c.req.param("categoryCode"),
+      c.req.param("requirementTypeCode"),
+      await readJson(c)
     );
-    ok(res, updated);
-  })
-);
+    return ok(c, updated);
+  });
+}
