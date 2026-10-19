@@ -197,11 +197,11 @@ export function TermColumn({
     >
       <header className="mb-2 flex items-start justify-between gap-1 px-0.5">
         <div className="min-w-0">
-          <div className="num flex h-4 items-center gap-1.5 text-[10px] leading-none text-sub">
-            {personal && <span className="h-1.5 w-1.5 rounded-full bg-brand" aria-hidden />}
-            学期 {term}
+          <div className="num flex h-4 items-center gap-1.5 whitespace-nowrap text-[10px] leading-none text-sub">
+            {personal && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-brand" aria-hidden />}
+            <span className="shrink-0">学期 {term}</span>
             {isCurrent && (
-              <Badge tone="brand" className="h-4 px-1 text-[9px]">
+              <Badge tone="brand" className="h-4 shrink-0 px-1 text-[9px]">
                 本学期
               </Badge>
             )}
