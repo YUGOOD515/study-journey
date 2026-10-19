@@ -1,0 +1,32 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "study-journey",
+  "main": "server/worker.ts",
+  "compatibility_date": "2026-05-01",
+  "compatibility_flags": ["nodejs_compat"],
+  // 先 vite build，再由 Worker 托管 dist；/api/* 先进入 Worker，其余走静态资源（SPA 回退到 index.html）。
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "study-journey",
+      // 由 `wrangler d1 create study-journey` 创建；换账号部署时替换成自己的 database_id。
+      "database_id": "3a15253e-b327-45af-a889-4363bc736a1e",
+      "migrations_dir": "../d1/migrations"
+    }
+  ],
+  "vars": {
+    // Turnstile 站点密钥是公开值；对应的 TURNSTILE_SECRET_KEY 用 `wrangler secret put` 设置。
+    "TURNSTILE_SITE_KEY": "0x4AAAAAAFbeiAU3pjHWERzA",
+    "DEFAULT_ENROLLMENT_YEAR": "2024",
+    "REQUIRE_EMAIL_VERIFICATION": "false"
+  },
+  "observability": { "enabled": true },
+  "preview_urls": true,
+  "workers_dev": true
+}
