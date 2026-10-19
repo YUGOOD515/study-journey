@@ -115,6 +115,7 @@ async function writeTerm(ctx: Ctx, course: Course, term: number | null) {
   assertCustom(course);
   await CustomCourseRepository.update(ctx, course.courseCode, {
     term_number: term,
+    actual_term: null,
     study_status: term === null ? "未修读" : "计划修读",
   });
 }

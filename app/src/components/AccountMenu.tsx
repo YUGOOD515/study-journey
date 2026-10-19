@@ -1,245 +1,235 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
+import { GraduationCap, KeyRound, LogOut, Settings, Trash2 } from "lucide-react";
 import { authApi, type Me } from "../lib/auth";
+import {
+  Button,
+  Dialog,
+  Field,
+  Menu,
+  MenuContent,
+  MenuItem,
+  MenuLabel,
+  MenuSeparator,
+  MenuTrigger,
+  notify,
+  PasswordInput,
+  Select,
+  useConfirm,
+} from "./ui";
 
-type Panel = "main" | "password" | "delete";
+type Section = "profile" | "password" | "danger";
 
 export function AccountMenu({ me, onSignedOut }: { me: Me; onSignedOut: () => void }) {
-  const [open, setOpen] = useState(false);
-  const [panel, setPanel] = useState<Panel>("main");
-  const [year, setYear] = useState(me.enrollmentYear);
+  const [settings, setSettings] = useState<Section | null>(null);
+
+  const signOut = async () => {
+    try {
+      await authApi.signOut();
+      onSignedOut();
+    } catch (err) {
+      notify.error(err, "退出失败");
+    }
+  };
+
+  return (
+    <>
+      <Menu>
+        <MenuTrigger asChild>
+          <button
+            aria-label={`账号：${me.email}`}
+            title={me.email}
+            className="flex h-7 w-7 items-center justify-center rounded-full bg-brand/15 text-xs text-brand transition-colors hover:bg-brand/25 data-[state=open]:bg-brand/25"
+          >
+            {(me.email[0] ?? "?").toUpperCase()}
+          </button>
+        </MenuTrigger>
+        <MenuContent className="w-60">
+          <MenuLabel className="pb-0">当前账号</MenuLabel>
+          <div className="truncate px-2 pb-1.5 text-xs text-ink">{me.email}</div>
+          <div className="px-2 pb-1.5 text-[11px] text-sub">{me.enrollmentYear} 级</div>
+          <MenuSeparator />
+          <MenuItem icon={<GraduationCap className="h-3.5 w-3.5" />} onSelect={() => setSettings("profile")}>
+            入学年份
+          </MenuItem>
+          <MenuItem icon={<KeyRound className="h-3.5 w-3.5" />} onSelect={() => setSettings("password")}>
+            修改密码
+          </MenuItem>
+          <MenuItem icon={<Settings className="h-3.5 w-3.5" />} onSelect={() => setSettings("danger")}>
+            账号与数据
+          </MenuItem>
+          <MenuSeparator />
+          <MenuItem icon={<LogOut className="h-3.5 w-3.5" />} onSelect={() => void signOut()}>
+            退出登录
+          </MenuItem>
+        </MenuContent>
+      </Menu>
+
+      <AccountSettingsDialog
+        me={me}
+        section={settings}
+        onSectionChange={setSettings}
+        onSignedOut={onSignedOut}
+      />
+    </>
+  );
+}
+
+function AccountSettingsDialog({
+  me,
+  section,
+  onSectionChange,
+  onSignedOut,
+}: {
+  me: Me;
+  section: Section | null;
+  onSectionChange: (s: Section | null) => void;
+  onSignedOut: () => void;
+}) {
+  const confirm = useConfirm();
+  const [year, setYear] = useState(String(me.enrollmentYear));
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState<{ kind: "error" | "ok"; text: string } | null>(null);
-  const root = useRef<HTMLDivElement>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      if (root.current && !root.current.contains(e.target as Node)) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
-    document.addEventListener("mousedown", onDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
-
-  const switchPanel = (p: Panel) => {
-    setPanel(p);
+  const close = () => {
+    onSectionChange(null);
     setCurrent("");
     setNext("");
-    setMessage(null);
+    setError(null);
+    setYear(String(me.enrollmentYear));
   };
 
   const run = async (fn: () => Promise<void>) => {
     setBusy(true);
-    setMessage(null);
+    setError(null);
     try {
       await fn();
     } catch (err) {
-      setMessage({ kind: "error", text: err instanceof Error ? err.message : String(err) });
+      setError(err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(false);
     }
   };
 
-  const saveYear = () =>
-    run(async () => {
-      await authApi.updateMe({ enrollmentYear: year });
+  const thisYear = new Date().getFullYear();
+  const years = Array.from({ length: 12 }, (_, i) => thisYear + 1 - i);
+  if (!years.includes(me.enrollmentYear)) years.push(me.enrollmentYear);
+
+  const saveYear = (e: FormEvent) => {
+    e.preventDefault();
+    void run(async () => {
+      await authApi.updateMe({ enrollmentYear: Number(year) });
       window.location.reload();
     });
+  };
 
   const changePassword = (e: FormEvent) => {
     e.preventDefault();
     void run(async () => {
       await authApi.changePassword(current, next);
-      switchPanel("main");
-      setMessage({ kind: "ok", text: "密码已修改，其他设备已退出登录" });
+      notify.success("密码已修改", "其他设备上的登录已失效");
+      close();
     });
   };
 
-  const deleteAccount = (e: FormEvent) => {
+  const deleteAccount = async (e: FormEvent) => {
     e.preventDefault();
-    if (!window.confirm("注销后，你的计划、成绩和课表将被永久删除，无法恢复。确定注销吗？")) return;
-    void run(async () => {
+    const ok = await confirm({
+      title: "永久注销账号？",
+      description: "账号以及全部计划、成绩、课表会被立即删除，无法恢复。",
+      tone: "danger",
+      confirmLabel: "永久注销",
+      requireText: me.email,
+    });
+    if (!ok) return;
+    await run(async () => {
       await authApi.deleteAccount(current);
       onSignedOut();
     });
   };
 
-  const signOut = () =>
-    run(async () => {
-      await authApi.signOut();
-      onSignedOut();
-    });
-
-  const thisYear = new Date().getFullYear();
-  const years = Array.from({ length: 12 }, (_, i) => thisYear + 1 - i);
-  if (!years.includes(me.enrollmentYear)) years.push(me.enrollmentYear);
+  const titles: Record<Section, string> = {
+    profile: "入学年份",
+    password: "修改密码",
+    danger: "账号与数据",
+  };
 
   return (
-    <div ref={root} className="relative">
-      <button
-        onClick={() => {
-          setOpen((v) => !v);
-          switchPanel("main");
-        }}
-        title={me.email}
-        className="h-7 w-7 rounded-full bg-brand/15 text-brand text-xs flex items-center justify-center hover:bg-brand/25 transition-colors"
-      >
-        {(me.email[0] ?? "?").toUpperCase()}
-      </button>
-
-      {open && (
-        <div className="absolute right-0 mt-2 w-72 rounded-lg border border-sub/15 bg-card p-4 shadow-lg space-y-3 text-xs">
-          <div>
-            <div className="text-sub">当前账号</div>
-            <div className="text-ink truncate">{me.email}</div>
-          </div>
-
-          {panel === "main" && (
-            <>
-              <div className="space-y-1">
-                <div className="text-sub">入学年份（第 1 学期 = 该年秋季）</div>
-                <div className="flex gap-2">
-                  <select
-                    value={year}
-                    onChange={(e) => setYear(Number(e.target.value))}
-                    className="flex-1 rounded-md border border-sub/25 bg-transparent px-2 py-1 text-ink"
-                  >
-                    {years.map((y) => (
-                      <option key={y} value={y}>
-                        {y} 级
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    disabled={busy || year === me.enrollmentYear}
-                    onClick={saveYear}
-                    className="rounded-md bg-brand px-2.5 py-1 text-white disabled:opacity-40"
-                  >
-                    保存
-                  </button>
-                </div>
-              </div>
-              <div className="flex flex-col gap-1 border-t border-sub/10 pt-2">
-                <MenuButton onClick={() => switchPanel("password")}>修改密码</MenuButton>
-                <MenuButton onClick={signOut} disabled={busy}>退出登录</MenuButton>
-                <MenuButton danger onClick={() => switchPanel("delete")}>注销账号</MenuButton>
-              </div>
-            </>
-          )}
-
-          {panel === "password" && (
-            <form onSubmit={changePassword} className="space-y-2">
-              <PasswordInput label="当前密码" value={current} onChange={setCurrent} autoComplete="current-password" />
-              <PasswordInput label="新密码（至少 8 位）" value={next} onChange={setNext} autoComplete="new-password" />
-              <FormButtons busy={busy} submitText="修改密码" onCancel={() => switchPanel("main")} />
-            </form>
-          )}
-
-          {panel === "delete" && (
-            <form onSubmit={deleteAccount} className="space-y-2">
-              <p className="text-red-600 dark:text-red-400">
-                注销会永久删除账号及全部个人数据（计划、成绩、课表）。
-              </p>
-              <PasswordInput label="输入密码确认" value={current} onChange={setCurrent} autoComplete="current-password" />
-              <FormButtons busy={busy} submitText="永久注销" danger onCancel={() => switchPanel("main")} />
-            </form>
-          )}
-
-          {message && (
-            <p className={message.kind === "error" ? "text-red-600 dark:text-red-400" : "text-emerald-700 dark:text-emerald-400"}>
-              {message.text}
-            </p>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function MenuButton({
-  onClick,
-  children,
-  danger,
-  disabled,
-}: {
-  onClick: () => void;
-  children: React.ReactNode;
-  danger?: boolean;
-  disabled?: boolean;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      className={
-        "text-left rounded-md px-2 py-1.5 transition-colors disabled:opacity-50 " +
-        (danger ? "text-red-600 hover:bg-red-500/10 dark:text-red-400" : "text-ink hover:bg-sub/10")
-      }
+    <Dialog
+      open={section != null}
+      onOpenChange={(open) => !open && close()}
+      title={section ? titles[section] : ""}
+      description={me.email}
+      size="sm"
     >
-      {children}
-    </button>
-  );
-}
+      {section === "profile" && (
+        <form onSubmit={saveYear} className="space-y-3">
+          <Field label="入学年份" hint="第 1 学期 = 该年秋季；用于推算当前学期和课表。">
+            <Select
+              value={year}
+              onChange={setYear}
+              ariaLabel="入学年份"
+              options={years.map((y) => ({ value: String(y), label: `${y} 级` }))}
+            />
+          </Field>
+          {error && <p className="text-[11px] text-danger">{error}</p>}
+          <div className="flex justify-end gap-2 pt-1">
+            <Button variant="ghost" onClick={close}>
+              取消
+            </Button>
+            <Button type="submit" variant="primary" loading={busy} disabled={year === String(me.enrollmentYear)}>
+              保存
+            </Button>
+          </div>
+        </form>
+      )}
 
-function PasswordInput({
-  label,
-  value,
-  onChange,
-  autoComplete,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  autoComplete: string;
-}) {
-  return (
-    <label className="block space-y-1">
-      <span className="text-sub">{label}</span>
-      <input
-        type="password"
-        required
-        minLength={8}
-        maxLength={128}
-        autoComplete={autoComplete}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="w-full rounded-md border border-sub/25 bg-transparent px-2 py-1 text-ink outline-none focus:border-brand"
-      />
-    </label>
-  );
-}
+      {section === "password" && (
+        <form onSubmit={changePassword} className="space-y-3">
+          <Field label="当前密码">
+            <PasswordInput value={current} onChange={(e) => setCurrent(e.target.value)} autoComplete="current-password" required />
+          </Field>
+          <Field label="新密码" hint="至少 8 位">
+            <PasswordInput value={next} onChange={(e) => setNext(e.target.value)} autoComplete="new-password" minLength={8} required />
+          </Field>
+          {error && <p className="text-[11px] text-danger">{error}</p>}
+          <div className="flex justify-end gap-2 pt-1">
+            <Button variant="ghost" onClick={close}>
+              取消
+            </Button>
+            <Button type="submit" variant="primary" loading={busy}>
+              修改密码
+            </Button>
+          </div>
+        </form>
+      )}
 
-function FormButtons({
-  busy,
-  submitText,
-  onCancel,
-  danger,
-}: {
-  busy: boolean;
-  submitText: string;
-  onCancel: () => void;
-  danger?: boolean;
-}) {
-  return (
-    <div className="flex justify-end gap-2 pt-1">
-      <button type="button" onClick={onCancel} className="rounded-md px-2.5 py-1 text-sub hover:bg-sub/10">
-        取消
-      </button>
-      <button
-        type="submit"
-        disabled={busy}
-        className={
-          "rounded-md px-2.5 py-1 text-white disabled:opacity-50 " + (danger ? "bg-red-600" : "bg-brand")
-        }
-      >
-        {busy ? "请稍候…" : submitText}
-      </button>
-    </div>
+      {section === "danger" && (
+        <form onSubmit={(e) => void deleteAccount(e)} className="space-y-3">
+          <div className="rounded-lg border border-danger/25 bg-danger/5 p-3">
+            <div className="flex items-center gap-1.5 text-xs text-danger">
+              <Trash2 className="h-3.5 w-3.5" />
+              注销账号
+            </div>
+            <p className="mt-1 text-[11px] leading-relaxed text-sub">
+              永久删除账号及全部个人数据（计划、成绩、课表）。公共课程库不受影响。
+            </p>
+          </div>
+          <Field label="输入当前密码以继续">
+            <PasswordInput value={current} onChange={(e) => setCurrent(e.target.value)} autoComplete="current-password" required />
+          </Field>
+          {error && <p className="text-[11px] text-danger">{error}</p>}
+          <div className="flex justify-end gap-2 pt-1">
+            <Button variant="ghost" onClick={close}>
+              取消
+            </Button>
+            <Button type="submit" variant="danger" loading={busy} disabled={!current}>
+              注销账号…
+            </Button>
+          </div>
+        </form>
+      )}
+    </Dialog>
   );
 }
