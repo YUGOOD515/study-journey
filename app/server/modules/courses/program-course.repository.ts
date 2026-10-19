@@ -1,4 +1,4 @@
-import { db } from "../../db";
+import type { Ctx } from "../../context";
 import { mapProgramRow, type ProgramRow } from "./course.mapper";
 import type { Course } from "./course.types";
 
@@ -36,6 +36,9 @@ const SELECT_PROGRAM = `
   LEFT JOIN plan_program_courses pre ON pre.course_code = pc.prerequisite_course_code
 `;
 
+/**
+ * 官方培养方案课程（所有用户共享、只读）。用户对官方课程的计划/成绩写在 my_plan_courses。
+ */
 export interface ProgramCourseFilter {
   category?: string;
   requirementType?: string;
@@ -87,77 +90,24 @@ function whereForFilter(filter: ProgramCourseFilter): { sql: string; params: unk
 }
 
 export const ProgramCourseRepository = {
-  find(filter: ProgramCourseFilter = {}): Course[] {
+  async find(ctx: Ctx, filter: ProgramCourseFilter = {}): Promise<Course[]> {
     const { sql: whereSql, params } = whereForFilter(filter);
     const limit = filter.limit ?? 1000;
     const offset = filter.offset ?? 0;
-    const stmt = db.prepare(
-      `${SELECT_PROGRAM}${whereSql} ORDER BY pc.course_code LIMIT ${Number(limit)} OFFSET ${Number(offset)}`
+    const rows = await ctx.db.all<ProgramRow>(
+      `${SELECT_PROGRAM}${whereSql} ORDER BY pc.course_code LIMIT ${Number(limit)} OFFSET ${Number(offset)}`,
+      params as never[]
     );
-    const rows = stmt.all(...(params as never[])) as unknown as ProgramRow[];
     return rows.map(mapProgramRow);
   },
 
-  countActive(filter: ProgramCourseFilter = {}): number {
-    const { sql: whereSql, params } = whereForFilter(filter);
-    const stmt = db.prepare(`SELECT COUNT(*) AS n FROM plan_program_courses pc${whereSql}`);
-    const row = stmt.get(...(params as never[])) as unknown as { n: number };
-    return row?.n ?? 0;
-  },
-
-  findByCode(code: string, _opts?: { includeTrash?: boolean; includePermanentlyDeleted?: boolean }): Course | null {
-    const clauses: string[] = ["pc.course_code = ?"];
-    const stmt = db.prepare(`${SELECT_PROGRAM} WHERE ${clauses.join(" AND ")}`);
-    const row = stmt.get(code) as unknown as ProgramRow | undefined;
+  async findByCode(ctx: Ctx, code: string): Promise<Course | null> {
+    const row = await ctx.db.first<ProgramRow>(`${SELECT_PROGRAM} WHERE pc.course_code = ?`, [code]);
     return row ? mapProgramRow(row) : null;
   },
 
-  /** 用于先修课校验：检查目标 course_code 是否在 program 表里且未永久删除。 */
-  exists(code: string): boolean {
-    const stmt = db.prepare(
-      `SELECT 1 FROM plan_program_courses WHERE course_code = ?`
-    );
-    return !!stmt.get(code);
-  },
-
-  update(code: string, patch: Record<string, unknown>): void {
-    const allowedColumns = new Set([
-      "course_name",
-      "section_code",
-      "category_code",
-      "category_name",
-      "requirement_type",
-      "course_subcategory",
-      "credits",
-      "total_hours",
-      "lecture_hours",
-      "experiment_hours",
-      "extra_hours",
-      "prerequisite_course_code",
-      "official_term",
-      "planned_term",
-      "actual_term",
-      "study_status",
-      "score",
-      "credit_count_to",
-      "preference_level",
-      "note",
-      "is_deleted",
-      "is_permanently_deleted",
-      "deleted_at",
-      "deleted_note",
-    ]);
-    const sets: string[] = [];
-    const params: unknown[] = [];
-    for (const [key, value] of Object.entries(patch)) {
-      if (!allowedColumns.has(key)) continue;
-      sets.push(`${key} = ?`);
-      params.push(value);
-    }
-    if (sets.length === 0) return;
-    params.push(code);
-    db.prepare(
-      `UPDATE plan_program_courses SET ${sets.join(", ")}, updated_at = datetime('now') WHERE course_code = ?`
-    ).run(...(params as never[]));
+  /** 用于先修课校验：检查目标 course_code 是否在官方课程表里。 */
+  async exists(ctx: Ctx, code: string): Promise<boolean> {
+    return Boolean(await ctx.db.first(`SELECT 1 AS hit FROM plan_program_courses WHERE course_code = ?`, [code]));
   },
 };

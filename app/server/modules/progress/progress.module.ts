@@ -1,19 +1,8 @@
-import { Router } from "express";
-import { handle, ok } from "../../lib/response";
+import type { App } from "../../app-types";
+import { ok } from "../../lib/response";
 import { ProgressService } from "./progress.service";
 
-export const progressRouter = Router();
-
-progressRouter.get(
-  "/",
-  handle((_req, res) => {
-    ok(res, ProgressService.compute());
-  })
-);
-
-progressRouter.get(
-  "/timeline",
-  handle((_req, res) => {
-    ok(res, ProgressService.timeline());
-  })
-);
+export function registerProgressRoutes(app: App) {
+  app.get("/progress", async (c) => ok(c, await ProgressService.compute(c.var.ctx)));
+  app.get("/progress/timeline", async (c) => ok(c, await ProgressService.timeline(c.var.ctx)));
+}

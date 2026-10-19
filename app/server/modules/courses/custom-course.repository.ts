@@ -1,7 +1,10 @@
-import { db } from "../../db";
+import type { Ctx } from "../../context";
 import { mapCustomRow, type CustomRow } from "./course.mapper";
 import type { Course } from "./course.types";
 
+/**
+ * 我的计划（my_plan_courses）。所有查询都限定在 ctx.userId 范围内。
+ */
 const SELECT_CUSTOM = `
   SELECT
     pc.origin_type,
@@ -53,9 +56,11 @@ export interface CustomCourseFilter {
   offset?: number;
 }
 
-function whereForFilter(filter: CustomCourseFilter): { sql: string; params: unknown[] } {
-  const clauses: string[] = [];
-  const params: unknown[] = [];
+type SqlParam = string | number | null;
+
+function whereForFilter(ctx: Ctx, filter: CustomCourseFilter): { sql: string; params: SqlParam[] } {
+  const clauses: string[] = ["pc.user_id = ?"];
+  const params: SqlParam[] = [ctx.userId];
 
   clauses.push(filter.inTrash ? "pc.is_deleted = 1" : "pc.is_deleted = 0");
 
@@ -86,160 +91,171 @@ function whereForFilter(filter: CustomCourseFilter): { sql: string; params: unkn
     params.push(pat, pat);
   }
 
-  return { sql: clauses.length ? ` WHERE ${clauses.join(" AND ")}` : "", params };
+  return { sql: ` WHERE ${clauses.join(" AND ")}`, params };
+}
+
+const UPDATABLE_COLUMNS = new Set([
+  "course_name",
+  "section_code",
+  "category_code",
+  "category_name",
+  "requirement_type",
+  "course_subcategory",
+  "credits",
+  "total_hours",
+  "lecture_hours",
+  "experiment_hours",
+  "extra_hours",
+  "prerequisite_course_code",
+  "term_number",
+  "planned_term",
+  "actual_term",
+  "official_term",
+  "study_status",
+  "score",
+  "credit_count_to",
+  "preference_level",
+  "note",
+  "is_deleted",
+  "deleted_at",
+  "deleted_note",
+]);
+
+export interface CustomCourseInsertRow {
+  origin_type?: "official" | "manual" | "raw";
+  official_course_code?: string | null;
+  course_code: string;
+  category_code: string;
+  category_name: string;
+  requirement_type: string;
+  course_subcategory: string | null;
+  course_name: string;
+  section_code: string | null;
+  credits: number;
+  total_hours: number;
+  lecture_hours: number;
+  experiment_hours: number;
+  extra_hours: number;
+  term_number: number | null;
+  actual_term?: number | null;
+  official_term?: string | null;
+  prerequisite_course_code: string | null;
+  study_status: string;
+  score: number | null;
+  credit_count_to: string | null;
+  note: string | null;
 }
 
 export const CustomCourseRepository = {
-  find(filter: CustomCourseFilter = {}): Course[] {
-    const { sql: whereSql, params } = whereForFilter(filter);
+  async find(ctx: Ctx, filter: CustomCourseFilter = {}): Promise<Course[]> {
+    const { sql: whereSql, params } = whereForFilter(ctx, filter);
     const limit = filter.limit ?? 1000;
     const offset = filter.offset ?? 0;
-    const stmt = db.prepare(
-      `${SELECT_CUSTOM}${whereSql} ORDER BY pc.created_at DESC LIMIT ${Number(limit)} OFFSET ${Number(offset)}`
+    const rows = await ctx.db.all<CustomRow>(
+      `${SELECT_CUSTOM}${whereSql} ORDER BY pc.created_at DESC LIMIT ${Number(limit)} OFFSET ${Number(offset)}`,
+      params
     );
-    const rows = stmt.all(...(params as never[])) as unknown as CustomRow[];
     return rows.map(mapCustomRow);
   },
 
-  findByCode(code: string, opts?: { includeTrash?: boolean }): Course | null {
-    const clauses: string[] = ["pc.course_code = ?"];
+  async findByCode(ctx: Ctx, code: string, opts?: { includeTrash?: boolean }): Promise<Course | null> {
+    const clauses: string[] = ["pc.user_id = ?", "pc.course_code = ?"];
     if (!opts?.includeTrash) clauses.push("pc.is_deleted = 0");
-    const stmt = db.prepare(`${SELECT_CUSTOM} WHERE ${clauses.join(" AND ")}`);
-    const row = stmt.get(code) as unknown as CustomRow | undefined;
+    const row = await ctx.db.first<CustomRow>(`${SELECT_CUSTOM} WHERE ${clauses.join(" AND ")}`, [
+      ctx.userId,
+      code,
+    ]);
     return row ? mapCustomRow(row) : null;
   },
 
-  findByCodeOrNameInTerm(input: {
-    courseCode: string;
-    courseName: string;
-    term: number;
-    includeTrash?: boolean;
-  }): Course | null {
+  async codeExists(ctx: Ctx, code: string): Promise<boolean> {
+    return Boolean(
+      await ctx.db.first(`SELECT 1 AS hit FROM my_plan_courses WHERE user_id = ? AND course_code = ?`, [
+        ctx.userId,
+        code,
+      ])
+    );
+  },
+
+  async findByCodeOrNameInTerm(
+    ctx: Ctx,
+    input: { courseCode: string; courseName: string; term: number; includeTrash?: boolean }
+  ): Promise<Course | null> {
     const clauses = [
+      "pc.user_id = ?",
       "(pc.course_code = ? OR TRIM(pc.course_name) = TRIM(?))",
       "(pc.planned_term = ? OR pc.actual_term = ?)",
     ];
     if (!input.includeTrash) clauses.push("pc.is_deleted = 0");
-    const stmt = db.prepare(
-      `${SELECT_CUSTOM} WHERE ${clauses.join(" AND ")} ORDER BY CASE WHEN pc.course_code = ? THEN 0 ELSE 1 END LIMIT 1`
+    const row = await ctx.db.first<CustomRow>(
+      `${SELECT_CUSTOM} WHERE ${clauses.join(" AND ")} ORDER BY CASE WHEN pc.course_code = ? THEN 0 ELSE 1 END LIMIT 1`,
+      [ctx.userId, input.courseCode, input.courseName, input.term, input.term, input.courseCode]
     );
-    const row = stmt.get(
-      input.courseCode,
-      input.courseName,
-      input.term,
-      input.term,
-      input.courseCode
-    ) as unknown as CustomRow | undefined;
     return row ? mapCustomRow(row) : null;
   },
 
-  insert(row: {
-    origin_type?: "official" | "manual" | "raw";
-    official_course_code?: string | null;
-    course_code: string;
-    category_code: string;
-    category_name: string;
-    requirement_type: string;
-    course_subcategory: string | null;
-    course_name: string;
-    section_code: string | null;
-    credits: number;
-    total_hours: number;
-    lecture_hours: number;
-    experiment_hours: number;
-    extra_hours: number;
-    term_number: number | null;
-    actual_term?: number | null;
-    official_term?: string | null;
-    prerequisite_course_code: string | null;
-    study_status: string;
-    score: number | null;
-    credit_count_to: string | null;
-    note: string | null;
-  }): void {
-    db.prepare(
+  async insert(ctx: Ctx, row: CustomCourseInsertRow): Promise<void> {
+    await ctx.db.run(
       `INSERT OR REPLACE INTO my_plan_courses
-        (origin_type, official_course_code,
+        (user_id, origin_type, official_course_code,
          category_code, category_name, requirement_type, course_subcategory,
          course_code, section_code, course_name,
          planned_term, actual_term, official_term,
          credits, total_hours, lecture_hours, experiment_hours, extra_hours,
          prerequisite_course_code, study_status, score, credit_count_to, note)
        VALUES
-        (?, ?,
+        (?, ?, ?,
          ?, ?, ?, ?,
          ?, ?, ?,
          ?, ?, ?,
          ?, ?, ?, ?, ?,
-         ?, ?, ?, ?, ?)`
-    ).run(
-      row.origin_type ?? "manual",
-      row.official_course_code ?? null,
-      row.category_code,
-      row.category_name,
-      row.requirement_type,
-      row.course_subcategory,
-      row.course_code,
-      row.section_code,
-      row.course_name,
-      row.term_number,
-      row.actual_term ?? row.term_number,
-      row.official_term ?? null,
-      row.credits,
-      row.total_hours,
-      row.lecture_hours,
-      row.experiment_hours,
-      row.extra_hours,
-      row.prerequisite_course_code,
-      row.study_status,
-      row.score,
-      row.credit_count_to,
-      row.note
+         ?, ?, ?, ?, ?)`,
+      [
+        ctx.userId,
+        row.origin_type ?? "manual",
+        row.official_course_code ?? null,
+        row.category_code,
+        row.category_name,
+        row.requirement_type,
+        row.course_subcategory,
+        row.course_code,
+        row.section_code,
+        row.course_name,
+        row.term_number,
+        row.actual_term ?? row.term_number,
+        row.official_term ?? null,
+        row.credits,
+        row.total_hours,
+        row.lecture_hours,
+        row.experiment_hours,
+        row.extra_hours,
+        row.prerequisite_course_code,
+        row.study_status,
+        row.score,
+        row.credit_count_to,
+        row.note,
+      ]
     );
   },
 
-  update(code: string, patch: Record<string, unknown>): void {
-    const allowedColumns = new Set([
-      "course_name",
-      "section_code",
-      "category_code",
-      "category_name",
-      "requirement_type",
-      "course_subcategory",
-      "credits",
-      "total_hours",
-      "lecture_hours",
-      "experiment_hours",
-      "extra_hours",
-      "prerequisite_course_code",
-      "term_number",
-      "planned_term",
-      "actual_term",
-      "official_term",
-      "study_status",
-      "score",
-      "credit_count_to",
-      "note",
-      "is_deleted",
-      "deleted_at",
-      "deleted_note",
-    ]);
+  async update(ctx: Ctx, code: string, patch: Record<string, unknown>): Promise<void> {
     const sets: string[] = [];
-    const params: unknown[] = [];
+    const params: SqlParam[] = [];
     for (const [key, value] of Object.entries(patch)) {
-      if (!allowedColumns.has(key)) continue;
+      if (!UPDATABLE_COLUMNS.has(key)) continue;
       const column = key === "term_number" ? "planned_term" : key;
       sets.push(`${column} = ?`);
-      params.push(value);
+      params.push((value ?? null) as SqlParam);
     }
     if (sets.length === 0) return;
-    params.push(code);
-    db.prepare(
-      `UPDATE my_plan_courses SET ${sets.join(", ")}, updated_at = datetime('now') WHERE course_code = ?`
-    ).run(...(params as never[]));
+    params.push(ctx.userId, code);
+    await ctx.db.run(
+      `UPDATE my_plan_courses SET ${sets.join(", ")}, updated_at = datetime('now') WHERE user_id = ? AND course_code = ?`,
+      params
+    );
   },
 
-  delete(code: string): void {
-    db.prepare(`DELETE FROM my_plan_courses WHERE course_code = ?`).run(code);
+  async delete(ctx: Ctx, code: string): Promise<void> {
+    await ctx.db.run(`DELETE FROM my_plan_courses WHERE user_id = ? AND course_code = ?`, [ctx.userId, code]);
   },
 };

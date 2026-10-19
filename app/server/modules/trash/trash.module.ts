@@ -1,84 +1,32 @@
-import { Router } from "express";
-import { handle, ok } from "../../lib/response";
+import type { App } from "../../app-types";
+import { ok, readJson } from "../../lib/response";
 import { TrashService } from "./trash.service";
 
-/**
- * 单条 + 列表挂载在 /api/trash。
- * 批量动作（含冒号的 URL，如 /api/trash:empty）由 apiRouter 用正则路径直接注册。
- */
-export const trashRouter = Router();
+type Scope = "program" | "custom" | "all";
 
-trashRouter.get(
-  "/",
-  handle((req, res) => {
-    const data = TrashService.list(req.query as Record<string, unknown>);
-    ok(res, data, { total: data.length });
-  })
-);
-
-trashRouter.post(
-  "/:code/restore",
-  handle((req, res) => {
-    const data = TrashService.restore(String(req.params.code));
-    ok(res, data);
-  })
-);
-
-trashRouter.delete(
-  "/:code",
-  handle((req, res) => {
-    const data = TrashService.purge(String(req.params.code));
-    ok(res, data);
-  })
-);
-
-/** 挂载在 /api/courses 下：POST /:code/trash。 */
-export const trashCourseRouter = Router({ mergeParams: true });
-
-trashCourseRouter.post(
-  "/:code/trash",
-  handle((req, res) => {
-    const data = TrashService.softDelete(String(req.params.code), req.body);
-    ok(res, data);
-  })
-);
+function scopeOf(body: Record<string, unknown>): Scope {
+  const s = body.scope;
+  return s === "program" || s === "custom" ? s : "all";
+}
 
 /**
- * AIP-136 风格批量动作。Express 4 把 ':' 当参数前缀，所以这里用正则路径
- * 直接在 apiRouter 上注册。
+ * 垃圾篓路由。AIP-136 风格批量动作（/trash:empty 等）在 Hono 中按静态路径注册，
+ * 必须先于 /trash/:code 注册。
  */
-export function registerTrashVerbRoutes(apiRouter: Router) {
-  // POST /api/trash:restore-all
-  apiRouter.post(
-    /^\/trash:restore-all$/,
-    handle((req, res) => {
-      const scope = (req.body?.scope as "program" | "custom" | "all" | undefined) ?? "all";
-      ok(res, TrashService.restoreAll(scope));
-    })
-  );
+export function registerTrashRoutes(app: App) {
+  app.post("/trash:restore-all", async (c) => ok(c, await TrashService.restoreAll(c.var.ctx, scopeOf(await readJson(c)))));
+  app.delete("/trash:empty", async (c) => ok(c, await TrashService.empty(c.var.ctx, scopeOf(await readJson(c)))));
+  app.post("/trash:batch-restore", async (c) => ok(c, await TrashService.batchRestore(c.var.ctx, await readJson(c))));
+  app.delete("/trash:batch-purge", async (c) => ok(c, await TrashService.batchPurge(c.var.ctx, await readJson(c))));
 
-  // DELETE /api/trash:empty
-  apiRouter.delete(
-    /^\/trash:empty$/,
-    handle((req, res) => {
-      const scope = (req.body?.scope as "program" | "custom" | "all" | undefined) ?? "all";
-      ok(res, TrashService.empty(scope));
-    })
-  );
+  app.get("/trash", async (c) => {
+    const data = await TrashService.list(c.var.ctx, c.req.query() as Record<string, unknown>);
+    return ok(c, data, { total: data.length });
+  });
+  app.post("/trash/:code/restore", async (c) => ok(c, await TrashService.restore(c.var.ctx, c.req.param("code"))));
+  app.delete("/trash/:code", async (c) => ok(c, await TrashService.purge(c.var.ctx, c.req.param("code"))));
 
-  // POST /api/trash:batch-restore
-  apiRouter.post(
-    /^\/trash:batch-restore$/,
-    handle((req, res) => {
-      ok(res, TrashService.batchRestore(req.body));
-    })
-  );
-
-  // DELETE /api/trash:batch-purge
-  apiRouter.delete(
-    /^\/trash:batch-purge$/,
-    handle((req, res) => {
-      ok(res, TrashService.batchPurge(req.body));
-    })
+  app.post("/courses/:code/trash", async (c) =>
+    ok(c, await TrashService.softDelete(c.var.ctx, c.req.param("code"), await readJson(c)))
   );
 }

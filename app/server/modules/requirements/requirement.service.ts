@@ -1,3 +1,4 @@
+import type { Ctx } from "../../context";
 import { fail } from "../../lib/errors";
 import { expectEnum, expectNumber, expectString } from "../../lib/validate";
 import {
@@ -35,15 +36,16 @@ function toDto(row: RequirementRow): RequirementDto {
 }
 
 export const RequirementService = {
-  list(): RequirementDto[] {
-    return RequirementRepository.findAll().map(toDto);
+  async list(ctx: Ctx): Promise<RequirementDto[]> {
+    return (await RequirementRepository.findAll(ctx)).map(toDto);
   },
 
-  updateThreshold(
+  async updateThreshold(
+    ctx: Ctx,
     categoryCode: string,
     typeCode: string,
     body: unknown
-  ): RequirementDto {
+  ): Promise<RequirementDto> {
     const categoryCodeValue = expectString(categoryCode, "categoryCode")!;
     const typeCodeValue = expectEnum(typeCode, "requirementTypeCode", REQUIREMENT_TYPE_CODES)!;
 
@@ -56,12 +58,12 @@ export const RequirementService = {
           ? null
           : expectString(patch.note, "note", { allowNull: true });
 
-    const existing = RequirementRepository.findOne(categoryCodeValue, typeCodeValue);
+    const existing = await RequirementRepository.findOne(ctx, categoryCodeValue, typeCodeValue);
     if (!existing) {
       throw fail.notFound("requirement", `${categoryCodeValue}/${typeCodeValue}`);
     }
 
-    const updated = RequirementRepository.update(categoryCodeValue, typeCodeValue, {
+    const updated = await RequirementRepository.upsertOverride(ctx, categoryCodeValue, typeCodeValue, {
       requiredCredits,
       note,
     });

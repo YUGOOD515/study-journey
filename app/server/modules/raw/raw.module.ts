@@ -1,65 +1,40 @@
-import { Router } from "express";
-import { handle, ok } from "../../lib/response";
+import type { App } from "../../app-types";
+import { ok, queryObject } from "../../lib/response";
 import { RawService } from "./raw.service";
 
-/** 挂载在 /api/raw。 */
-export const rawRouter = Router();
+export function registerRawRoutes(app: App) {
+  app.get("/raw/batches", async (c) => {
+    const data = await RawService.listBatches(c.var.ctx, queryObject(c));
+    return ok(c, data, { total: data.length });
+  });
 
-rawRouter.get(
-  "/batches",
-  handle((req, res) => {
-    const data = RawService.listBatches(req.query as Record<string, unknown>);
-    ok(res, data, { total: data.length });
-  })
-);
+  app.get("/raw/sections", async (c) => {
+    const data = await RawService.listSections(c.var.ctx, queryObject(c));
+    return ok(c, data, { total: data.length });
+  });
 
-rawRouter.get(
-  "/sections",
-  handle((req, res) => {
-    const data = RawService.listSections(req.query as Record<string, unknown>);
-    ok(res, data, { total: data.length });
-  })
-);
+  app.get("/raw/added-courses", async (c) => {
+    const data = await RawService.listAddedCourses(c.var.ctx, queryObject(c));
+    return ok(c, data, { total: data.length });
+  });
 
-rawRouter.get(
-  "/added-courses",
-  handle((req, res) => {
-    const data = RawService.listAddedCourses(req.query as Record<string, unknown>);
-    ok(res, data, { total: data.length });
-  })
-);
+  app.get("/raw/catalog-previews", async (c) => {
+    const data = await RawService.listCatalogPreviews(c.var.ctx, queryObject(c));
+    return ok(c, data, { total: data.length });
+  });
 
-rawRouter.get(
-  "/catalog-previews",
-  handle((req, res) => {
-    const data = RawService.listCatalogPreviews(req.query as Record<string, unknown>);
-    ok(res, data, { total: data.length });
-  })
-);
+  app.get("/raw/actual-course-meetings", async (c) => {
+    const data = await RawService.listActualCourseMeetings(c.var.ctx, queryObject(c));
+    return ok(c, data, { total: data.length });
+  });
 
-rawRouter.get(
-  "/actual-course-meetings",
-  handle((req, res) => {
-    const data = RawService.listActualCourseMeetings(req.query as Record<string, unknown>);
-    ok(res, data, { total: data.length });
-  })
-);
+  app.get("/raw/course-search", async (c) => {
+    const data = await RawService.searchCourses(c.var.ctx, queryObject(c));
+    return ok(c, data, { total: data.length });
+  });
 
-rawRouter.get(
-  "/course-search",
-  handle((req, res) => {
-    const data = RawService.searchCourses(req.query as Record<string, unknown>);
-    ok(res, data, { total: data.length });
-  })
-);
-
-/** 挂载在 /api/courses：GET /:code/openings。 */
-export const courseOpeningsRouter = Router({ mergeParams: true });
-
-courseOpeningsRouter.get(
-  "/:code/openings",
-  handle((req, res) => {
-    const code = String(req.params.code);
-    ok(res, { courseCode: code, openings: RawService.findOpeningsByCode(code) });
-  })
-);
+  app.get("/courses/:code/openings", async (c) => {
+    const code = c.req.param("code");
+    return ok(c, { courseCode: code, openings: await RawService.findOpeningsByCode(c.var.ctx, code) });
+  });
+}

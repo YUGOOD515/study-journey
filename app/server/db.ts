@@ -1,326 +1,67 @@
 /**
- * SQLite 连接层。
+ * D1 访问层。
  *
- * 默认读取项目同级 db 目录中的 v2 数据库：../db/course_planner_v2.sqlite
- * 也可以通过环境变量覆盖：DB_PATH=/absolute/or/relative/path.sqlite npm run dev
+ * D1 是 SQLite，但只提供异步 API，且不支持交互式 BEGIN/COMMIT。
+ * 需要原子性的多条写入用 `db.atomic(fn)`：fn 内的写语句先排队，fn 结束后用 `D1Database.batch()`
+ * 一次性提交（同成功同失败）。注意：atomic 内的读取看不到同一批次里尚未提交的写入，
+ * 所以“写完再读回”的逻辑要放在 atomic 之后。
  */
-import { DatabaseSync } from "node:sqlite";
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 
-// 屏蔽 node:sqlite 的 experimental warning，避免开发终端刷屏。
-process.removeAllListeners("warning");
+type Param = string | number | null | boolean | undefined;
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+function normalize(value: Param): string | number | null {
+  if (value === undefined || value === null) return null;
+  if (typeof value === "boolean") return value ? 1 : 0;
+  return value;
+}
 
-function resolveDbPath(): string {
-  if (process.env.DB_PATH?.trim()) {
-    return path.resolve(process.cwd(), process.env.DB_PATH.trim());
+export class Db {
+  private queue: D1PreparedStatement[] | null = null;
+
+  constructor(readonly d1: D1Database) {}
+
+  prepare(sql: string, params: readonly Param[] = []): D1PreparedStatement {
+    return this.d1.prepare(sql).bind(...params.map(normalize));
   }
 
-  const candidates = [
-    // 用户当前本地结构：app/ 与 db/ 同级，npm run dev 在 app 根目录执行。
-    path.resolve(process.cwd(), "../db/course_planner_v2.sqlite"),
-    // 兼容从 server/ 文件位置推导的同级结构。
-    path.resolve(__dirname, "../../db/course_planner_v2.sqlite"),
-    // 兼容把 db/ 放进 app/ 内部的结构。
-    path.resolve(process.cwd(), "db/course_planner_v2.sqlite"),
-    path.resolve(__dirname, "../db/course_planner_v2.sqlite"),
-  ];
-
-  return candidates.find((p) => fs.existsSync(p)) ?? candidates[0];
-}
-
-export const DB_PATH = resolveDbPath();
-
-if (!fs.existsSync(DB_PATH)) {
-  throw new Error(
-    `[db] 未找到数据库文件：${DB_PATH}\n` +
-      "请确认 course_planner_v2.sqlite 位于 ../db/，或使用 DB_PATH 环境变量指定路径。"
-  );
-}
-
-export const db = new DatabaseSync(DB_PATH);
-db.exec("PRAGMA foreign_keys = ON;");
-db.exec("PRAGMA busy_timeout = 5000;");
-
-const REQUIRED_TABLES = [
-  "plan_program_courses",
-  "plan_custom_courses",
-  "plan_program_requirements",
-  "raw_import_batches",
-  "raw_term_course_sections",
-  "raw_term_added_courses",
-];
-
-const existingTables = new Set(
-  db
-    .prepare("SELECT name FROM sqlite_master WHERE type = 'table'")
-    .all()
-    .map((row: any) => String(row.name))
-);
-
-const missingTables = REQUIRED_TABLES.filter((name) => !existingTables.has(name));
-if (missingTables.length > 0) {
-  throw new Error(
-    `[db] 数据库不是 v2 结构，缺少表：${missingTables.join(", ")}\n` +
-      `当前数据库：${DB_PATH}`
-  );
-}
-
-function tableColumns(tableName: string): Set<string> {
-  return new Set(
-    db
-      .prepare(`PRAGMA table_info(${tableName})`)
-      .all()
-      .map((row: any) => String(row.name))
-  );
-}
-
-function addColumnIfMissing(tableName: string, columnName: string, definition: string) {
-  const columns = tableColumns(tableName);
-  if (!columns.has(columnName)) {
-    db.exec(`ALTER TABLE ${tableName} ADD COLUMN ${definition};`);
+  async all<T>(sql: string, params: readonly Param[] = []): Promise<T[]> {
+    const result = await this.prepare(sql, params).all<T>();
+    return result.results ?? [];
   }
-}
 
-function ensureTrashColumns() {
-  for (const table of ["plan_program_courses", "plan_custom_courses"] as const) {
-    addColumnIfMissing(table, "is_deleted", "is_deleted INTEGER NOT NULL DEFAULT 0 CHECK (is_deleted IN (0, 1))");
-    addColumnIfMissing(table, "deleted_at", "deleted_at TEXT");
-    addColumnIfMissing(table, "deleted_note", "deleted_note TEXT");
+  async first<T>(sql: string, params: readonly Param[] = []): Promise<T | null> {
+    return (await this.prepare(sql, params).first<T>()) ?? null;
   }
-  addColumnIfMissing(
-    "plan_program_courses",
-    "is_permanently_deleted",
-    "is_permanently_deleted INTEGER NOT NULL DEFAULT 0 CHECK (is_permanently_deleted IN (0, 1))"
-  );
 
-  db.exec(`
-    CREATE INDEX IF NOT EXISTS idx_plan_program_courses_trash
-      ON plan_program_courses(is_deleted, is_permanently_deleted, deleted_at);
-    CREATE INDEX IF NOT EXISTS idx_plan_custom_courses_trash
-      ON plan_custom_courses(is_deleted, deleted_at);
-  `);
-}
-
-ensureTrashColumns();
-
-function ensureRawExtensionTables() {
-  addColumnIfMissing("raw_term_course_sections", "classroom", "classroom TEXT");
-  addColumnIfMissing("raw_term_course_sections", "group_name", "group_name TEXT");
-
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS raw_course_catalog_previews (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        academic_year TEXT NOT NULL CHECK (academic_year GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9]'),
-        semester TEXT NOT NULL CHECK (semester IN ('spring', 'fall')),
-        source_file TEXT NOT NULL CHECK (TRIM(source_file) <> ''),
-        source_format TEXT CHECK (source_format IN ('xlsx', 'xls')),
-        source_sheet TEXT,
-        source_row INTEGER NOT NULL CHECK (source_row > 0),
-        ordinal INTEGER,
-        department TEXT,
-        course_code TEXT NOT NULL CHECK (TRIM(course_code) <> ''),
-        course_name TEXT NOT NULL CHECK (TRIM(course_name) <> ''),
-        module_2022 TEXT,
-        module_2024 TEXT,
-        course_category TEXT,
-        course_attribute TEXT,
-        hours REAL CHECK (hours IS NULL OR hours >= 0),
-        credits REAL CHECK (credits IS NULL OR credits >= 0),
-        imported_at TEXT NOT NULL DEFAULT (datetime('now')),
-        note TEXT
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_raw_catalog_preview_course_code
-      ON raw_course_catalog_previews(course_code);
-
-    CREATE INDEX IF NOT EXISTS idx_raw_catalog_preview_batch
-      ON raw_course_catalog_previews(academic_year, semester);
-
-    CREATE INDEX IF NOT EXISTS idx_raw_catalog_preview_module_2024
-      ON raw_course_catalog_previews(module_2024);
-
-    CREATE TABLE IF NOT EXISTS raw_actual_course_meetings (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        batch_id INTEGER NOT NULL,
-        term INTEGER NOT NULL CHECK (term BETWEEN 1 AND 8),
-        course_code TEXT NOT NULL CHECK (TRIM(course_code) <> ''),
-        section_code TEXT NOT NULL CHECK (TRIM(section_code) <> ''),
-        meeting_no INTEGER NOT NULL CHECK (meeting_no > 0),
-        start_week INTEGER NOT NULL CHECK (start_week > 0),
-        end_week INTEGER NOT NULL CHECK (end_week >= start_week),
-        weekday INTEGER NOT NULL CHECK (weekday BETWEEN 1 AND 7),
-        start_period INTEGER NOT NULL CHECK (start_period > 0),
-        end_period INTEGER NOT NULL CHECK (end_period >= start_period),
-        location_text TEXT,
-        course_name TEXT NOT NULL CHECK (TRIM(course_name) <> ''),
-        teacher TEXT,
-        class_group TEXT,
-        course_nature TEXT,
-        course_attribute TEXT,
-        class_time_raw TEXT,
-        location_raw TEXT,
-        online_group TEXT,
-        online_url TEXT,
-        qr_code TEXT,
-        source_sheet TEXT,
-        source_row INTEGER NOT NULL CHECK (source_row > 0),
-        imported_at TEXT NOT NULL DEFAULT (datetime('now')),
-        UNIQUE(batch_id, source_row, meeting_no),
-        FOREIGN KEY (batch_id)
-          REFERENCES raw_import_batches(id)
-          ON UPDATE CASCADE
-          ON DELETE CASCADE
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_raw_actual_course_meetings_term
-      ON raw_actual_course_meetings(term, weekday, start_period, end_period);
-    CREATE INDEX IF NOT EXISTS idx_raw_actual_course_meetings_course
-      ON raw_actual_course_meetings(course_code, section_code);
-    CREATE INDEX IF NOT EXISTS idx_raw_actual_course_meetings_week
-      ON raw_actual_course_meetings(term, start_week, end_week);
-  `);
-}
-
-ensureRawExtensionTables();
-
-function ensureMyPlanCourses() {
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS my_plan_courses (
-        origin_type TEXT NOT NULL CHECK (origin_type IN ('official', 'manual', 'raw')),
-        official_course_code TEXT,
-        category_code TEXT NOT NULL CHECK (category_code IN (
-            'general_education',
-            'major_platform',
-            'professional_education',
-            'quality_education',
-            'practice_education'
-        )),
-        category_name TEXT NOT NULL CHECK (category_name IN (
-            '通识教育',
-            '大类平台',
-            '专业教育',
-            '素质教育',
-            '实践教育'
-        )),
-        requirement_type TEXT NOT NULL CHECK (requirement_type IN (
-            '必修', '选修', '跨专业', '经法管融通'
-        )),
-        course_subcategory TEXT,
-        course_code TEXT PRIMARY KEY CHECK (TRIM(course_code) <> ''),
-        section_code TEXT,
-        course_name TEXT NOT NULL CHECK (TRIM(course_name) <> ''),
-        official_term TEXT,
-        planned_term INTEGER CHECK (planned_term IS NULL OR planned_term BETWEEN 1 AND 8),
-        actual_term INTEGER CHECK (actual_term IS NULL OR actual_term BETWEEN 1 AND 8),
-        credits REAL NOT NULL CHECK (credits >= 0),
-        total_hours INTEGER NOT NULL DEFAULT 0 CHECK (total_hours >= 0),
-        lecture_hours INTEGER NOT NULL DEFAULT 0 CHECK (lecture_hours >= 0),
-        experiment_hours INTEGER NOT NULL DEFAULT 0 CHECK (experiment_hours >= 0),
-        extra_hours INTEGER NOT NULL DEFAULT 0 CHECK (extra_hours >= 0),
-        prerequisite_course_code TEXT,
-        study_status TEXT NOT NULL DEFAULT '未修读' CHECK (study_status IN (
-            '未修读', '计划修读', '正在修读', '已修读', '未通过'
-        )),
-        score REAL CHECK (score IS NULL OR (score >= 0 AND score <= 100)),
-        credit_count_to TEXT CHECK (
-            credit_count_to IS NULL OR credit_count_to IN ('通识教育-选修', '大类平台-选修')
-        ),
-        teacher TEXT,
-        class_time TEXT,
-        teaching_weeks TEXT,
-        classroom TEXT,
-        campus TEXT,
-        department TEXT,
-        raw_source_type TEXT CHECK (raw_source_type IS NULL OR raw_source_type IN ('section', 'added')),
-        raw_batch_id INTEGER,
-        raw_source_row INTEGER,
-        preference_level INTEGER CHECK (preference_level IS NULL OR preference_level BETWEEN 1 AND 5),
-        note TEXT,
-        is_deleted INTEGER NOT NULL DEFAULT 0 CHECK (is_deleted IN (0, 1)),
-        deleted_at TEXT,
-        deleted_note TEXT,
-        created_at TEXT NOT NULL DEFAULT (datetime('now')),
-        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-        CHECK (total_hours = lecture_hours + experiment_hours + extra_hours),
-        CHECK (
-            (requirement_type = '经法管融通' AND credit_count_to IS NOT NULL)
-            OR
-            (requirement_type <> '经法管融通' AND credit_count_to IS NULL)
-        )
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_my_plan_courses_origin
-      ON my_plan_courses(origin_type, official_course_code);
-    CREATE INDEX IF NOT EXISTS idx_my_plan_courses_term
-      ON my_plan_courses(planned_term, actual_term);
-    CREATE INDEX IF NOT EXISTS idx_my_plan_courses_status
-      ON my_plan_courses(study_status);
-    CREATE INDEX IF NOT EXISTS idx_my_plan_courses_trash
-      ON my_plan_courses(is_deleted, deleted_at);
-  `);
-
-  const count = db.prepare("SELECT COUNT(*) AS n FROM my_plan_courses").get() as { n?: number } | undefined;
-  if (Number(count?.n ?? 0) > 0) return;
-
-  db.exec(`
-    INSERT INTO my_plan_courses (
-      origin_type, official_course_code,
-      category_code, category_name, requirement_type, course_subcategory,
-      course_code, section_code, course_name, official_term,
-      planned_term, actual_term,
-      credits, total_hours, lecture_hours, experiment_hours, extra_hours,
-      prerequisite_course_code, study_status, score, credit_count_to,
-      preference_level, note, is_deleted, deleted_at, deleted_note, created_at, updated_at
-    )
-    SELECT
-      'official', course_code,
-      category_code, category_name, requirement_type, course_subcategory,
-      course_code, section_code, course_name, official_term,
-      planned_term, actual_term,
-      credits, total_hours, lecture_hours, experiment_hours, extra_hours,
-      prerequisite_course_code, study_status, score, credit_count_to,
-      preference_level, note, is_deleted, deleted_at, deleted_note, created_at, updated_at
-    FROM plan_program_courses;
-
-    INSERT OR REPLACE INTO my_plan_courses (
-      origin_type, official_course_code,
-      category_code, category_name, requirement_type, course_subcategory,
-      course_code, section_code, course_name, official_term,
-      planned_term, actual_term,
-      credits, total_hours, lecture_hours, experiment_hours, extra_hours,
-      prerequisite_course_code, study_status, score, credit_count_to,
-      preference_level, note, is_deleted, deleted_at, deleted_note, created_at, updated_at
-    )
-    SELECT
-      'manual', NULL,
-      category_code, category_name, requirement_type, course_subcategory,
-      course_code, section_code, course_name, NULL,
-      term_number, term_number,
-      credits, total_hours, lecture_hours, experiment_hours, extra_hours,
-      prerequisite_course_code, study_status, score, credit_count_to,
-      NULL, note, is_deleted, deleted_at, deleted_note, created_at, updated_at
-    FROM plan_custom_courses;
-  `);
-}
-
-ensureMyPlanCourses();
-
-for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"] as const) {
-  process.on(sig, () => {
-    try {
-      db.close();
-    } catch {
-      // ignore
+  /** 执行写语句；在 atomic 内时只排队，返回 0。 */
+  async run(sql: string, params: readonly Param[] = []): Promise<number> {
+    const stmt = this.prepare(sql, params);
+    if (this.queue) {
+      this.queue.push(stmt);
+      return 0;
     }
-    process.exit(0);
-  });
-}
+    const result = await stmt.run();
+    return Number(result.meta?.changes ?? 0);
+  }
 
-console.log(`[db] 已连接 SQLite v2: ${DB_PATH}`);
+  get inAtomic(): boolean {
+    return this.queue !== null;
+  }
+
+  async atomic<T>(fn: () => Promise<T>): Promise<T> {
+    if (this.queue) return fn(); // 嵌套：并入外层批次
+    this.queue = [];
+    try {
+      const result = await fn();
+      const statements = this.queue;
+      this.queue = null;
+      if (statements.length > 0) await this.d1.batch(statements);
+      return result;
+    } finally {
+      this.queue = null;
+    }
+  }
+}
 
 export const CATEGORIES = [
   { code: "general_education", name: "通识教育" },

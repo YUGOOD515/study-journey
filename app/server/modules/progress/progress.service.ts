@@ -1,3 +1,4 @@
+import type { Ctx } from "../../context";
 import type { CategoryCode } from "../../db";
 import type {
   Course,
@@ -90,8 +91,8 @@ const STATUS_PRIORITY: Record<StudyStatus, number> = {
   未通过: 4,
 };
 
-function activeCourses(): Course[] {
-  return CustomCourseRepository.find({ limit: 1000 });
+function activeCourses(ctx: Ctx): Promise<Course[]> {
+  return CustomCourseRepository.find(ctx, { limit: 1000 });
 }
 
 function statusCreditBucketField(
@@ -177,12 +178,12 @@ function addToBucket(
 }
 
 export const ProgressService = {
-  compute(): {
+  async compute(ctx: Ctx): Promise<{
     byCategory: Bucket[];
     totals: { required: number; earned: number; inProgress: number; planned: number; pending: number };
     overflow: OverflowReport;
-  } {
-    const requirements = RequirementRepository.findAll();
+  }> {
+    const requirements = await RequirementRepository.findAll(ctx);
     const buckets = new Map<string, Bucket>();
     for (const r of requirements) {
       buckets.set(bucketKey(r.category_code as CategoryCode, r.requirement_type_code), emptyBucket(r));
@@ -191,7 +192,7 @@ export const ProgressService = {
     const generalElective = buckets.get(bucketKey("general_education", "elective"));
     const majorInterdisciplinary = buckets.get(bucketKey("major_platform", "interdisciplinary"));
 
-    const courses = activeCourses();
+    const courses = await activeCourses(ctx);
     const interToMajor: Array<{ course: Course; term: number | null; field: CreditField }> = [];
 
     for (const c of courses) {
@@ -285,20 +286,20 @@ export const ProgressService = {
     };
   },
 
-  timeline(): {
+  async timeline(ctx: Ctx): Promise<{
     terms: Array<{
       term: number;
       credits: { earned: number; inProgress: number; planned: number };
       courseCount: number;
     }>;
-  } {
+  }> {
     const terms = Array.from({ length: 8 }, (_, i) => ({
       term: i + 1,
       credits: { earned: 0, inProgress: 0, planned: 0 },
       courseCount: 0,
     }));
 
-    for (const c of activeCourses()) {
+    for (const c of await activeCourses(ctx)) {
       const t = c.actualTerm ?? c.plannedTerm;
       if (!t || t < 1 || t > 8) continue;
       const bucket = terms[t - 1];

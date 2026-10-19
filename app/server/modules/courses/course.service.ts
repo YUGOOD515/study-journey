@@ -1,7 +1,7 @@
+import type { Ctx } from "../../context";
 import { CATEGORIES, CATEGORY_NAME_BY_CODE, type CategoryCode } from "../../db";
 import { buildCustomCourseCode } from "../../lib/custom-code";
 import { fail } from "../../lib/errors";
-import { unitOfWork } from "../../lib/unit-of-work";
 import {
   expectArray,
   expectEnum,
@@ -191,8 +191,8 @@ function validateCreditCountToWithType(
   }
 }
 
-function assertPrerequisiteExists(prereqCode: string) {
-  if (!ProgramCourseRepository.exists(prereqCode)) {
+async function assertPrerequisiteExists(ctx: Ctx, prereqCode: string) {
+  if (!(await ProgramCourseRepository.exists(ctx, prereqCode))) {
     throw fail.precondition(
       `prerequisiteCourseCode 无效：在 program 表中找不到 ${prereqCode}`,
       { fields: { prerequisiteCourseCode: "必须指向已存在的 program 课程" } }
@@ -200,23 +200,19 @@ function assertPrerequisiteExists(prereqCode: string) {
   }
 }
 
-function courseCodeExists(code: string): boolean {
-  return Boolean(
-    ProgramCourseRepository.findByCode(code, {
-      includeTrash: true,
-      includePermanentlyDeleted: true,
-    }) || CustomCourseRepository.findByCode(code, { includeTrash: true })
-  );
+async function courseCodeExists(ctx: Ctx, code: string): Promise<boolean> {
+  if (await CustomCourseRepository.codeExists(ctx, code)) return true;
+  return Boolean(await ProgramCourseRepository.findByCode(ctx, code));
 }
 
-function validateCustomCourseCode(code: string): string {
+async function validateCustomCourseCode(ctx: Ctx, code: string): Promise<string> {
   const normalized = code.trim();
   if (!/^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/.test(normalized)) {
     throw fail.validation("courseCode 只能包含英文字母、数字、下划线、短横线和点号，且长度不超过 64", {
       courseCode: "格式不合法",
     });
   }
-  if (courseCodeExists(normalized)) {
+  if (await courseCodeExists(ctx, normalized)) {
     throw fail.conflict(`课程号已存在：${normalized}`, { courseCode: normalized });
   }
   return normalized;
@@ -441,16 +437,16 @@ function creditCountToFromAssignedTo(assignedTo: "interdisciplinary" | "elective
   return assignedTo === "elective" ? "通识教育-选修" : "大类平台-选修";
 }
 
-function nextAvailableCustomCourseCode(): string {
+async function nextAvailableCustomCourseCode(ctx: Ctx): Promise<string> {
   for (let i = 0; i < 20; i += 1) {
     const candidate = buildCustomCourseCode();
-    if (!courseCodeExists(candidate)) return candidate;
+    if (!(await courseCodeExists(ctx, candidate))) return candidate;
   }
   throw fail.conflict("自动生成课程号失败：连续多次与已有课程冲突");
 }
 
 export const CourseService = {
-  list(query: Record<string, unknown>): { data: Course[]; total: number } {
+  async list(ctx: Ctx, query: Record<string, unknown>): Promise<{ data: Course[]; total: number }> {
     const filter = parseListFilter(query);
     const source = filter.source ?? "all";
 
@@ -466,19 +462,19 @@ export const CourseService = {
     };
 
     const programs =
-      source === "program" ? ProgramCourseRepository.find(sharedFilter as ProgramCourseFilter) : [];
+      source === "program" ? await ProgramCourseRepository.find(ctx, sharedFilter as ProgramCourseFilter) : [];
     const customs =
-      source === "program" ? [] : CustomCourseRepository.find(sharedFilter as CustomCourseFilter);
+      source === "program" ? [] : await CustomCourseRepository.find(ctx, sharedFilter as CustomCourseFilter);
 
     const merged = [...programs, ...customs];
     return { data: merged, total: merged.length };
   },
 
-  getByCode(code: string, opts?: { includeTrash?: boolean }): Course {
-    return resolveCourse(code, opts);
+  getByCode(ctx: Ctx, code: string, opts?: { includeTrash?: boolean }): Promise<Course> {
+    return resolveCourse(ctx, code, opts);
   },
 
-  createCustom(body: unknown): Course {
+  async createCustom(ctx: Ctx, body: unknown): Promise<Course> {
     const dto = (body ?? {}) as Record<string, unknown>;
 
     const courseName = expectString(dto.courseName, "courseName")!;
@@ -511,7 +507,7 @@ export const CourseService = {
       dto.prerequisiteCourseCode === undefined || dto.prerequisiteCourseCode === null
         ? null
         : expectString(dto.prerequisiteCourseCode, "prerequisiteCourseCode", { allowNull: true });
-    if (prerequisiteCourseCode) assertPrerequisiteExists(prerequisiteCourseCode);
+    if (prerequisiteCourseCode) await assertPrerequisiteExists(ctx, prerequisiteCourseCode);
 
     const note =
       dto.note === undefined || dto.note === null
@@ -520,10 +516,10 @@ export const CourseService = {
 
     const courseCode =
       dto.courseCode === undefined || dto.courseCode === null || String(dto.courseCode).trim() === ""
-        ? nextAvailableCustomCourseCode()
-        : validateCustomCourseCode(expectString(dto.courseCode, "courseCode")!);
+        ? await nextAvailableCustomCourseCode(ctx)
+        : await validateCustomCourseCode(ctx, expectString(dto.courseCode, "courseCode")!);
 
-    CustomCourseRepository.insert({
+    await CustomCourseRepository.insert(ctx, {
       course_code: courseCode,
       category_code: categoryCode,
       category_name: categoryName(categoryCode),
@@ -544,14 +540,14 @@ export const CourseService = {
       note: note ?? null,
     });
 
-    const created = CustomCourseRepository.findByCode(courseCode);
+    const created = await CustomCourseRepository.findByCode(ctx, courseCode);
     if (!created) throw fail.notFound("custom course", courseCode);
     return created;
   },
 
-  createCustomFromRaw(body: unknown): Course {
+  async createCustomFromRaw(ctx: Ctx, body: unknown): Promise<Course> {
     const input = parseCreateFromRawDto(body);
-    const raw = RawRepository.findSearchRowForAdd({
+    const raw = await RawRepository.findSearchRowForAdd(ctx, {
       sourceType: input.sourceType,
       batchId: input.batchId,
       sourceRow: input.sourceRow,
@@ -568,11 +564,8 @@ export const CourseService = {
       throw fail.validation("sectionCode 与 raw 记录不一致", { sectionCode: "与来源不一致" });
     }
 
-    const existingProgram = ProgramCourseRepository.findByCode(raw.course_code, {
-      includeTrash: true,
-      includePermanentlyDeleted: true,
-    });
-    const existingPlanCourse = CustomCourseRepository.findByCodeOrNameInTerm({
+    const existingProgram = await ProgramCourseRepository.findByCode(ctx, raw.course_code);
+    const existingPlanCourse = await CustomCourseRepository.findByCodeOrNameInTerm(ctx, {
       courseCode: raw.course_code,
       courseName: raw.course_name,
       term: input.termNumber,
@@ -605,18 +598,18 @@ export const CourseService = {
     const actualRows = buildActualMeetingRows(raw, input, requirementType);
     const targetSectionCode = raw.source_type === "added" ? "1" : raw.section_code;
     const shouldInsertActualRows = targetSectionCode
-      ? !RawRepository.actualMeetingsExist({
+      ? !(await RawRepository.actualMeetingsExist(ctx, {
           term: input.termNumber,
           courseCode: raw.course_code,
           sectionCode: targetSectionCode,
-        })
+        }))
       : true;
 
-    return unitOfWork(() => {
+    await ctx.db.atomic(async () => {
       if (existingPlanCourse && existingPlanCourse.courseCode !== raw.course_code) {
-        CustomCourseRepository.delete(existingPlanCourse.courseCode);
+        await CustomCourseRepository.delete(ctx, existingPlanCourse.courseCode);
       }
-      CustomCourseRepository.insert({
+      await CustomCourseRepository.insert(ctx, {
         origin_type: existingProgram
           ? "official"
           : existingPlanCourse?.originType === "official"
@@ -645,16 +638,16 @@ export const CourseService = {
         note: sourceNote,
       });
       if (shouldInsertActualRows) {
-        RawRepository.insertActualCourseMeetings(actualRows);
+        await RawRepository.insertActualCourseMeetings(ctx, actualRows);
       }
-      const created = CustomCourseRepository.findByCode(raw.course_code);
-      if (!created) throw fail.notFound("custom course", raw.course_code);
-      return created;
     });
+    const created = await CustomCourseRepository.findByCode(ctx, raw.course_code);
+    if (!created) throw fail.notFound("custom course", raw.course_code);
+    return created;
   },
 
-  updateFields(code: string, body: unknown): Course {
-    const existing = resolveCourse(code);
+  async updateFields(ctx: Ctx, code: string, body: unknown): Promise<Course> {
+    const existing = await resolveCourse(ctx, code);
     const dto = (body ?? {}) as Record<string, unknown>;
 
     if (existing.source === "program") {
@@ -700,7 +693,7 @@ export const CourseService = {
         patch.prerequisite_course_code = null;
       } else {
         const v = expectString(dto.prerequisiteCourseCode, "prerequisiteCourseCode")!;
-        assertPrerequisiteExists(v);
+        await assertPrerequisiteExists(ctx, v);
         patch.prerequisite_course_code = v;
       }
     }
@@ -750,8 +743,8 @@ export const CourseService = {
       validateCreditCountToWithType(nextType, nextCountTo);
     }
 
-    CustomCourseRepository.update(code, patch);
-    return resolveCourse(code);
+    await CustomCourseRepository.update(ctx, code, patch);
+    return resolveCourse(ctx, code);
   },
 
   /** 批量校验工具：可被批量动作复用。 */
