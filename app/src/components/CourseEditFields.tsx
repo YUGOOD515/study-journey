@@ -1,5 +1,7 @@
 import type React from "react";
 import { CustomSelect } from "./CustomSelect";
+import { inputClass as baseInputClass } from "./ui";
+import { cn } from "../lib/cn";
 import type { CourseEditDraft, CourseNature } from "../types";
 import {
   COURSE_CATEGORY_OPTIONS,
@@ -50,9 +52,7 @@ export function CourseEditFields({
     });
   };
 
-  const inputClass = compact
-    ? "h-7 w-full rounded-md border border-sub/15 bg-card px-2 text-[11px] text-ink outline-none transition-colors placeholder:text-sub/45 focus:border-brand/45"
-    : "h-9 w-full rounded-md border border-sub/25 bg-bg px-3 text-sm text-ink outline-none transition-colors placeholder:text-sub/45 focus:border-brand";
+  const inputClass = compact ? cn(baseInputClass, "h-7 px-2 text-[11px]") : baseInputClass;
   const labelClass = compact ? "text-[10px] text-sub" : "text-[11px] text-sub";
 
   return (
@@ -118,7 +118,7 @@ export function CourseEditFields({
             />
           </label>
           {!interAllowed && (
-            <div className="mt-1 text-[10px] text-sub/60">仅通识教育和大类平台可设置</div>
+            <div className="mt-1 text-[10px] text-faint">仅通识教育和大类平台可设置</div>
           )}
           {isInter && (
             <div className="mt-1.5">
