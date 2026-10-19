@@ -87,3 +87,37 @@ raw_*                  学校原始开课数据
 不要把通识教育选修、通识教育跨专业课程放回 `plan_program_courses`。这些课程是用户选择的课程，应放在 `plan_custom_courses`。
 
 不要在普通开发中直接修改 SQLite 二进制文件后忘记同步迁移说明。结构变化应优先写入 `migrations/`。
+
+
+<!-- archive-preparation:2026-10-14:start -->
+## 使用与归档说明（2026-10-14）
+
+React / Vite / Tailwind 前端与 Express / node:sqlite 后端，展示培养方案、学期课表和学习规划。主库为 db/course_planner_v2.sqlite，另有教务数据抓取和导入工具。
+
+### 结构与入口
+
+- `README.md`：当前项目说明。
+- [app/package.json](app/package.json)：前后端开发和构建脚本。
+- [app/server/index.ts](app/server/index.ts)：Express API。
+- [app/server/db.ts](app/server/db.ts)：数据库路径与初始化。
+- [app/src/App.tsx](app/src/App.tsx)：React 应用。
+- [docs/00-document-index.md](docs/00-document-index.md)：文档索引。
+
+### 使用前提
+
+使用支持 node:sqlite 的 Node 版本，按 docs/02-run-and-development.md 准备数据库；在 app 内执行 npm ci、npm run dev。前端默认 6173，后端 6174。数据库缺失时不能假定会完整自动重建，迁移、种子与导入流程需结合文档；本轮未启动服务。
+
+### 归档分工
+
+**GitHub：** app 源码、依赖锁文件、迁移、导入脚本、docs；seeds 需确认不含真实成绩 / 个人计划后才纳入。优先沿用现有仓库，保留未提交修改。
+
+**夸克网盘：** db/ 一致性备份、src_data/ 学校表格和 fetch/outputs 仅私人归档；公开演示应另造虚构学生数据。
+
+### 当前限制
+
+目前已跟踪 SQLite 且有未提交数据库修改；不能整库直接发布，也不能认为 .gitignore 会消除历史数据。
+
+本次仅完成本地结构、关键入口与依赖检查，以及 README 准备，未验证全部运行功能。本轮未创建 GitHub 仓库或夸克分享链接，也未上传本次归档；后续归档须经目录所有者批准。
+
+作者自有内容尚未统一选择开源许可证；第三方源码和资源沿用原许可，目录内出现的第三方许可证不自动覆盖其他文件。
+<!-- archive-preparation:2026-10-14:end -->
