@@ -1,13 +1,12 @@
-import type { Router } from "express";
+import type { App } from "../../app-types";
+import type { Ctx } from "../../context";
 import { fail } from "../../lib/errors";
-import { handle, ok } from "../../lib/response";
-import { unitOfWork } from "../../lib/unit-of-work";
+import { ok, readJson } from "../../lib/response";
 import { expectArray, expectEnum, expectNumber } from "../../lib/validate";
 import { TrashService } from "../trash/trash.service";
 import { resolveCourseOrNull } from "./course-resolver";
 import { CourseService } from "./course.service";
 import { CustomCourseRepository } from "./custom-course.repository";
-import { ProgramCourseRepository } from "./program-course.repository";
 import {
   assertNotInTrash,
   assertPlanWritable,
@@ -104,199 +103,184 @@ function ensureUniqueCodes(codes: string[]) {
   }
 }
 
-function writeTerm(course: Course, term: number | null) {
+function assertCustom(course: Course) {
   if (course.source === "program") {
-    ProgramCourseRepository.update(course.courseCode, {
-      planned_term: term,
-      study_status: term === null ? "未修读" : "计划修读",
-    });
-  } else {
-    CustomCourseRepository.update(course.courseCode, {
-      term_number: term,
-      study_status: term === null ? "未修读" : "计划修读",
+    throw fail.precondition("官方培养计划是只读的，请先把课程加入我的计划", {
+      courseCode: course.courseCode,
     });
   }
 }
 
-function writeStudy(course: Course, next: { studyStatus: StudyStatus; term: number | null; score: number | null }) {
-  if (course.source === "program") {
-    ProgramCourseRepository.update(course.courseCode, {
-      study_status: next.studyStatus,
-      ...(next.studyStatus === "未修读"
-        ? { planned_term: null, actual_term: null, score: null }
-        : next.studyStatus === "计划修读" || next.studyStatus === "正在修读"
-          ? { planned_term: next.term }
-          : { actual_term: next.term, score: next.score }),
-    });
-  } else {
-    CustomCourseRepository.update(course.courseCode, {
-      study_status: next.studyStatus,
-      term_number: next.studyStatus === "未修读" ? null : next.term,
-      score: next.studyStatus === "未修读" ? null : next.score,
-    });
-  }
+async function writeTerm(ctx: Ctx, course: Course, term: number | null) {
+  assertCustom(course);
+  await CustomCourseRepository.update(ctx, course.courseCode, {
+    term_number: term,
+    actual_term: null,
+    study_status: term === null ? "未修读" : "计划修读",
+  });
 }
 
-function writeAssign(course: Course, value: CreditCountTo) {
-  if (course.source === "program") {
-    ProgramCourseRepository.update(course.courseCode, { credit_count_to: value });
-  } else {
-    CustomCourseRepository.update(course.courseCode, { credit_count_to: value });
-  }
+async function writeStudy(
+  ctx: Ctx,
+  course: Course,
+  next: { studyStatus: StudyStatus; term: number | null; score: number | null }
+) {
+  assertCustom(course);
+  await CustomCourseRepository.update(ctx, course.courseCode, {
+    study_status: next.studyStatus,
+    term_number: next.studyStatus === "未修读" ? null : next.term,
+    score: next.studyStatus === "未修读" ? null : next.score,
+  });
 }
 
-export function registerCourseBatchRoutes(apiRouter: Router) {
-  apiRouter.post(
-    /^\/courses:batch-plan$/,
-    handle((req, res) => {
-      const items = parsePlanItems(req.body);
-      ensureUniqueCodes(items.map((i) => i.courseCode));
-      ok(
-        res,
-        unitOfWork(() => {
-          const errors: BatchError[] = [];
-          const courses: Array<{ course: Course; term: number | null }> = [];
-          items.forEach((it, idx) => {
-            const c = resolveCourseOrNull(it.courseCode);
-            if (!c) {
-              errors.push({ index: idx, courseCode: it.courseCode, code: "NOT_FOUND", message: `课程不存在: ${it.courseCode}` });
-              return;
-            }
-            try {
-              assertPlanWritable(c);
-              courses.push({ course: c, term: it.term });
-            } catch (e: unknown) {
-              const err = e as { code?: string; message?: string };
-              errors.push({
-                index: idx,
-                courseCode: it.courseCode,
-                code: err.code ?? "PRECONDITION_FAILED",
-                message: err.message ?? "状态机校验失败",
-              });
-            }
-          });
-          if (errors.length) throw fail.precondition("批量加入计划失败", { items: errors });
-          for (const { course, term } of courses) writeTerm(course, term);
-          const results = courses.map(({ course }) => resolveCourseOrNull(course.courseCode)!);
-          return { affected: results.length, results };
-        })
-      );
-    })
-  );
+async function writeAssign(ctx: Ctx, course: Course, value: CreditCountTo) {
+  assertCustom(course);
+  await CustomCourseRepository.update(ctx, course.courseCode, { credit_count_to: value });
+}
 
-  apiRouter.post(
-    /^\/courses:batch-study-record$/,
-    handle((req, res) => {
-      const items = parseStudyItems(req.body);
-      ensureUniqueCodes(items.map((i) => i.courseCode));
-      ok(
-        res,
-        unitOfWork(() => {
-          const errors: BatchError[] = [];
-          const courses: Array<{ course: Course; next: BatchStudyItem }> = [];
-          items.forEach((it, idx) => {
-            const c = resolveCourseOrNull(it.courseCode);
-            if (!c) {
-              errors.push({ index: idx, courseCode: it.courseCode, code: "NOT_FOUND", message: `课程不存在: ${it.courseCode}` });
-              return;
-            }
-            try {
-              assertNotInTrash(c);
-              assertStudyRecordValid(it);
-              courses.push({ course: c, next: it });
-            } catch (e: unknown) {
-              const err = e as { code?: string; message?: string };
-              errors.push({
-                index: idx,
-                courseCode: it.courseCode,
-                code: err.code ?? "PRECONDITION_FAILED",
-                message: err.message ?? "状态机校验失败",
-              });
-            }
-          });
-          if (errors.length) throw fail.precondition("批量录入修读失败", { items: errors });
-          for (const { course, next } of courses) writeStudy(course, next);
-          const results = courses.map(({ course }) => resolveCourseOrNull(course.courseCode)!);
-          return { affected: results.length, results };
-        })
-      );
-    })
-  );
+function toBatchError(idx: number, courseCode: string, e: unknown, fallback: string): BatchError {
+  const err = e as { code?: string; message?: string };
+  return {
+    index: idx,
+    courseCode,
+    code: err.code ?? "PRECONDITION_FAILED",
+    message: err.message ?? fallback,
+  };
+}
 
-  apiRouter.post(
-    /^\/courses:batch-trash$/,
-    handle((req, res) => {
-      ok(res, TrashService.batchSoftDelete(req.body));
-    })
-  );
+async function reload(ctx: Ctx, courses: Course[]): Promise<Course[]> {
+  const results: Course[] = [];
+  for (const c of courses) {
+    const latest = await resolveCourseOrNull(ctx, c.courseCode);
+    if (latest) results.push(latest);
+  }
+  return results;
+}
 
-  apiRouter.post(
-    /^\/courses:batch-credit-assignment$/,
-    handle((req, res) => {
-      const items = parseAssignItems(req.body);
-      ensureUniqueCodes(items.map((i) => i.courseCode));
-      ok(
-        res,
-        unitOfWork(() => {
-          const errors: BatchError[] = [];
-          const targets: Array<{ course: Course; value: CreditCountTo }> = [];
-          items.forEach((it, idx) => {
-            const c = resolveCourseOrNull(it.courseCode);
-            if (!c) {
-              errors.push({ index: idx, courseCode: it.courseCode, code: "NOT_FOUND", message: `课程不存在: ${it.courseCode}` });
-              return;
-            }
-            if (c.requirementType !== "经法管融通") {
-              errors.push({
-                index: idx,
-                courseCode: it.courseCode,
-                code: "PRECONDITION_FAILED",
-                message: `课程性质为 ${c.requirementType}，不允许设置 creditCountTo`,
-              });
-              return;
-            }
-            if (c.isDeleted) {
-              errors.push({
-                index: idx,
-                courseCode: it.courseCode,
-                code: "PRECONDITION_FAILED",
-                message: "课程在垃圾篓中",
-              });
-              return;
-            }
-            targets.push({ course: c, value: it.creditCountTo });
-          });
-          if (errors.length) throw fail.precondition("批量学分归属失败", { items: errors });
+export function registerCourseBatchRoutes(app: App) {
+  app.post("/courses:batch-plan", async (c) => {
+    const ctx = c.var.ctx;
+    const items = parsePlanItems(await readJson(c));
+    ensureUniqueCodes(items.map((i) => i.courseCode));
+    const errors: BatchError[] = [];
+    const targets: Array<{ course: Course; term: number | null }> = [];
+    for (const [idx, it] of items.entries()) {
+      const course = await resolveCourseOrNull(ctx, it.courseCode);
+      if (!course) {
+        errors.push({ index: idx, courseCode: it.courseCode, code: "NOT_FOUND", message: `课程不存在: ${it.courseCode}` });
+        continue;
+      }
+      try {
+        assertPlanWritable(course);
+        assertCustom(course);
+        targets.push({ course, term: it.term });
+      } catch (e) {
+        errors.push(toBatchError(idx, it.courseCode, e, "状态机校验失败"));
+      }
+    }
+    if (errors.length) throw fail.precondition("批量加入计划失败", { items: errors });
+    await ctx.db.atomic(async () => {
+      for (const { course, term } of targets) await writeTerm(ctx, course, term);
+    });
+    const results = await reload(ctx, targets.map((t) => t.course));
+    return ok(c, { affected: results.length, results });
+  });
 
-          // 6 学分上限校验：模拟提交后所有经法管融通的有效学分。
-          const counted = simulatePostAssignCounted(
-            targets.map((t) => ({ courseCode: t.course.courseCode, creditCountTo: t.value }))
-          );
-          if (counted > INTERDISCIPLINARY_CAP) {
-            throw fail.precondition(
-              `经法管融通学分合计 ${counted} 超过上限 ${INTERDISCIPLINARY_CAP}`,
-              { cap: INTERDISCIPLINARY_CAP, counted }
-            );
-          }
+  app.post("/courses:batch-study-record", async (c) => {
+    const ctx = c.var.ctx;
+    const items = parseStudyItems(await readJson(c));
+    ensureUniqueCodes(items.map((i) => i.courseCode));
+    const errors: BatchError[] = [];
+    const targets: Array<{ course: Course; next: BatchStudyItem }> = [];
+    for (const [idx, it] of items.entries()) {
+      const course = await resolveCourseOrNull(ctx, it.courseCode);
+      if (!course) {
+        errors.push({ index: idx, courseCode: it.courseCode, code: "NOT_FOUND", message: `课程不存在: ${it.courseCode}` });
+        continue;
+      }
+      try {
+        assertNotInTrash(course);
+        assertStudyRecordValid(it);
+        assertCustom(course);
+        targets.push({ course, next: it });
+      } catch (e) {
+        errors.push(toBatchError(idx, it.courseCode, e, "状态机校验失败"));
+      }
+    }
+    if (errors.length) throw fail.precondition("批量录入修读失败", { items: errors });
+    await ctx.db.atomic(async () => {
+      for (const { course, next } of targets) await writeStudy(ctx, course, next);
+    });
+    const results = await reload(ctx, targets.map((t) => t.course));
+    return ok(c, { affected: results.length, results });
+  });
 
-          for (const { course, value } of targets) writeAssign(course, value);
-          const results = targets.map(({ course }) => resolveCourseOrNull(course.courseCode)!);
-          return { affected: results.length, results };
-        })
-      );
-    })
-  );
+  app.post("/courses:batch-trash", async (c) => ok(c, await TrashService.batchSoftDelete(c.var.ctx, await readJson(c))));
+
+  app.post("/courses:batch-credit-assignment", async (c) => {
+    const ctx = c.var.ctx;
+    const items = parseAssignItems(await readJson(c));
+    ensureUniqueCodes(items.map((i) => i.courseCode));
+    const errors: BatchError[] = [];
+    const targets: Array<{ course: Course; value: CreditCountTo }> = [];
+    for (const [idx, it] of items.entries()) {
+      const course = await resolveCourseOrNull(ctx, it.courseCode);
+      if (!course) {
+        errors.push({ index: idx, courseCode: it.courseCode, code: "NOT_FOUND", message: `课程不存在: ${it.courseCode}` });
+        continue;
+      }
+      if (course.requirementType !== "经法管融通") {
+        errors.push({
+          index: idx,
+          courseCode: it.courseCode,
+          code: "PRECONDITION_FAILED",
+          message: `课程性质为 ${course.requirementType}，不允许设置 creditCountTo`,
+        });
+        continue;
+      }
+      if (course.isDeleted) {
+        errors.push({ index: idx, courseCode: it.courseCode, code: "PRECONDITION_FAILED", message: "课程在垃圾篓中" });
+        continue;
+      }
+      try {
+        assertCustom(course);
+        targets.push({ course, value: it.creditCountTo });
+      } catch (e) {
+        errors.push(toBatchError(idx, it.courseCode, e, "官方课程只读"));
+      }
+    }
+    if (errors.length) throw fail.precondition("批量学分归属失败", { items: errors });
+
+    // 6 学分上限校验：模拟提交后所有经法管融通的有效学分。
+    const counted = await simulatePostAssignCounted(
+      ctx,
+      targets.map((t) => ({ courseCode: t.course.courseCode, creditCountTo: t.value }))
+    );
+    if (counted > INTERDISCIPLINARY_CAP) {
+      throw fail.precondition(`经法管融通学分合计 ${counted} 超过上限 ${INTERDISCIPLINARY_CAP}`, {
+        cap: INTERDISCIPLINARY_CAP,
+        counted,
+      });
+    }
+
+    await ctx.db.atomic(async () => {
+      for (const { course, value } of targets) await writeAssign(ctx, course, value);
+    });
+    const results = await reload(ctx, targets.map((t) => t.course));
+    return ok(c, { affected: results.length, results });
+  });
 }
 
 /**
  * 用本次批量提交后的状态，重新统计经法管融通课程的有效学分（不超过 6）。
  * 仅作上限拦截使用；正式的进度计算见 ProgressService.compute()。
  */
-function simulatePostAssignCounted(
+async function simulatePostAssignCounted(
+  ctx: Ctx,
   overrides: Array<{ courseCode: string; creditCountTo: CreditCountTo }>
-): number {
+): Promise<number> {
   const overrideMap = new Map(overrides.map((o) => [o.courseCode, o.creditCountTo]));
-  const allInterdisciplinary = CourseService.list({ requirementType: "经法管融通", limit: 1000 }).data;
+  const allInterdisciplinary = (await CourseService.list(ctx, { requirementType: "经法管融通", limit: 1000 })).data;
   const visible = allInterdisciplinary.filter((c) => !c.isDeleted && !c.isPermanentlyDeleted);
   // 状态优先级与 ProgressService 一致
   const priority: Record<StudyStatus, number> = {
@@ -324,4 +308,3 @@ function simulatePostAssignCounted(
   }
   return counted;
 }
-

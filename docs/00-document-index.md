@@ -20,6 +20,7 @@
 | 12 | `docs/14-codebase-analysis-2026-05-29.md` | 代码质量分析报告（数据库/后端/前端/工程基建） |
 | 13 | `docs/16-credit-rule-finalization-and-frontend-plan.md` | 经法管融通学分口径定稿与前端实施详情 |
 | 14 | `docs/17-project-status-and-roadmap-2026-05-31.md` | **项目近况总览与未来路线图** |
+| 15 | `docs/18-cloudflare-deployment.md` | **Cloudflare 部署、多用户与账号体系（以此为准）** |
 
 ## 专题文档
 
@@ -35,7 +36,8 @@
 
 | 任务 | 阅读文件 |
 |---|---|
-| 第一次启动项目 | `README.md`、`docs/02-run-and-development.md` |
+| 第一次启动项目 | `README.md`、`docs/18-cloudflare-deployment.md` |
+| 部署到 Cloudflare / 导入个人数据 | `docs/18-cloudflare-deployment.md` |
 | 查数据库表结构 | `docs/06-database-design.md` |
 | 修改后端接口 | `docs/04-backend-design.md`、`docs/08-api-reference.md` |
 | 修改前端页面 | `docs/05-frontend-design.md` |
@@ -58,6 +60,7 @@ docs/04-backend-design.md
 docs/05-frontend-design.md
 docs/06-database-design.md
 docs/07-data-import-and-raw-tables.md
+docs/18-cloudflare-deployment.md
 docs/08-api-reference.md
 docs/09-maintenance-and-refactor-plan.md
 docs/10-api-redesign.md

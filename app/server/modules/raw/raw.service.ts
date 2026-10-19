@@ -1,5 +1,6 @@
 import { fail } from "../../lib/errors";
 import { expectEnum, expectNumber, expectString } from "../../lib/validate";
+import type { Ctx } from "../../context";
 import { RawRepository } from "./raw.repository";
 
 function parseLimitOffset(q: Record<string, unknown>): { limit?: number; offset?: number } {
@@ -14,8 +15,8 @@ function parseLimitOffset(q: Record<string, unknown>): { limit?: number; offset?
 }
 
 export const RawService = {
-  listBatches(q: Record<string, unknown>) {
-    return RawRepository.listBatches({
+  async listBatches(ctx: Ctx, q: Record<string, unknown>) {
+    return RawRepository.listBatches(ctx, {
       academicYear: q.academicYear ? expectString(q.academicYear, "academicYear")! : undefined,
       semester: q.semester ? expectString(q.semester, "semester")! : undefined,
       phase: q.phase ? expectString(q.phase, "phase")! : undefined,
@@ -23,7 +24,7 @@ export const RawService = {
     });
   },
 
-  listSections(q: Record<string, unknown>) {
+  async listSections(ctx: Ctx, q: Record<string, unknown>) {
     const filter = {
       batchId: q.batchId !== undefined ? expectNumber(Number(q.batchId), "batchId", { min: 1, integer: true })! : undefined,
       courseCode: q.courseCode ? expectString(q.courseCode, "courseCode")! : undefined,
@@ -38,11 +39,11 @@ export const RawService = {
         { hint: "可用：batchId / courseCode / keyword / teacher / campus" }
       );
     }
-    return RawRepository.listSections(filter);
+    return RawRepository.listSections(ctx, filter);
   },
 
-  listAddedCourses(q: Record<string, unknown>) {
-    return RawRepository.listAddedCourses({
+  async listAddedCourses(ctx: Ctx, q: Record<string, unknown>) {
+    return RawRepository.listAddedCourses(ctx, {
       batchId: q.batchId !== undefined ? expectNumber(Number(q.batchId), "batchId", { min: 1, integer: true })! : undefined,
       courseCode: q.courseCode ? expectString(q.courseCode, "courseCode")! : undefined,
       keyword: q.keyword ? expectString(q.keyword, "keyword")! : undefined,
@@ -50,7 +51,7 @@ export const RawService = {
     });
   },
 
-  listCatalogPreviews(q: Record<string, unknown>) {
+  async listCatalogPreviews(ctx: Ctx, q: Record<string, unknown>) {
     const filter = {
       academicYear: q.academicYear ? expectString(q.academicYear, "academicYear")! : undefined,
       semester: q.semester ? expectString(q.semester, "semester")! : undefined,
@@ -64,11 +65,11 @@ export const RawService = {
         { hint: "可用：academicYear / semester / courseCode / module" }
       );
     }
-    return RawRepository.listCatalogPreviews(filter);
+    return RawRepository.listCatalogPreviews(ctx, filter);
   },
 
-  listActualCourseMeetings(q: Record<string, unknown>) {
-    return RawRepository.listActualCourseMeetings({
+  async listActualCourseMeetings(ctx: Ctx, q: Record<string, unknown>) {
+    return RawRepository.listActualCourseMeetings(ctx, {
       term: q.term !== undefined ? expectNumber(Number(q.term), "term", { min: 1, max: 8, integer: true })! : undefined,
       week: q.week !== undefined ? expectNumber(Number(q.week), "week", { min: 1, integer: true })! : undefined,
       weekday: q.weekday !== undefined ? expectNumber(Number(q.weekday), "weekday", { min: 1, max: 7, integer: true })! : undefined,
@@ -78,7 +79,7 @@ export const RawService = {
     });
   },
 
-  searchCourses(q: Record<string, unknown>) {
+  async searchCourses(ctx: Ctx, q: Record<string, unknown>) {
     const keyword = q.q ?? q.keyword;
     const filter = {
       keyword: keyword !== undefined && String(keyword).trim() !== ""
@@ -99,8 +100,9 @@ export const RawService = {
       );
     }
 
-    const baseYear = RawRepository.baseEnrollmentYear();
-    return RawRepository.searchCourses(filter).map((row) => {
+    const baseYear = ctx.enrollmentYear;
+    const rows = await RawRepository.searchCourses(ctx, filter);
+    return rows.map((row) => {
       const startYear = Number(row.academic_year.slice(0, 4));
       const termNumber = (startYear - baseYear) * 2 + (row.semester === "fall" ? 1 : 2);
       return {
@@ -137,8 +139,8 @@ export const RawService = {
     });
   },
 
-  findOpeningsByCode(code: string) {
+  async findOpeningsByCode(ctx: Ctx, code: string) {
     const c = expectString(code, "courseCode")!;
-    return RawRepository.findOpeningsByCode(c);
+    return RawRepository.findOpeningsByCode(ctx, c);
   },
 };

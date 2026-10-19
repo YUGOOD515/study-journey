@@ -1,22 +1,14 @@
-import { Router } from "express";
-import { handle, ok } from "../../lib/response";
+import type { App } from "../../app-types";
+import { ok, readJson } from "../../lib/response";
 import { StudyRecordService } from "./study-record.service";
 
-export const studyRecordRouter = Router({ mergeParams: true });
+export function registerStudyRecordRoutes(app: App) {
+  app.post("/courses/:code/study-record", async (c) => {
+    return ok(c, await StudyRecordService.upsert(c.var.ctx, c.req.param("code"), await readJson(c)));
+  });
 
-studyRecordRouter.post(
-  "/:code/study-record",
-  handle((req, res) => {
-    const data = StudyRecordService.upsert(String(req.params.code), req.body);
-    ok(res, data);
-  })
-);
-
-studyRecordRouter.delete(
-  "/:code/study-record",
-  handle((req, res) => {
-    const fb = req.query.fallback === "plan" ? "plan" : "none";
-    const data = StudyRecordService.clear(String(req.params.code), fb);
-    ok(res, data);
-  })
-);
+  app.delete("/courses/:code/study-record", async (c) => {
+    const fallback = c.req.query("fallback") === "plan" ? "plan" : "none";
+    return ok(c, await StudyRecordService.clear(c.var.ctx, c.req.param("code"), fallback));
+  });
+}

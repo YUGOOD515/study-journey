@@ -4,3 +4,6 @@ dist
 *.log
 .env
 .env.local
+.wrangler
+.dev.vars
+.preview

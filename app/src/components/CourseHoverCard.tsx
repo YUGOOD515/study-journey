@@ -1,12 +1,20 @@
 import type React from "react";
-import { useEffect, useLayoutEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "react";
+import { Pencil, RotateCcw, Trash2 } from "lucide-react";
 import { createPortal } from "react-dom";
-import type { CategoryCode, CourseEditDraft, CourseNature, CreditAssignmentTarget, PlanCoursePatch } from "../types";
+import type {
+  CategoryCode,
+  CourseEditDraft,
+  CourseNature,
+  CreditAssignmentTarget,
+  PlanCoursePatch,
+} from "../types";
 import { CATEGORY_STYLE } from "../lib/categoryStyle";
 import { assignmentLabel, canUseInterdisciplinary } from "../lib/courseOptions";
 import { formatCredits } from "../lib/credits";
 import { parseOfferedTerm } from "../lib/offeredTerm";
 import { CourseEditFields } from "./CourseEditFields";
+import { Button, Dialog } from "./ui";
 
 export interface CourseHoverInfo {
   source: "program" | "custom";
@@ -51,32 +59,50 @@ type Props = {
 };
 
 function creditCountToToAssignment(
-  creditCountTo: string | null | undefined
+  creditCountTo: string | null | undefined,
 ): CreditAssignmentTarget | null {
   if (creditCountTo === "通识教育-选修") return "elective";
   if (creditCountTo === "大类平台-选修") return "interdisciplinary";
   return null;
 }
 
-export function CourseHoverCard({
-  position,
-  popoverRef,
-  visible = true,
+interface ContentProps {
+  item: CourseHoverInfo;
+  mode?: Mode;
+  editable?: boolean;
+  onSave?: (patch: PlanCoursePatch) => Promise<void>;
+  onRestore?: () => Promise<void> | void;
+  onPermanentDelete?: () => Promise<void> | void;
+  /** 舒适布局（弹窗内） */
+  comfortable?: boolean;
+  /** 打开即进入编辑 */
+  startEditing?: boolean;
+  /** 保存成功 / 取消编辑后回调（弹窗用于关闭） */
+  onDone?: () => void;
+  /** 额外操作区（例如移动到、移入垃圾篓） */
+  extraActions?: React.ReactNode;
+  onLayoutChange?: () => void;
+}
+
+/** 课程详情内容：悬浮卡与详情弹窗共用 */
+export function CourseDetailContent({
   item,
   mode = "normal",
   editable = false,
   onSave,
   onRestore,
   onPermanentDelete,
-  onMouseEnter,
-  onMouseLeave,
-}: Props) {
+  comfortable = false,
+  startEditing = false,
+  onDone,
+  extraActions,
+  onLayoutChange,
+}: ContentProps) {
   const style = CATEGORY_STYLE[item.categoryCode] ?? CATEGORY_STYLE.general_education;
-  const [editing, setEditing] = useState(false);
+  const [editing, setEditing] = useState(startEditing && editable && Boolean(onSave));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState<CourseEditDraft>(() => initialDraft(item));
-  const [adjustedTop, setAdjustedTop] = useState(position.top);
 
   useEffect(() => {
     if (!editing) setDraft(initialDraft(item));
@@ -97,38 +123,22 @@ export function CourseHoverCard({
     item.creditCountTo,
   ]);
 
-  useLayoutEffect(() => {
-    const margin = 12;
-    const updatePosition = () => {
-      const viewportHeight = window.innerHeight || 800;
-      const maxUsableHeight = Math.max(180, viewportHeight - margin * 2);
-      const currentHeight = Math.min(
-        popoverRef.current?.getBoundingClientRect().height ?? maxUsableHeight,
-        maxUsableHeight
-      );
-      const maxTop = Math.max(margin, viewportHeight - currentHeight - margin);
-      setAdjustedTop(Math.max(margin, Math.min(position.top, maxTop)));
-    };
-
-    updatePosition();
-    const frame = window.requestAnimationFrame(updatePosition);
-    window.addEventListener("resize", updatePosition);
-    return () => {
-      window.cancelAnimationFrame(frame);
-      window.removeEventListener("resize", updatePosition);
-    };
-  }, [editing, draft, item.courseCode, item.courseName, mode, popoverRef, position.top]);
+  useEffect(() => {
+    onLayoutChange?.();
+  }, [editing, draft, mode, onLayoutChange]);
 
   const offeredText = useMemo(() => formatOfferedTerm(item.officialTerm), [item.officialTerm]);
   const plannedText = item.plannedTerm == null ? "待安排 / 未设置" : `第 ${item.plannedTerm} 学期`;
-  const scoreText = item.score == null ? "未填写" : String(item.score);
   const isInter = item.requirementType === "经法管融通" || Boolean(item.creditCountTo);
-  const assignmentText = isInter ? assignmentLabel(creditCountToToAssignment(item.creditCountTo)) : null;
+  const assignmentText = isInter
+    ? assignmentLabel(creditCountToToAssignment(item.creditCountTo))
+    : null;
 
   const reset = () => {
     setDraft(initialDraft(item));
     setError(null);
     setEditing(false);
+    if (startEditing) onDone?.();
   };
 
   const save = async () => {
@@ -139,6 +149,7 @@ export function CourseHoverCard({
       const patch = buildPatch(draft, { allowInterdisciplinary: item.source === "custom" });
       await onSave(patch);
       setEditing(false);
+      onDone?.();
     } catch (e: any) {
       setError(String(e?.message ?? e));
     } finally {
@@ -146,12 +157,208 @@ export function CourseHoverCard({
     }
   };
 
+  const size = comfortable ? "md" : "sm";
+
+  return (
+    <div className={comfortable ? "text-xs leading-relaxed" : "text-[11px] leading-relaxed"}>
+      {!comfortable && (
+        <div className="mb-2 flex items-baseline justify-between gap-2 border-b border-sub/15 pb-2">
+          <div className="min-w-0 text-[13px] font-medium" style={{ color: style.text }}>
+            {editing ? "编辑课程" : item.courseName}
+          </div>
+          <div className="num shrink-0 text-[10px] text-sub">{item.courseCode ?? "自定义"}</div>
+        </div>
+      )}
+
+      {editing ? (
+        <div className="space-y-1.5">
+          <CourseEditFields
+            draft={draft}
+            onChange={setDraft}
+            compact={!comfortable}
+            allowInterdisciplinary={item.source === "custom"}
+            showCourseName
+            showNote
+          />
+          {error && (
+            <div className="rounded-md bg-danger/10 px-2 py-1 text-[11px] text-danger">{error}</div>
+          )}
+          <div className="flex gap-1.5 pt-1">
+            <Button
+              size={size}
+              variant="primary"
+              className="flex-1"
+              loading={saving}
+              onClick={() => void save()}
+            >
+              保存
+            </Button>
+            <Button
+              size={size}
+              variant="secondary"
+              className="flex-1"
+              disabled={saving}
+              onClick={reset}
+            >
+              取消
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <>
+          <Row label="类别" comfortable={comfortable}>
+            <span className="inline-flex items-center gap-1.5">
+              <span
+                className="inline-block h-2 w-2 rounded-sm"
+                style={{ backgroundColor: style.color }}
+              />
+              {item.categoryName} · {item.requirementType}
+            </span>
+          </Row>
+          {isInter && (
+            <Row label="经融" comfortable={comfortable}>
+              <span className="text-sub">是 · 计入 {assignmentText}</span>
+            </Row>
+          )}
+          <Row label="学分" comfortable={comfortable}>
+            <span className="num">{formatCredits(item.credits)}</span>
+          </Row>
+          <Row label="学时" comfortable={comfortable}>
+            <span className="num text-sub">
+              讲 {item.lectureHours ?? 0} / 实 {item.experimentHours ?? 0} / 外{" "}
+              {item.extraHours ?? 0}
+            </span>
+          </Row>
+          <Row label="计划学期" comfortable={comfortable}>
+            <span className="num">{plannedText}</span>
+          </Row>
+          {item.officialTerm !== undefined && item.officialTerm !== null && (
+            <Row label="开课学期" comfortable={comfortable}>
+              <span className="num">{offeredText}</span>
+            </Row>
+          )}
+          <Row label="先修" comfortable={comfortable}>
+            {item.prerequisiteCourseCode || item.prerequisiteCourseName ? (
+              <span style={{ color: style.text }}>
+                {item.prerequisiteCourseName ?? item.prerequisiteCourseCode}
+              </span>
+            ) : (
+              <span className="text-faint">无</span>
+            )}
+          </Row>
+          <Row label="成绩" comfortable={comfortable}>
+            {item.score == null ? (
+              <span className="text-faint">未填写</span>
+            ) : (
+              <span className="num text-brand">{item.score}</span>
+            )}
+          </Row>
+          {item.note && (
+            <Row label="备注" comfortable={comfortable}>
+              <span className="whitespace-pre-wrap text-sub">{item.note}</span>
+            </Row>
+          )}
+          {mode === "trash" && item.deletedAt && (
+            <Row label="删除时间" comfortable={comfortable}>
+              <span className="num text-sub">{item.deletedAt}</span>
+            </Row>
+          )}
+
+          {mode === "trash" ? (
+            (onRestore || onPermanentDelete) && (
+              <div className="mt-2 flex gap-1.5 border-t border-sub/10 pt-2">
+                {onRestore && (
+                  <Button
+                    size={size}
+                    variant="secondary"
+                    className="flex-1"
+                    icon={<RotateCcw size={13} />}
+                    onClick={() => void onRestore()}
+                  >
+                    恢复
+                  </Button>
+                )}
+                {onPermanentDelete && (
+                  <Button
+                    size={size}
+                    variant="danger"
+                    className="flex-1"
+                    icon={<Trash2 size={13} />}
+                    onClick={() => void onPermanentDelete()}
+                  >
+                    永久删除
+                  </Button>
+                )}
+              </div>
+            )
+          ) : (editable && onSave) || extraActions ? (
+            <div className="mt-2 flex flex-wrap gap-1.5 border-t border-sub/10 pt-2">
+              {editable && onSave && (
+                <Button
+                  size={size}
+                  variant="secondary"
+                  className="flex-1"
+                  icon={<Pencil size={13} />}
+                  onClick={() => setEditing(true)}
+                >
+                  编辑
+                </Button>
+              )}
+              {extraActions}
+            </div>
+          ) : null}
+        </>
+      )}
+    </div>
+  );
+}
+
+/** 桌面端悬浮详情卡 */
+export function CourseHoverCard({
+  position,
+  popoverRef,
+  visible = true,
+  item,
+  mode = "normal",
+  editable = false,
+  onSave,
+  onRestore,
+  onPermanentDelete,
+  onMouseEnter,
+  onMouseLeave,
+}: Props) {
+  const style = CATEGORY_STYLE[item.categoryCode] ?? CATEGORY_STYLE.general_education;
+  const [adjustedTop, setAdjustedTop] = useState(position.top);
+
+  const updatePosition = useCallback(() => {
+    const margin = 12;
+    const viewportHeight = window.innerHeight || 800;
+    const maxUsableHeight = Math.max(180, viewportHeight - margin * 2);
+    const currentHeight = Math.min(
+      popoverRef.current?.getBoundingClientRect().height ?? maxUsableHeight,
+      maxUsableHeight,
+    );
+    const maxTop = Math.max(margin, viewportHeight - currentHeight - margin);
+    setAdjustedTop(Math.max(margin, Math.min(position.top, maxTop)));
+  }, [popoverRef, position.top]);
+
+  useLayoutEffect(() => {
+    updatePosition();
+    const frame = window.requestAnimationFrame(updatePosition);
+    window.addEventListener("resize", updatePosition);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener("resize", updatePosition);
+    };
+  }, [updatePosition, item.courseCode, item.courseName, mode]);
+
   const card = (
     <div
       ref={popoverRef}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
-      className="fixed z-50 rounded-lg text-[11px] leading-relaxed text-ink bg-card transform-gpu transition-[opacity,transform,box-shadow] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]"
+      role="tooltip"
+      className="fixed z-popover rounded-lg bg-card text-ink transform-gpu transition-[opacity,transform,box-shadow] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]"
       style={{
         left: position.left,
         top: adjustedTop,
@@ -170,131 +377,78 @@ export function CourseHoverCard({
         padding: "10px 12px",
       }}
     >
-      <div className="mb-2 flex items-baseline justify-between gap-2 border-b border-sub/15 pb-2">
-        <div className="min-w-0 text-[13px] font-medium" style={{ color: style.text }}>
-          {editing ? "编辑课程" : item.courseName}
-        </div>
-        <div className="shrink-0 text-[10px] text-sub tabular-nums">
-          {item.courseCode ?? "自定义"}
-        </div>
-      </div>
-
-      {editing ? (
-        <div className="space-y-1.5">
-          <CourseEditFields
-            draft={draft}
-            onChange={setDraft}
-            compact
-            allowInterdisciplinary={item.source === "custom"}
-            showCourseName
-            showNote
-          />
-          {error && <div className="rounded-md bg-brand/10 px-2 py-1 text-[10px] text-brand">{error}</div>}
-          <div className="flex gap-1.5 pt-1">
-            <button
-              type="button"
-              onClick={() => { void save(); }}
-              disabled={saving}
-              className="h-7 flex-1 rounded-md border border-sub/15 bg-sub/10 text-[11px] text-ink transition-colors hover:border-sub/35 disabled:opacity-60"
-            >
-              {saving ? "保存中" : "保存"}
-            </button>
-            <button
-              type="button"
-              onClick={reset}
-              disabled={saving}
-              className="h-7 flex-1 rounded-md border border-sub/15 bg-card/70 text-[11px] text-sub transition-colors hover:border-sub/35 hover:text-ink disabled:opacity-60"
-            >
-              取消
-            </button>
-          </div>
-        </div>
-      ) : (
-        <>
-          <Row label="类别">
-            <span className="inline-flex items-center gap-1.5">
-              <span className="inline-block h-2 w-2 rounded-sm" style={{ backgroundColor: style.color }} />
-              {item.categoryName} · {item.requirementType}
-            </span>
-          </Row>
-          {isInter && (
-            <Row label="经融">
-              <span className="text-sub">是 · 计入 {assignmentText}</span>
-            </Row>
-          )}
-          <Row label="学分">
-            <span className="tabular-nums">{formatCredits(item.credits)}</span>
-          </Row>
-          <Row label="学时">
-            <span className="tabular-nums text-sub">
-              讲 {item.lectureHours ?? 0} / 实 {item.experimentHours ?? 0} / 外 {item.extraHours ?? 0}
-            </span>
-          </Row>
-          <Row label="计划学期">
-            <span className="tabular-nums">{plannedText}</span>
-          </Row>
-          {item.officialTerm !== undefined && item.officialTerm !== null && (
-            <Row label="开课学期">
-              <span className="tabular-nums">{offeredText}</span>
-            </Row>
-          )}
-          <Row label="先修">
-            {item.prerequisiteCourseCode || item.prerequisiteCourseName ? (
-              <span style={{ color: style.text }}>
-                {item.prerequisiteCourseName ?? item.prerequisiteCourseCode}
-              </span>
-            ) : (
-              <span className="text-sub/60">无</span>
-            )}
-          </Row>
-          <Row label="成绩">
-            <span className={item.score == null ? "text-sub/60" : "text-brand tabular-nums"}>{scoreText}</span>
-          </Row>
-          {item.note && (
-            <Row label="备注">
-              <span className="text-sub">{item.note}</span>
-            </Row>
-          )}
-          {mode === "trash" && item.deletedAt && (
-            <Row label="删除时间">
-              <span className="text-sub/70 tabular-nums">{item.deletedAt}</span>
-            </Row>
-          )}
-
-          {mode === "trash" ? (
-            <div className="mt-2 flex gap-1.5 border-t border-sub/10 pt-2">
-              <button
-                type="button"
-                onClick={() => { void onRestore?.(); }}
-                className="h-7 flex-1 rounded-md border border-sub/15 bg-card/70 text-[11px] text-sub transition-colors hover:border-sub/35 hover:text-ink"
-              >
-                恢复
-              </button>
-              <button
-                type="button"
-                onClick={() => { void onPermanentDelete?.(); }}
-                className="h-7 flex-1 rounded-md border border-sub/15 bg-card/70 text-[11px] text-sub transition-colors hover:border-brand/35 hover:text-brand"
-              >
-                永久删除
-              </button>
-            </div>
-          ) : editable && onSave ? (
-            <div className="mt-2 flex border-t border-sub/10 pt-2">
-              <button
-                type="button"
-                onClick={() => setEditing(true)}
-                className="h-7 flex-1 rounded-md border border-sub/15 bg-card/70 text-[11px] text-sub transition-colors hover:border-sub/35 hover:text-ink"
-              >
-                编辑
-              </button>
-            </div>
-          ) : null}
-        </>
-      )}
+      <CourseDetailContent
+        item={item}
+        mode={mode}
+        editable={editable}
+        onSave={onSave}
+        onRestore={onRestore}
+        onPermanentDelete={onPermanentDelete}
+        onLayoutChange={updatePosition}
+      />
     </div>
   );
 
   return createPortal(card, document.body);
+}
+
+/** 课程详情弹窗：触屏点按 / 点击卡片打开；手机为底部抽屉 */
+export function CourseDetailDialog({
+  open,
+  onOpenChange,
+  item,
+  mode = "normal",
+  editable = false,
+  startEditing = false,
+  onSave,
+  onRestore,
+  onPermanentDelete,
+  extraActions,
+}: Omit<ContentProps, "comfortable" | "onDone" | "onLayoutChange"> & {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const style = CATEGORY_STYLE[item.categoryCode] ?? CATEGORY_STYLE.general_education;
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={onOpenChange}
+      size="sm"
+      title={
+        <span className="flex items-center gap-2">
+          <span
+            className="h-2.5 w-2.5 shrink-0 rounded-sm"
+            style={{ backgroundColor: style.color }}
+          />
+          <span className="min-w-0 truncate" style={{ color: style.text }}>
+            {item.courseName}
+          </span>
+        </span>
+      }
+      description={
+        <span className="num">
+          {item.courseCode ?? "自定义课程"}
+          {mode === "trash" ? " · 垃圾篓" : ""}
+        </span>
+      }
+    >
+      {open && (
+        <CourseDetailContent
+          key={`${item.courseCode ?? item.courseName}-${startEditing}`}
+          item={item}
+          mode={mode}
+          editable={editable}
+          startEditing={startEditing}
+          onSave={onSave}
+          onRestore={onRestore}
+          onPermanentDelete={onPermanentDelete}
+          extraActions={extraActions}
+          comfortable
+          onDone={() => onOpenChange(false)}
+        />
+      )}
+    </Dialog>
+  );
 }
 
 function initialDraft(item: CourseHoverInfo): CourseEditDraft {
@@ -318,7 +472,7 @@ function initialDraft(item: CourseHoverInfo): CourseEditDraft {
 
 function buildPatch(
   draft: CourseEditDraft,
-  { allowInterdisciplinary }: { allowInterdisciplinary: boolean }
+  { allowInterdisciplinary }: { allowInterdisciplinary: boolean },
 ): PlanCoursePatch {
   const score = draft.score.trim() === "" ? null : Number(draft.score);
   const category = draft.category_code;
@@ -329,7 +483,9 @@ function buildPatch(
     course_name: draft.course_name.trim(),
     category_code: category,
     course_nature: nature,
-    ...(allowInterdisciplinary ? { is_interdisciplinary: isInter ? 1 : 0, assigned_to: draft.assigned_to } : {}),
+    ...(allowInterdisciplinary
+      ? { is_interdisciplinary: isInter ? 1 : 0, assigned_to: draft.assigned_to }
+      : {}),
     credits: Number(draft.credits),
     lecture_hours: Number(draft.lecture_hours),
     experiment_hours: Number(draft.experiment_hours),
@@ -350,10 +506,30 @@ function formatOfferedTerm(term: string | null | undefined) {
   return `第 ${parsed.primary} 学期`;
 }
 
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
+function Row({
+  label,
+  children,
+  comfortable,
+}: {
+  label: string;
+  children: React.ReactNode;
+  comfortable?: boolean;
+}) {
   return (
-    <div className="flex items-baseline gap-3 py-0.5">
-      <div className="w-14 shrink-0 text-[10px] text-sub">{label}</div>
+    <div
+      className={
+        comfortable
+          ? "flex items-baseline gap-3 border-b border-sub/[0.07] py-1.5 last:border-0"
+          : "flex items-baseline gap-3 py-0.5"
+      }
+    >
+      <div
+        className={
+          comfortable ? "w-16 shrink-0 text-[11px] text-sub" : "w-14 shrink-0 text-[10px] text-sub"
+        }
+      >
+        {label}
+      </div>
       <div className="flex-1 text-ink">{children}</div>
     </div>
   );

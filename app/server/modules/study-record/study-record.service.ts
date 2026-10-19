@@ -1,3 +1,4 @@
+import type { Ctx } from "../../context";
 import { fail } from "../../lib/errors";
 import { expectEnum, expectNumber } from "../../lib/validate";
 import type { Course, StudyStatus } from "../courses/course.types";
@@ -13,17 +14,18 @@ const STUDY_STATUSES: StudyStatus[] = [
   "未通过",
 ];
 
-function applyRecord(
+async function applyRecord(
+  ctx: Ctx,
   course: Course,
   next: { studyStatus: StudyStatus; term: number | null; score: number | null }
-): void {
+): Promise<void> {
   if (course.source === "program") {
     throw fail.precondition("官方培养计划是只读的，请先把课程加入我的计划", {
       courseCode: course.courseCode,
     });
   }
 
-  CustomCourseRepository.update(course.courseCode, {
+  await CustomCourseRepository.update(ctx, course.courseCode, {
     study_status: next.studyStatus,
     planned_term: next.studyStatus === "未修读" ? null : next.term,
     actual_term:
@@ -37,8 +39,8 @@ function applyRecord(
 }
 
 export const StudyRecordService = {
-  upsert(code: string, body: unknown): Course {
-    const course = resolveCourse(code);
+  async upsert(ctx: Ctx, code: string, body: unknown): Promise<Course> {
+    const course = await resolveCourse(ctx, code);
     assertNotInTrash(course);
 
     const dto = (body ?? {}) as Record<string, unknown>;
@@ -53,12 +55,12 @@ export const StudyRecordService = {
         : expectNumber(dto.score, "score", { min: 0, max: 100 })!;
 
     assertStudyRecordValid({ studyStatus, term, score });
-    applyRecord(course, { studyStatus, term, score });
-    return resolveCourse(code);
+    await applyRecord(ctx, course, { studyStatus, term, score });
+    return resolveCourse(ctx, code);
   },
 
-  clear(code: string, fallback: "none" | "plan" = "none"): Course {
-    const course = resolveCourse(code);
+  async clear(ctx: Ctx, code: string, fallback: "none" | "plan" = "none"): Promise<Course> {
+    const course = await resolveCourse(ctx, code);
     assertNotInTrash(course);
 
     if (
@@ -73,10 +75,10 @@ export const StudyRecordService = {
     }
 
     if (fallback === "plan" && course.actualTerm !== null) {
-      applyRecord(course, { studyStatus: "计划修读", term: course.actualTerm, score: null });
+      await applyRecord(ctx, course, { studyStatus: "计划修读", term: course.actualTerm, score: null });
     } else {
-      applyRecord(course, { studyStatus: "未修读", term: null, score: null });
+      await applyRecord(ctx, course, { studyStatus: "未修读", term: null, score: null });
     }
-    return resolveCourse(code);
+    return resolveCourse(ctx, code);
   },
 };
