@@ -30,15 +30,17 @@ interface BucketTotal {
 interface Props {
   items: FlowItem[];
   onToggle: (item: FlowItem) => void;
+  /** 查看模式：不可切换 */
+  disabled?: boolean;
   interdisciplinaryTotal: BucketTotal;
   electiveTotalByCategory: Map<string, BucketTotal>;
 }
 
-const W = 420;
-const COURSE_X = 18;
-const COURSE_W = 78;
-const BUCKET_W = 150;
-const BUCKET_X = W - 18 - BUCKET_W;
+const W = 520;
+const COURSE_X = 4;
+const COURSE_W = 150;
+const BUCKET_W = 160;
+const BUCKET_X = W - 4 - BUCKET_W;
 const ROW_H = 26;
 const ROW_GAP = 4;
 const TOP = 18;
@@ -47,7 +49,8 @@ const BUCKET_H = 38;
 
 export function InterdisciplinaryFlow({
   items,
-  onToggle,
+  onToggle: rawToggle,
+  disabled = false,
   interdisciplinaryTotal,
   electiveTotalByCategory,
 }: Props) {
@@ -89,6 +92,11 @@ export function InterdisciplinaryFlow({
   const electiveY = (i: number) =>
     TOP + BUCKET_H + BUCKET_GAP + i * (BUCKET_H + BUCKET_GAP);
 
+  const onToggle = (item: FlowItem) => {
+    if (!disabled) rawToggle(item);
+  };
+  const pointer = disabled ? "default" : "pointer";
+
   const bezier = (x1: number, y1: number, x2: number, y2: number) => {
     const mx = (x1 + x2) / 2;
     return `M ${x1},${y1} C ${mx},${y1} ${mx},${y2} ${x2},${y2}`;
@@ -96,11 +104,11 @@ export function InterdisciplinaryFlow({
 
   return (
     <svg
-      width={W}
+      width="100%"
       height={H}
       viewBox={`0 0 ${W} ${H}`}
       preserveAspectRatio="xMidYMid meet"
-      style={{ display: "block", maxWidth: "100%" }}
+      style={{ display: "block", maxWidth: W }}
     >
       {/* 链接 */}
       {items.map((it, i) => {
@@ -122,7 +130,7 @@ export function InterdisciplinaryFlow({
             stroke={color}
             strokeWidth={stroke}
             strokeOpacity={0.45}
-            style={{ cursor: "pointer", transition: "stroke-opacity 200ms" }}
+            style={{ cursor: pointer, transition: "stroke-opacity 200ms" }}
             onClick={() => onToggle(it)}
             onMouseEnter={(e) =>
               ((e.target as SVGPathElement).style.strokeOpacity = "0.75")
@@ -136,7 +144,7 @@ export function InterdisciplinaryFlow({
               {it.assignment === "interdisciplinary"
                 ? "经法管融通"
                 : `${CATEGORY_STYLE[it.categoryCode]?.name ?? it.categoryCode}·选修`}
-              {"\n"}点击切换归属
+              {disabled ? "" : "\n点击切换归属"}
             </title>
           </path>
         );
@@ -149,7 +157,7 @@ export function InterdisciplinaryFlow({
           <g
             key={`course-${it.key}`}
             transform={`translate(${COURSE_X}, ${courseY(i)})`}
-            style={{ cursor: "pointer" }}
+            style={{ cursor: pointer }}
             onClick={() => onToggle(it)}
           >
             <rect
@@ -162,15 +170,23 @@ export function InterdisciplinaryFlow({
               strokeOpacity={0.55}
             />
             <text
-              x={COURSE_W / 2}
-              y={ROW_H / 2 + 3}
-              textAnchor="middle"
-              fontSize={9}
+              x={8}
+              y={ROW_H / 2 + 3.5}
+              fontSize={10}
               fill={it.isEarned ? "white" : color}
               style={{ pointerEvents: "none" }}
             >
-              {truncate(it.courseName, 6)} · {formatCredits(it.credits)}
-              {it.isEarned ? " ✓" : ""}
+              {truncate(it.courseName, 10)}
+            </text>
+            <text
+              x={COURSE_W - 8}
+              y={ROW_H / 2 + 3.5}
+              textAnchor="end"
+              fontSize={10}
+              fill={it.isEarned ? "white" : color}
+              style={{ pointerEvents: "none", fontVariantNumeric: "tabular-nums" }}
+            >
+              {formatCredits(it.credits)}
             </text>
           </g>
         );
