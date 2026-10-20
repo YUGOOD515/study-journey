@@ -3,66 +3,51 @@ interface Props {
   required: number;
   color: string;
   trackColor?: string;
-  /** 正在修读（中等不透明度段）。 */
   inProgress?: number;
-  /** 计划修读（最浅段）。 */
   planned?: number;
-  /** 轨道高度（px），默认 8。 */
   height?: number;
 }
 
-/**
- * 三段式学分进度条：已修（实色）→ 正在修读（半透明）→ 计划修读（更浅）。
- * 段宽按 required 归一并依次裁剪，累计不超过 100%。required<=0 时按已有学分铺满。
- */
-export function ProgressBar({
-  earned,
-  required,
-  color,
-  trackColor,
-  inProgress = 0,
-  planned = 0,
-  height = 8,
-}: Props) {
+/** 三段式学分进度条：已修（实色）→ 在修（50%）→ 计划（25%）。累计不超过 100%。 */
+export function ProgressBar({ earned, required, color, trackColor, inProgress = 0, planned = 0, height = 6 }: Props) {
   const denom = required > 0 ? required : Math.max(earned + inProgress + planned, 1);
-
   let acc = 0;
   const cut = (raw: number) => {
     const pct = (Math.max(0, raw) / denom) * 100;
-    const left = acc;
     const width = Math.min(pct, Math.max(0, 100 - acc));
     acc += width;
-    return { left, width };
+    return width;
   };
-  const segEarned = cut(earned);
-  const segInProgress = cut(inProgress);
-  const segPlanned = cut(planned);
-
+  const segs = [
+    { w: cut(earned), o: 1 },
+    { w: cut(inProgress), o: 0.5 },
+    { w: cut(planned), o: 0.25 },
+  ];
   const overflow = required > 0 && earned > required;
-
-  const seg = (s: { left: number; width: number }, opacity: number, z: number) =>
-    s.width > 0 ? (
-      <div
-        className="absolute inset-y-0 transition-all duration-700 ease-out"
-        style={{ left: `${s.left}%`, width: `${s.width}%`, backgroundColor: color, opacity, zIndex: z }}
-      />
-    ) : null;
 
   return (
     <div
-      className="relative rounded-full overflow-hidden"
-      style={{ height, backgroundColor: trackColor ?? "rgb(var(--sub) / 0.13)" }}
+      className="relative flex w-full overflow-hidden rounded-sm"
+      style={{ height, backgroundColor: trackColor ?? "rgb(var(--fill-strong))" }}
     >
-      {seg(segPlanned, 0.26, 1)}
-      {seg(segInProgress, 0.55, 2)}
-      {seg(segEarned, 1, 3)}
+      {segs.map((s, i) =>
+        s.w > 0 ? <div key={i} className="h-full" style={{ width: `${s.w}%`, backgroundColor: color, opacity: s.o }} /> : null,
+      )}
       {overflow && (
-        <div
-          className="absolute inset-y-0 right-0 w-1"
-          style={{ backgroundColor: "rgb(var(--brand) / 1)", zIndex: 4 }}
-          title="已超出培养方案要求"
-        />
+        <div className="absolute inset-y-0 right-0 w-0.5 bg-warn" title="已超出培养方案要求" />
       )}
     </div>
+  );
+}
+
+/** 进度条图例：已修 / 在修 / 计划 / 待修 */
+export function ProgressLegendSwatch({ level, color = "rgb(var(--ink))" }: { level: 0 | 1 | 2 | 3; color?: string }) {
+  if (level === 3) return <span className="inline-block h-2 w-2 rounded-sm bg-fill-strong" aria-hidden />;
+  return (
+    <span
+      className="inline-block h-2 w-2 rounded-sm"
+      style={{ backgroundColor: color, opacity: [1, 0.5, 0.25][level] }}
+      aria-hidden
+    />
   );
 }

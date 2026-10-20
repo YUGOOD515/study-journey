@@ -28,31 +28,53 @@ app/src/index.css
 | React 18 | 页面和组件 |
 | Vite | 开发服务器和构建 |
 | TypeScript | 类型约束 |
-| Tailwind CSS | 样式工具类 |
-| @visx/sankey / d3-sankey | 旅迹页数据流可视化 |
+| Tailwind CSS | 样式工具类（主题 token 全部在 `tailwind.config.js` + `index.css`） |
+| Radix UI | Dialog / Popover / Menu / Tooltip 等无样式交互原语 |
+| dnd-kit | 时间轴拖拽 |
+
+## 2.1 设计系统（redesign 分支起）
+
+整体原则：克制、层级清晰、网格对齐；不使用氛围光、渐变、错峰入场动画、hover 上浮等装饰。
+
+| 维度 | 规则 |
+|---|---|
+| 字体 | 正文系统无衬线（PingFang SC / 系统 UI 字体）；**所有数字**使用 `.num`（`ui-monospace` 等宽 + `tabular-nums`），保证纵向对齐 |
+| 字号 | 只有 6 档：`2xs` 11/16、`xs` 12/18（正文默认）、`sm` 13/20、`base` 15/22、`lg` 20/28（页面标题）、`xl` 28/32（总览大数字） |
+| 字重 | 400 / 500 / 600 三档 |
+| 圆角 | `rounded-sm` 2px（徽标、进度条、标签）、`rounded` 4px（按钮、输入框、课程卡）、`rounded-md` 6px（面板、弹窗） |
+| 间距 | 4px 基准；页面容器统一 `max-w-[1440px] px-4 sm:px-6` |
+| 颜色 | `bg / card / ink / sub / faint` 文本层级；`line / line-strong` 实色描边；`fill / fill-strong` 实色底；`brand` 只用于"本学期 / 今天"等少量强调；`warn` 用于超限与提醒；`danger` 用于删除 |
+| 类别色 | 5 个培养方案板块各一色（`--cat-*`），课程卡以左侧 2px 色条 + 必修浅底 / 选修白底描边表达，不再用虚线区分 |
+| 阴影 | 只有浮层（菜单、弹窗、悬停卡）使用 `shadow-pop`，其余一律用 1px 描边 |
+| 动效 | 仅 120ms 淡入与手机底部抽屉滑入；遵守 `prefers-reduced-motion` |
+| 焦点 | 统一 `focus-visible` 2px brand 轮廓 |
+| 深色模式 | 同一套 token 的深色值，组件内不判断主题 |
+
+通用组件位于 `components/ui/`：`Button / IconButton`、`Field / Input / PasswordInput`、`Select`、`Segmented`、`Menu`、`Popover`、`Tooltip`、`Dialog / Confirm`、`Toaster`，以及布局组件 `Page / PageHeader / Metric / SectionHeader / Bar` 和 `Panel / Badge / EmptyState / Skeleton`。
+
+页面骨架统一为：顶栏（48px）→ `PageHeader`（标题 + 说明 + 右侧等宽指标 + 工具栏 + 底部分隔线）→ 内容区块（`SectionHeader` + `Panel`）。
 
 ## 3. 页面结构
 
-当前主要页面：
-
-| 页面 | 文件 | 行数 | 作用 |
-|---|---|---:|---|
-| 时间轴 | `app/src/pages/Timeline.tsx` | 1779 | 我的计划、官方计划、待安排、垃圾篓、课程添加与编辑 |
-| 旅迹 | `app/src/pages/Trail.tsx` | 762 | 学分进度、课程路径、分类统计和可视化 |
+| 页面 | 文件 | 作用 |
+|---|---|---|
+| 时间轴 | `app/src/pages/Timeline.tsx`（+ `pages/timeline/`） | 我的计划、官方计划、待安排、垃圾篓、课程添加与编辑 |
+| 旅迹 | `app/src/pages/Trail.tsx` | 学分总览、经法管融通学分归属、五大板块对齐表格（可展开查看课程并填写成绩） |
+| 学期课表 | `app/src/pages/TermSchedule.tsx` | 周课表网格（节次 × 星期）、手机按天列表、课程周次分布 |
+| 登录 / 注册 | `app/src/pages/AuthPage.tsx` | 单列表单 |
 
 ## 4. 组件结构
 
 | 组件 | 文件 | 作用 |
 |---|---|---|
-| `CourseCard` | `components/CourseCard.tsx` | 官方课程卡片 |
-| `ManualCourseCard` | `components/ManualCourseCard.tsx` | 自定义/用户课程卡片 |
+| `CourseCard` | `components/CourseCard.tsx` | 课程卡片（`custom` 属性用于自定义/用户课程）；导出 `courseSurface()` 统一类别色表达 |
+| `CourseTile` | `components/CourseTile.tsx` | 课程卡外壳：悬停卡、详情弹窗、菜单、拖拽 |
 | `CourseHoverCard` | `components/CourseHoverCard.tsx` | hover 信息卡、轻量编辑入口 |
 | `CourseEditFields` | `components/CourseEditFields.tsx` | 添加/编辑课程的统一字段表单 |
-| `ManualCourseDialog` | `components/ManualCourseDialog.tsx` | 添加自定义课程弹窗 |
-| `CustomSelect` | `components/CustomSelect.tsx` | 自定义下拉菜单，替代浏览器原生 select |
-| `ProgressBar` | `components/ProgressBar.tsx` | 学分进度条 |
-| `ThemeToggle` | `components/ThemeToggle.tsx` | 明暗主题切换 |
-| `InterdisciplinaryFlow` | `components/InterdisciplinaryFlow.tsx` | 经法管融通/学分流向可视化 |
+| `AddCourseDialog` | `components/AddCourseDialog.tsx` | 搜索添加 / 手动添加课程 |
+| `ProgressBar` | `components/ProgressBar.tsx` | 三段式学分进度条（已修 / 在修 / 计划） |
+| `InterdisciplinaryFlow` | `components/InterdisciplinaryFlow.tsx` | 经法管融通学分归属：去向汇总 + 每门课分段切换 |
+| `AccountMenu` / `ThemeToggle` / `EditModeToggle` | `components/` | 顶栏右侧控件 |
 
 ## 5. 前端工具函数
 
@@ -182,7 +204,7 @@ hover 卡片显示：
 
 | 问题 | 影响 | 建议 |
 |---|---|---|
-| `Timeline.tsx` 过大 | 状态、布局、业务操作混杂 | 拆页面组件和自定义 hook |
+| `Timeline.tsx` 仍偏大 | 状态与业务操作集中 | 继续把拖拽与数据操作拆成自定义 hook |
 | 课程字段转换散落 | 容易出现前后端口径不一致 | 统一到 `lib/courseOptions.ts` 和 API mapper |
 | hover 编辑逻辑较重 | 组件既显示又编辑 | 拆 `CourseHoverView` 与 `CourseHoverEditForm` |
 | raw 数据功能尚未完全前端化 | raw 表已有数据，但候选课程查询仍可扩展 | 增加候选课程选择器 |
@@ -194,3 +216,5 @@ hover 卡片显示：
 3. 课程类型定义优先从 `types.ts` 引用，不要在组件中重复声明。
 4. 所有 API 调用集中在 `lib/api.ts`，不要在页面中直接散写 fetch。
 5. 添加新字段时，同时更新 `types.ts`、`lib/api.ts`、后端 API 文档和数据库文档。
+6. 新增界面只使用 `tailwind.config.js` 中定义的字号、圆角、颜色 token；不写任意值字号（如 `text-[10px]`）和半透明描边（如 `border-sub/15`）。
+7. 数字一律包在 `.num` 中；表格数字列右对齐。

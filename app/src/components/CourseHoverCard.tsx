@@ -160,13 +160,13 @@ export function CourseDetailContent({
   const size = comfortable ? "md" : "sm";
 
   return (
-    <div className={comfortable ? "text-xs leading-relaxed" : "text-[11px] leading-relaxed"}>
+    <div className={comfortable ? "text-xs" : "text-2xs"}>
       {!comfortable && (
-        <div className="mb-2 flex items-baseline justify-between gap-2 border-b border-sub/15 pb-2">
-          <div className="min-w-0 text-[13px] font-medium" style={{ color: style.text }}>
+        <div className="-mx-3 -mt-2 mb-2 flex items-baseline justify-between gap-3 border-b border-line px-3 py-2">
+          <div className="min-w-0 text-xs font-semibold text-ink">
             {editing ? "编辑课程" : item.courseName}
           </div>
-          <div className="num shrink-0 text-[10px] text-sub">{item.courseCode ?? "自定义"}</div>
+          <div className="num shrink-0 text-2xs text-faint">{item.courseCode ?? "自定义"}</div>
         </div>
       )}
 
@@ -181,9 +181,9 @@ export function CourseDetailContent({
             showNote
           />
           {error && (
-            <div className="rounded-md bg-danger/10 px-2 py-1 text-[11px] text-danger">{error}</div>
+            <div className="border-l-2 border-danger pl-2 text-2xs text-danger">{error}</div>
           )}
-          <div className="flex gap-1.5 pt-1">
+          <div className="flex gap-2 pt-1">
             <Button
               size={size}
               variant="primary"
@@ -212,36 +212,43 @@ export function CourseDetailContent({
                 className="inline-block h-2 w-2 rounded-sm"
                 style={{ backgroundColor: style.color }}
               />
-              {item.categoryName} · {item.requirementType}
+              {item.categoryName}
+              <span className="text-faint">/</span>
+              {item.requirementType}
             </span>
           </Row>
           {isInter && (
             <Row label="经融" comfortable={comfortable}>
-              <span className="text-sub">是 · 计入 {assignmentText}</span>
+              <span>计入 {assignmentText}</span>
             </Row>
           )}
           <Row label="学分" comfortable={comfortable}>
             <span className="num">{formatCredits(item.credits)}</span>
           </Row>
           <Row label="学时" comfortable={comfortable}>
-            <span className="num text-sub">
-              讲 {item.lectureHours ?? 0} / 实 {item.experimentHours ?? 0} / 外{" "}
-              {item.extraHours ?? 0}
+            <span className="inline-flex gap-3">
+              <span>
+                讲课 <span className="num">{item.lectureHours ?? 0}</span>
+              </span>
+              <span>
+                实践 <span className="num">{item.experimentHours ?? 0}</span>
+              </span>
+              <span>
+                课外 <span className="num">{item.extraHours ?? 0}</span>
+              </span>
             </span>
           </Row>
           <Row label="计划学期" comfortable={comfortable}>
-            <span className="num">{plannedText}</span>
+            <span>{plannedText}</span>
           </Row>
           {item.officialTerm !== undefined && item.officialTerm !== null && (
             <Row label="开课学期" comfortable={comfortable}>
-              <span className="num">{offeredText}</span>
+              <span>{offeredText}</span>
             </Row>
           )}
           <Row label="先修" comfortable={comfortable}>
             {item.prerequisiteCourseCode || item.prerequisiteCourseName ? (
-              <span style={{ color: style.text }}>
-                {item.prerequisiteCourseName ?? item.prerequisiteCourseCode}
-              </span>
+              <span>{item.prerequisiteCourseName ?? item.prerequisiteCourseCode}</span>
             ) : (
               <span className="text-faint">无</span>
             )}
@@ -250,7 +257,7 @@ export function CourseDetailContent({
             {item.score == null ? (
               <span className="text-faint">未填写</span>
             ) : (
-              <span className="num text-brand">{item.score}</span>
+              <span className="num font-medium">{item.score}</span>
             )}
           </Row>
           {item.note && (
@@ -266,7 +273,7 @@ export function CourseDetailContent({
 
           {mode === "trash" ? (
             (onRestore || onPermanentDelete) && (
-              <div className="mt-2 flex gap-1.5 border-t border-sub/10 pt-2">
+              <div className="-mx-3 -mb-2 mt-2 flex gap-2 border-t border-line px-3 py-2">
                 {onRestore && (
                   <Button
                     size={size}
@@ -292,7 +299,7 @@ export function CourseDetailContent({
               </div>
             )
           ) : (editable && onSave) || extraActions ? (
-            <div className="mt-2 flex flex-wrap gap-1.5 border-t border-sub/10 pt-2">
+            <div className="-mx-3 -mb-2 mt-2 flex flex-wrap gap-2 border-t border-line px-3 py-2">
               {editable && onSave && (
                 <Button
                   size={size}
@@ -327,7 +334,6 @@ export function CourseHoverCard({
   onMouseEnter,
   onMouseLeave,
 }: Props) {
-  const style = CATEGORY_STYLE[item.categoryCode] ?? CATEGORY_STYLE.general_education;
   const [adjustedTop, setAdjustedTop] = useState(position.top);
 
   const updatePosition = useCallback(() => {
@@ -358,23 +364,18 @@ export function CourseHoverCard({
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
       role="tooltip"
-      className="fixed z-popover rounded-lg bg-card text-ink transform-gpu transition-[opacity,transform,box-shadow] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]"
+      className="fixed z-popover rounded-md border border-line bg-card text-ink shadow-pop transition-opacity duration-150"
       style={{
         left: position.left,
         top: adjustedTop,
         width: position.width,
         opacity: visible ? 1 : 0,
-        transform: visible ? "translateY(0) scale(1)" : "translateY(5px) scale(0.985)",
-        transformOrigin: position.placeLeft ? "right top" : "left top",
         pointerEvents: visible ? "auto" : "none",
         maxWidth: "calc(100vw - 24px)",
         maxHeight: "calc(100vh - 24px)",
         overflowY: "auto",
         overscrollBehavior: "contain",
-        border: `1px solid ${style.border}`,
-        boxShadow:
-          "0 14px 36px rgb(var(--shadow-rgb) / var(--shadow-strong)), 0 2px 8px rgb(var(--shadow-rgb) / var(--shadow-soft))",
-        padding: "10px 12px",
+        padding: "8px 12px",
       }}
     >
       <CourseDetailContent
@@ -420,15 +421,13 @@ export function CourseDetailDialog({
             className="h-2.5 w-2.5 shrink-0 rounded-sm"
             style={{ backgroundColor: style.color }}
           />
-          <span className="min-w-0 truncate" style={{ color: style.text }}>
-            {item.courseName}
-          </span>
+          <span className="min-w-0 truncate">{item.courseName}</span>
         </span>
       }
       description={
         <span className="num">
           {item.courseCode ?? "自定义课程"}
-          {mode === "trash" ? " · 垃圾篓" : ""}
+          {mode === "trash" ? "（垃圾篓）" : ""}
         </span>
       }
     >
@@ -519,18 +518,18 @@ function Row({
     <div
       className={
         comfortable
-          ? "flex items-baseline gap-3 border-b border-sub/[0.07] py-1.5 last:border-0"
-          : "flex items-baseline gap-3 py-0.5"
+          ? "grid grid-cols-[64px_1fr] items-baseline gap-3 border-b border-line py-2 first:pt-0 last:border-0"
+          : "grid grid-cols-[52px_1fr] items-baseline gap-2 py-0.5"
       }
     >
       <div
         className={
-          comfortable ? "w-16 shrink-0 text-[11px] text-sub" : "w-14 shrink-0 text-[10px] text-sub"
+          comfortable ? "text-2xs text-sub" : "text-2xs text-faint"
         }
       >
         {label}
       </div>
-      <div className="flex-1 text-ink">{children}</div>
+      <div className="min-w-0 text-ink">{children}</div>
     </div>
   );
 }

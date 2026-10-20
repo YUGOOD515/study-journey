@@ -2,65 +2,38 @@ import { forwardRef } from "react";
 import { Loader2 } from "lucide-react";
 import { cn } from "../../lib/cn";
 
-export type ButtonVariant =
-  | "primary"
-  | "secondary"
-  | "ghost"
-  | "soft"
-  | "dashed"
-  | "danger"
-  | "danger-solid";
-export type ButtonSize = "xs" | "sm" | "md" | "lg";
+export type ButtonVariant = "primary" | "secondary" | "ghost" | "danger" | "danger-solid";
+export type ButtonSize = "sm" | "md" | "lg";
 
 const VARIANT: Record<ButtonVariant, string> = {
-  primary: "border-transparent bg-brand text-white hover:bg-brand/90 active:bg-brand/80",
-  secondary: "border-sub/20 bg-card text-ink hover:border-sub/40 hover:bg-sub/5",
-  ghost: "border-transparent text-sub hover:text-ink hover:bg-sub/10",
-  soft: "border-transparent bg-sub/10 text-ink hover:bg-sub/15",
-  dashed: "border-dashed border-sub/25 text-sub hover:text-ink hover:border-sub/45 hover:bg-sub/5",
-  danger: "border-danger/30 bg-card text-danger hover:border-danger/50 hover:bg-danger/10",
-  "danger-solid": "border-transparent bg-danger text-white hover:bg-danger/90",
+  primary: "border-ink bg-ink text-bg hover:bg-ink/85",
+  secondary: "border-line-strong bg-card text-ink hover:bg-fill",
+  ghost: "border-transparent text-sub hover:bg-fill hover:text-ink",
+  danger: "border-line-strong bg-card text-danger hover:border-danger/50 hover:bg-danger/5",
+  "danger-solid": "border-danger bg-danger text-white hover:bg-danger/90",
 };
 
 const SIZE: Record<ButtonSize, string> = {
-  xs: "h-6 px-2 text-[11px] gap-1 rounded",
-  sm: "h-7 px-2.5 text-[11px] gap-1.5 rounded-md",
-  md: "h-8 px-3 text-xs gap-1.5 rounded-md",
-  lg: "h-10 px-4 text-sm gap-2 rounded-lg",
+  sm: "h-7 gap-1.5 px-2 text-xs",
+  md: "h-8 gap-1.5 px-3 text-xs",
+  lg: "h-9 gap-2 px-4 text-sm",
 };
 
-const ICON_SIZE: Record<ButtonSize, string> = {
-  xs: "h-6 w-6 rounded",
-  sm: "h-7 w-7 rounded-md",
-  md: "h-8 w-8 rounded-md",
-  lg: "h-10 w-10 rounded-lg",
-};
+const ICON_SIZE: Record<ButtonSize, string> = { sm: "h-7 w-7", md: "h-8 w-8", lg: "h-9 w-9" };
+
+const BASE =
+  "inline-flex shrink-0 select-none items-center justify-center whitespace-nowrap rounded border font-medium transition-colors disabled:pointer-events-none disabled:opacity-45 [&_svg]:h-3.5 [&_svg]:w-3.5 [&_svg]:shrink-0";
 
 export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant;
   size?: ButtonSize;
   loading?: boolean;
-  /** 左侧图标（lucide 组件实例） */
   icon?: React.ReactNode;
   block?: boolean;
 }
 
-const BASE =
-  "inline-flex shrink-0 select-none items-center justify-center whitespace-nowrap border transition-colors disabled:pointer-events-none disabled:opacity-50";
-
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
-  {
-    variant = "secondary",
-    size = "md",
-    loading,
-    icon,
-    block,
-    className,
-    children,
-    disabled,
-    type = "button",
-    ...rest
-  },
+  { variant = "secondary", size = "md", loading, icon, block, className, children, disabled, type = "button", ...rest },
   ref,
 ) {
   return (
@@ -71,7 +44,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       className={cn(BASE, VARIANT[variant], SIZE[size], block && "w-full", className)}
       {...rest}
     >
-      {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : icon}
+      {loading ? <Loader2 className="animate-spin" aria-hidden /> : icon}
       {children}
     </button>
   );
@@ -86,17 +59,7 @@ export interface IconButtonProps extends React.ButtonHTMLAttributes<HTMLButtonEl
 }
 
 export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(function IconButton(
-  {
-    label,
-    variant = "ghost",
-    size = "sm",
-    active,
-    className,
-    children,
-    type = "button",
-    title,
-    ...rest
-  },
+  { label, variant = "ghost", size = "sm", active, className, children, type = "button", title, ...rest },
   ref,
 ) {
   return (
@@ -105,13 +68,7 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(functio
       type={type}
       aria-label={label}
       title={title ?? label}
-      className={cn(
-        BASE,
-        VARIANT[variant],
-        ICON_SIZE[size],
-        active && "bg-sub/10 text-ink",
-        className,
-      )}
+      className={cn(BASE, "font-normal", VARIANT[variant], ICON_SIZE[size], active && "bg-fill text-ink", className)}
       {...rest}
     >
       {children}

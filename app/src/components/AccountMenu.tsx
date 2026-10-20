@@ -8,8 +8,7 @@ import {
   Menu,
   MenuContent,
   MenuItem,
-  MenuLabel,
-  MenuSeparator,
+    MenuSeparator,
   MenuTrigger,
   notify,
   PasswordInput,
@@ -38,27 +37,30 @@ export function AccountMenu({ me, onSignedOut }: { me: Me; onSignedOut: () => vo
           <button
             aria-label={`账号：${me.email}`}
             title={me.email}
-            className="flex h-7 w-7 items-center justify-center rounded-full bg-brand/15 text-xs text-brand transition-colors hover:bg-brand/25 data-[state=open]:bg-brand/25"
+            className="flex h-7 w-7 items-center justify-center rounded border border-line-strong bg-card text-xs font-medium text-ink transition-colors hover:bg-fill data-[state=open]:bg-fill"
           >
             {(me.email[0] ?? "?").toUpperCase()}
           </button>
         </MenuTrigger>
         <MenuContent className="w-60">
-          <MenuLabel className="pb-0">当前账号</MenuLabel>
-          <div className="truncate px-2 pb-1.5 text-xs text-ink">{me.email}</div>
-          <div className="px-2 pb-1.5 text-[11px] text-sub">{me.enrollmentYear} 级</div>
+          <div className="px-2 pb-2 pt-1.5">
+            <div className="truncate text-xs font-medium text-ink">{me.email}</div>
+            <div className="mt-0.5 text-2xs text-sub">
+              <span className="num">{me.enrollmentYear}</span> 级
+            </div>
+          </div>
           <MenuSeparator />
-          <MenuItem icon={<GraduationCap className="h-3.5 w-3.5" />} onSelect={() => setSettings("profile")}>
+          <MenuItem icon={<GraduationCap />} onSelect={() => setSettings("profile")}>
             入学年份
           </MenuItem>
-          <MenuItem icon={<KeyRound className="h-3.5 w-3.5" />} onSelect={() => setSettings("password")}>
+          <MenuItem icon={<KeyRound />} onSelect={() => setSettings("password")}>
             修改密码
           </MenuItem>
-          <MenuItem icon={<Settings className="h-3.5 w-3.5" />} onSelect={() => setSettings("danger")}>
+          <MenuItem icon={<Settings />} onSelect={() => setSettings("danger")}>
             账号与数据
           </MenuItem>
           <MenuSeparator />
-          <MenuItem icon={<LogOut className="h-3.5 w-3.5" />} onSelect={() => void signOut()}>
+          <MenuItem icon={<LogOut />} onSelect={() => void signOut()}>
             退出登录
           </MenuItem>
         </MenuContent>
@@ -164,7 +166,7 @@ function AccountSettingsDialog({
       size="sm"
     >
       {section === "profile" && (
-        <form onSubmit={saveYear} className="space-y-3">
+        <form onSubmit={saveYear} className="space-y-4">
           <Field label="入学年份" hint="第 1 学期 = 该年秋季；用于推算当前学期和课表。">
             <Select
               value={year}
@@ -173,8 +175,8 @@ function AccountSettingsDialog({
               options={years.map((y) => ({ value: String(y), label: `${y} 级` }))}
             />
           </Field>
-          {error && <p className="text-[11px] text-danger">{error}</p>}
-          <div className="flex justify-end gap-2 pt-1">
+          {error && <p className="text-2xs text-danger">{error}</p>}
+          <div className="flex justify-end gap-2 border-t border-line pt-4">
             <Button variant="ghost" onClick={close}>
               取消
             </Button>
@@ -186,15 +188,15 @@ function AccountSettingsDialog({
       )}
 
       {section === "password" && (
-        <form onSubmit={changePassword} className="space-y-3">
+        <form onSubmit={changePassword} className="space-y-4">
           <Field label="当前密码">
             <PasswordInput value={current} onChange={(e) => setCurrent(e.target.value)} autoComplete="current-password" required />
           </Field>
           <Field label="新密码" hint="至少 8 位">
             <PasswordInput value={next} onChange={(e) => setNext(e.target.value)} autoComplete="new-password" minLength={8} required />
           </Field>
-          {error && <p className="text-[11px] text-danger">{error}</p>}
-          <div className="flex justify-end gap-2 pt-1">
+          {error && <p className="text-2xs text-danger">{error}</p>}
+          <div className="flex justify-end gap-2 border-t border-line pt-4">
             <Button variant="ghost" onClick={close}>
               取消
             </Button>
@@ -206,21 +208,21 @@ function AccountSettingsDialog({
       )}
 
       {section === "danger" && (
-        <form onSubmit={(e) => void deleteAccount(e)} className="space-y-3">
-          <div className="rounded-lg border border-danger/25 bg-danger/5 p-3">
-            <div className="flex items-center gap-1.5 text-xs text-danger">
-              <Trash2 className="h-3.5 w-3.5" />
+        <form onSubmit={(e) => void deleteAccount(e)} className="space-y-4">
+          <div className="rounded border border-line p-3">
+            <div className="flex items-center gap-1.5 text-xs font-medium text-danger">
+              <Trash2 />
               注销账号
             </div>
-            <p className="mt-1 text-[11px] leading-relaxed text-sub">
+            <p className="mt-1 text-2xs text-sub">
               永久删除账号及全部个人数据（计划、成绩、课表）。公共课程库不受影响。
             </p>
           </div>
           <Field label="输入当前密码以继续">
             <PasswordInput value={current} onChange={(e) => setCurrent(e.target.value)} autoComplete="current-password" required />
           </Field>
-          {error && <p className="text-[11px] text-danger">{error}</p>}
-          <div className="flex justify-end gap-2 pt-1">
+          {error && <p className="text-2xs text-danger">{error}</p>}
+          <div className="flex justify-end gap-2 border-t border-line pt-4">
             <Button variant="ghost" onClick={close}>
               取消
             </Button>

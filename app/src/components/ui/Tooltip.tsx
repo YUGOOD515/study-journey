@@ -20,7 +20,7 @@ export function Tip({
           side={side}
           sideOffset={6}
           collisionPadding={8}
-          className="z-toast max-w-[260px] rounded-md bg-ink px-2 py-1 text-[11px] leading-snug text-bg shadow-pop animate-pop-in"
+          className="animate-fade z-toast max-w-[260px] rounded bg-ink px-2 py-1 text-2xs text-bg"
         >
           {label}
         </RT.Content>

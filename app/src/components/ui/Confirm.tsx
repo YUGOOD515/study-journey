@@ -17,7 +17,6 @@ type ConfirmFn = (options: ConfirmOptions) => Promise<boolean>;
 
 const ConfirmContext = createContext<ConfirmFn | null>(null);
 
-/** 统一的确认弹窗，替代 window.confirm。 */
 export function ConfirmProvider({ children }: { children: React.ReactNode }) {
   const [options, setOptions] = useState<ConfirmOptions | null>(null);
   const [typed, setTyped] = useState("");
@@ -64,13 +63,11 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
           </>
         }
       >
-        {options?.description && (
-          <div className="text-xs leading-relaxed text-sub">{options.description}</div>
-        )}
+        {options?.description && <div className="text-sm text-sub">{options.description}</div>}
         {options?.requireText && (
-          <label className="mt-3 block">
-            <span className="mb-1 block text-[11px] text-sub">
-              请输入 <span className="font-medium text-ink">{options.requireText}</span> 以确认
+          <label className="mt-4 block">
+            <span className="mb-1 block text-2xs text-sub">
+              输入 <span className="font-medium text-ink">{options.requireText}</span> 以确认
             </span>
             <input
               autoFocus

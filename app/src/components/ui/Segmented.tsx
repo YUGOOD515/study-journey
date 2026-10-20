@@ -7,12 +7,11 @@ export interface SegmentedOption<T extends string> {
   title?: string;
 }
 
-/** 分段切换（单选按钮组） */
+/** 分段切换：外框 1px 描边，选中项为实色白底 + 描边 */
 export function Segmented<T extends string>({
   value,
   options,
   onChange,
-  size = "sm",
   className,
   ariaLabel,
   block,
@@ -20,21 +19,16 @@ export function Segmented<T extends string>({
   value: T;
   options: Array<SegmentedOption<T>>;
   onChange: (value: T) => void;
-  size?: "xs" | "sm" | "md";
+  size?: "sm" | "md";
   className?: string;
   ariaLabel?: string;
   block?: boolean;
 }) {
-  const h = size === "xs" ? "h-6 text-[11px]" : size === "sm" ? "h-7 text-[11px]" : "h-8 text-xs";
   return (
     <div
       role="radiogroup"
       aria-label={ariaLabel}
-      className={cn(
-        "inline-flex shrink-0 rounded-lg border border-sub/15 bg-card p-0.5",
-        block && "flex w-full",
-        className,
-      )}
+      className={cn("inline-flex h-8 shrink-0 rounded bg-fill-strong p-0.5", block && "flex w-full", className)}
     >
       {options.map((option) => {
         const active = option.value === value;
@@ -47,10 +41,9 @@ export function Segmented<T extends string>({
             title={option.title}
             onClick={() => onChange(option.value)}
             className={cn(
-              "inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-md px-2.5 transition-colors",
-              h,
+              "inline-flex h-7 items-center justify-center gap-1.5 whitespace-nowrap rounded-sm px-2.5 text-xs transition-colors [&_svg]:h-3.5 [&_svg]:w-3.5",
               block && "flex-1",
-              active ? "bg-sub/10 text-ink" : "text-sub hover:text-ink",
+              active ? "bg-card font-medium text-ink shadow-[0_0_0_1px_rgb(var(--line-strong))]" : "text-sub hover:text-ink",
             )}
           >
             {option.icon}
