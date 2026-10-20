@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { GraduationCap, KeyRound, LogOut, Settings, Trash } from "../lib/icons";
+import { GraduationCap, KeyRound, LogOut, Settings, Trash, UserPlus } from "../lib/icons";
 import { authApi, type Me } from "../lib/auth";
 import {
   Button,
@@ -18,13 +18,15 @@ import {
 
 type Section = "profile" | "password" | "danger";
 
-export function AccountMenu({ me, onSignedOut }: { me: Me; onSignedOut: () => void }) {
+export function AccountMenu({ me, onSignedOut }: { me: Me; onSignedOut: (next?: "login" | "register") => void }) {
   const [settings, setSettings] = useState<Section | null>(null);
+  const demo = Boolean(me.isDemo);
 
-  const signOut = async () => {
+  const signOut = async (next?: "register") => {
     try {
-      await authApi.signOut();
-      onSignedOut();
+      if (demo) await authApi.endDemo();
+      else await authApi.signOut();
+      onSignedOut(next);
     } catch (err) {
       notify.error(err, "退出失败");
     }
@@ -35,33 +37,41 @@ export function AccountMenu({ me, onSignedOut }: { me: Me; onSignedOut: () => vo
       <Menu>
         <MenuTrigger asChild>
           <button
-            aria-label={`账号：${me.email}`}
-            title={me.email}
+            aria-label={demo ? "示例账号" : `账号：${me.email}`}
+            title={demo ? "示例账号" : me.email}
             className="flex h-7 w-7 items-center justify-center rounded border border-line-strong bg-card text-xs font-medium text-ink transition-colors hover:bg-fill data-[state=open]:bg-fill"
           >
-            {(me.email[0] ?? "?").toUpperCase()}
+            {demo ? "示" : (me.email[0] ?? "?").toUpperCase()}
           </button>
         </MenuTrigger>
         <MenuContent className="w-60">
           <div className="px-2 pb-2 pt-1.5">
-            <div className="truncate text-xs font-medium text-ink">{me.email}</div>
+            <div className="truncate text-xs font-medium text-ink">{demo ? "示例同学" : me.email}</div>
             <div className="mt-0.5 text-2xs text-sub">
-              <span className="num">{me.enrollmentYear}</span> 级
+              <span className="num">{me.enrollmentYear}</span> 级{demo && " · 示例账号，24 小时后清除"}
             </div>
           </div>
           <MenuSeparator />
           <MenuItem icon={<GraduationCap />} onSelect={() => setSettings("profile")}>
             入学年份
           </MenuItem>
-          <MenuItem icon={<KeyRound />} onSelect={() => setSettings("password")}>
-            修改密码
-          </MenuItem>
-          <MenuItem icon={<Settings />} onSelect={() => setSettings("danger")}>
-            账号与数据
-          </MenuItem>
+          {demo ? (
+            <MenuItem icon={<UserPlus />} onSelect={() => void signOut("register")}>
+              注册账号
+            </MenuItem>
+          ) : (
+            <>
+              <MenuItem icon={<KeyRound />} onSelect={() => setSettings("password")}>
+                修改密码
+              </MenuItem>
+              <MenuItem icon={<Settings />} onSelect={() => setSettings("danger")}>
+                账号与数据
+              </MenuItem>
+            </>
+          )}
           <MenuSeparator />
           <MenuItem icon={<LogOut />} onSelect={() => void signOut()}>
-            退出登录
+            {demo ? "退出示例" : "退出登录"}
           </MenuItem>
         </MenuContent>
       </Menu>
@@ -85,7 +95,7 @@ function AccountSettingsDialog({
   me: Me;
   section: Section | null;
   onSectionChange: (s: Section | null) => void;
-  onSignedOut: () => void;
+  onSignedOut: (next?: "login" | "register") => void;
 }) {
   const confirm = useConfirm();
   const [year, setYear] = useState(String(me.enrollmentYear));

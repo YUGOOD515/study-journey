@@ -49,7 +49,8 @@
 
 - 会话：HttpOnly Cookie，30 天有效，每天续期；生产环境自动使用 `__Secure-` 前缀。
 - CSRF：所有非 GET 的 `/api/*` 请求必须带同源 `Origin`；Better Auth 自身也校验来源。
-- 限流（存 D1）：登录 5 次/分钟、注册 5 次/小时、找回密码 3 次/小时（按 `cf-connecting-ip`）。
+- 限流（存 D1）：登录 5 次/分钟、注册 5 次/小时、找回密码 3 次/小时、创建示例账号 10 次/小时（按 `cf-connecting-ip`）。
+- 示例账号：邮箱为 `demo-*@demo.invalid`，24 小时后自动清除，活跃上限 300，详见 [docs/19](19-demo-mode.md)。
 - 密码：8–128 位；PBKDF2-SHA256 100000 次迭代（Workers 上限），哈希里带迭代次数，以后可调整。
 - 响应头：`app/public/_headers` 设置 `nosniff`、`X-Frame-Options: DENY` 等。
 
