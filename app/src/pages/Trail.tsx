@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { PenLine } from "lucide-react";
+import { ChevronRight, PenLine } from "../lib/icons";
 import { api } from "../lib/api";
 import { CATEGORY_STYLE } from "../lib/categoryStyle";
 import { formatCredits, roundCredits } from "../lib/credits";
@@ -12,11 +12,26 @@ import {
   type RequirementRow,
 } from "../lib/progress";
 import { TERM_LABEL } from "../lib/offeredTerm";
-import { ProgressBar } from "../components/ProgressBar";
+import { ProgressBar, ProgressLegendSwatch } from "../components/ProgressBar";
 import { InterdisciplinaryFlow, type FlowItem } from "../components/InterdisciplinaryFlow";
 import { myPlanTotalCredits } from "../lib/planTotal";
 import { useEditMode } from "../lib/editMode";
-import { Button, inputClass, notify, PageError, Popover, PopoverContent, PopoverTrigger, Skeleton } from "../components/ui";
+import { cn } from "../lib/cn";
+import {
+  Button,
+  inputClass,
+  Metric,
+  notify,
+  Page,
+  PageError,
+  PageHeader,
+  Panel,
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+  SectionHeader,
+  Skeleton,
+} from "../components/ui";
 import type {
   Course,
   ProgressResponse,
@@ -148,107 +163,77 @@ export default function Trail() {
     [refetchTrailData]
   );
 
+
   if (err) return <PageError message={err} onRetry={() => window.location.reload()} />;
   if (loading) {
     return (
-      <div className="mx-auto max-w-6xl px-3 py-6 sm:px-6 sm:py-9">
-        <Skeleton className="h-7 w-24" />
-        <Skeleton className="mt-6 h-[180px] rounded-2xl" />
-        <div className="mt-8 grid gap-4 lg:grid-cols-2">
-          {[0, 1, 2, 3].map((i) => (
-            <Skeleton key={i} className="h-[220px] rounded-2xl" />
-          ))}
+      <Page>
+        <div className="border-b border-line pb-3 pt-6 sm:pt-8">
+          <Skeleton className="h-7 w-24" />
+          <Skeleton className="mt-2 h-4 w-64" />
         </div>
-      </div>
+        <Skeleton className="mt-6 h-[148px]" />
+        <Skeleton className="mt-6 h-[360px]" />
+      </Page>
     );
   }
 
-  const pct =
-    totals.required > 0 ? Math.min(100, (totals.earned / totals.required) * 100) : 0;
+  const pct = totals.required > 0 ? Math.min(100, (totals.earned / totals.required) * 100) : 0;
   const interOverflow = progress?.overflow.interdisciplinary ?? null;
 
   return (
-    <div className="relative min-h-screen">
-      {/* 顶部暖色氛围光 */}
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-x-0 top-0 h-[340px]"
-        style={{
-          background:
-            "radial-gradient(120% 100% at 50% 0%, rgb(var(--brand) / 0.07), transparent 72%)",
-        }}
+    <Page>
+      <PageHeader
+        title="旅迹"
+        meta={editing ? "按培养方案五大板块汇总学分；点击课程可填写成绩。" : "按培养方案五大板块汇总学分；切换到编辑后可填写成绩。"}
+        metrics={
+          <>
+            <Metric label="完成度" value={pct.toFixed(0)} unit="%" />
+            <Metric label="已修" value={formatCredits(totals.earned)} unit="学分" />
+            <Metric label="要求" value={formatCredits(totals.required)} unit="学分" />
+          </>
+        }
       />
 
-      <div className="relative mx-auto max-w-6xl px-3 py-6 sm:px-6 sm:py-9 lg:px-8">
-        {/* 标题 */}
-        <header className="trail-rise" style={{ animationDelay: "0ms" }}>
-          <div className="text-[10px] tracking-[0.32em] text-faint uppercase mb-1.5">
-            Study Journey
+      {/* 总览 */}
+      <section className="mt-6" aria-labelledby="trail-overview">
+        <SectionHeader title={<span id="trail-overview">总览</span>} />
+        <Panel className="mt-3 p-4 sm:p-5">
+          <dl className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-4">
+            <OverviewStat level={0} label="已修" value={totals.earned} />
+            <OverviewStat level={1} label="在修" value={totals.inProgress} />
+            <OverviewStat level={2} label="计划" value={totals.planned} />
+            <OverviewStat level={3} label="待修" value={totals.pending} />
+          </dl>
+          <div className="mt-5">
+            <ProgressBar
+              earned={totals.earned}
+              inProgress={totals.inProgress}
+              planned={totals.planned}
+              required={totals.required}
+              color="rgb(var(--brand))"
+              height={8}
+            />
           </div>
-          <div className="flex items-baseline gap-3 flex-wrap">
-            <h1 className="text-2xl text-ink tracking-tight">旅迹</h1>
-            <span className="text-[11px] text-sub">
-              {editing ? "已修在前 · 计划在后 · 点课程可填成绩" : "已修在前 · 计划在后 · 查看中，切换到编辑后可填成绩"}
+          <div className="mt-2 flex items-baseline justify-between gap-4 text-2xs text-sub">
+            <span>
+              共需 <span className="num text-ink">{formatCredits(totals.required)}</span> 学分
+            </span>
+            <span>
+              我的计划合计 <span className="num text-ink">{formatCredits(planTotal)}</span> 学分
             </span>
           </div>
-        </header>
+        </Panel>
+      </section>
 
-        {/* 总览 */}
-        <section
-          className="trail-rise mt-6 rounded-2xl border border-sub/15 bg-card p-4 sm:p-6 md:p-8"
-          style={{
-            animationDelay: "70ms",
-            boxShadow:
-              "0 1px 2px rgb(var(--shadow-rgb) / var(--shadow-soft)), 0 24px 48px -32px rgb(var(--shadow-rgb) / var(--shadow-strong))",
-          }}
-        >
-          <div className="flex flex-col sm:flex-row sm:items-center gap-7 sm:gap-9">
-            <Ring pct={pct} />
-            <div className="flex-1 min-w-0">
-              <div className="flex flex-wrap items-stretch gap-x-7 gap-y-3 mb-5">
-                <Stat label="已修" value={totals.earned} dotOpacity={1} />
-                <Stat label="在修" value={totals.inProgress} dotOpacity={0.55} />
-                <Stat label="计划" value={totals.planned} dotOpacity={0.26} />
-                <Stat label="待修" value={totals.pending} muted />
-              </div>
-              <ProgressBar
-                earned={totals.earned}
-                inProgress={totals.inProgress}
-                planned={totals.planned}
-                required={totals.required}
-                color="rgb(var(--brand) / 1)"
-                height={12}
-              />
-              <div className="mt-2.5 flex items-baseline justify-between text-[11px] text-sub">
-                <span className="tabular-nums">
-                  共需 <span className="text-ink">{formatCredits(totals.required)}</span> 学分
-                </span>
-                <span className="tabular-nums">
-                  我的计划合计 <span className="text-ink">{formatCredits(planTotal)}</span> 学分
-                </span>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* 经法管融通学分流向（仅当有该类课程时显示） */}
-        {flowItems.length > 0 && (
-          <section
-            className="trail-rise mt-5 rounded-2xl border border-sub/15 bg-card p-4 sm:p-5"
-            style={{ animationDelay: "130ms" }}
-          >
-            <div className="mb-3">
-              <h2 className="text-xs text-ink flex items-center gap-2">
-                <span
-                  className="inline-block w-1.5 h-1.5 rounded-full"
-                  style={{ backgroundColor: "rgb(var(--cat-mp) / 1)" }}
-                />
-                学分流向 · 经法管融通
-              </h2>
-              <div className="text-[10px] text-sub mt-1">
-                {editing ? "点击课程或连线切换归属 · " : ""}计入「大类平台」上限 {interOverflow?.cap ?? 6} 学分，超出自动计入「通识教育·选修」
-              </div>
-            </div>
+      {/* 经法管融通学分归属（仅当有该类课程时显示） */}
+      {flowItems.length > 0 && (
+        <section className="mt-8" aria-labelledby="trail-flow">
+          <SectionHeader
+            title={<span id="trail-flow">经法管融通学分归属</span>}
+            description={`计入「大类平台」上限 ${interOverflow?.cap ?? 6} 学分，超出部分自动计入「通识教育」选修。`}
+          />
+          <Panel className="mt-3 p-4 sm:p-5">
             <InterdisciplinaryFlow
               items={flowItems}
               onToggle={toggleItem}
@@ -257,276 +242,224 @@ export default function Trail() {
               electiveTotalByCategory={electiveTotalByCategory}
             />
             {interOverflow && interOverflow.overflowCredits > 0 && (
-              <div className="mt-3 text-[10px] leading-relaxed" style={{ color: "rgb(var(--brand) / 1)" }}>
-                大类平台·经法管已达 {interOverflow.cap} 学分上限，超出的{" "}
-                {formatCredits(interOverflow.overflowCredits)} 学分已自动计入「通识教育·选修」：
+              <p className="mt-3 rounded-sm bg-warn/10 px-2.5 py-2 text-2xs text-warn">
+                大类平台经法管融通已达 <span className="num">{interOverflow.cap}</span> 学分上限，超出的{" "}
+                <span className="num">{formatCredits(interOverflow.overflowCredits)}</span> 学分已计入「通识教育」选修：
                 {interOverflow.overflowCourses.map((c) => c.courseName).join("、")}
-              </div>
+              </p>
             )}
-          </section>
-        )}
+          </Panel>
+        </section>
+      )}
 
-        {/* 五大板块 */}
-        <div className="mt-8 mb-3 text-[10px] tracking-[0.28em] text-faint uppercase">
-          培养方案 · 五大板块
-        </div>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {bundles.map((b, i) => (
-            <CategoryCard
-              key={b.code}
-              bundle={b}
-              index={i}
-              expandedKeys={expanded}
-              onToggle={toggle}
-              onRefetch={refetchTrailData}
-            />
-          ))}
-        </div>
-      </div>
-    </div>
+      {/* 五大板块 */}
+      <section className="mt-8" aria-labelledby="trail-bundles">
+        <SectionHeader
+          title={<span id="trail-bundles">培养方案板块</span>}
+          description="点击要求行展开对应课程。"
+          aside={
+            <span className="hidden items-center gap-3 sm:flex">
+              <LegendItem level={0} label="已修" />
+              <LegendItem level={1} label="在修" />
+              <LegendItem level={2} label="计划" />
+            </span>
+          }
+        />
+        <Panel className="mt-3 overflow-hidden">
+          <div role="table" aria-label="培养方案板块学分">
+            <div role="row" className={cn(ROW_GRID, "h-8 border-b border-line bg-fill text-2xs text-sub")}>
+              <span role="columnheader">板块 / 要求</span>
+              <span role="columnheader" className="hidden sm:block">进度</span>
+              <span role="columnheader" className="text-right">已修</span>
+              <span role="columnheader" className="hidden text-right sm:block">在修+计划</span>
+              <span role="columnheader" className="hidden text-right sm:block">要求</span>
+              <span role="columnheader" className="text-right">完成</span>
+            </div>
+            {bundles.map((b) => (
+              <BundleRows key={b.code} bundle={b} expandedKeys={expanded} onToggle={toggle} onRefetch={refetchTrailData} />
+            ))}
+          </div>
+        </Panel>
+      </section>
+    </Page>
   );
 }
 
-/** 总览进度环：沿描边画出弧线，中心显示百分比。 */
-function Ring({ pct }: { pct: number }) {
-  const size = 128;
-  const stroke = 9;
-  const r = (size - stroke) / 2;
-  const c = 2 * Math.PI * r;
-  const arc = (Math.max(0, Math.min(100, pct)) / 100) * c;
+/**
+ * 板块表格网格。
+ * 桌面：名称 | 进度条 | 已修 | 在修+计划 | 要求 | 完成%
+ * 手机：名称 | 已修/要求 | 完成%，进度条另起一行
+ */
+const ROW_GRID =
+  "grid grid-cols-[minmax(0,1fr)_72px_44px] items-center gap-x-3 px-3 sm:grid-cols-[minmax(160px,1.1fr)_minmax(120px,2fr)_64px_72px_64px_48px] sm:gap-x-4 sm:px-4";
+
+/** 要求行顺序：必修 → 经法管融通 → 选修 */
+const ROW_ORDER: Record<RequirementRow["requirementType"], number> = { required: 0, interdisciplinary: 1, elective: 2 };
+
+function pctOf(earned: number, required: number) {
+  if (required > 0) return Math.min(100, (earned / required) * 100);
+  return earned > 0 ? 100 : 0;
+}
+
+function LegendItem({ level, label }: { level: 0 | 1 | 2 | 3; label: string }) {
   return (
-    <div className="relative shrink-0" style={{ width: size, height: size }}>
-      <svg width={size} height={size} className="-rotate-90">
-        <circle
-          cx={size / 2}
-          cy={size / 2}
-          r={r}
-          fill="none"
-          stroke="rgb(var(--sub) / 0.13)"
-          strokeWidth={stroke}
-        />
-        <circle
-          cx={size / 2}
-          cy={size / 2}
-          r={r}
-          fill="none"
-          stroke="rgb(var(--brand) / 1)"
-          strokeWidth={stroke}
-          strokeLinecap="round"
-          style={{
-            ["--ring-arc" as string]: `${arc}`,
-            strokeDasharray: `${arc} ${c}`,
-            animation: "ringDraw 1100ms cubic-bezier(0.22,1,0.36,1) both",
-          } as React.CSSProperties}
-        />
-      </svg>
-      <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <span className="text-[30px] leading-none text-ink tabular-nums">
-          {pct.toFixed(0)}
-          <span className="text-sm text-sub align-top ml-0.5">%</span>
-        </span>
-        <span className="text-[10px] text-faint mt-1 tracking-[0.2em]">完成</span>
-      </div>
-    </div>
+    <span className="inline-flex items-center gap-1.5">
+      <ProgressLegendSwatch level={level} />
+      {label}
+    </span>
   );
 }
 
-/** 总览四态统计项：已修 / 在修 / 计划 / 待修。 */
-function Stat({
-  label,
-  value,
-  dotOpacity,
-  muted,
-}: {
-  label: string;
-  value: number;
-  dotOpacity?: number;
-  muted?: boolean;
-}) {
+function OverviewStat({ level, label, value }: { level: 0 | 1 | 2 | 3; label: string; value: number }) {
   return (
-    <div className="flex flex-col gap-1.5">
-      <div className="flex items-center gap-1.5 text-[10px] text-sub">
-        {muted ? (
-          <span className="inline-block w-1.5 h-1.5 rounded-full border border-sub/45" />
-        ) : (
-          <span
-            className="inline-block w-1.5 h-1.5 rounded-full"
-            style={{ backgroundColor: "rgb(var(--brand) / 1)", opacity: dotOpacity }}
-          />
-        )}
+    <div className="min-w-0">
+      <dt className="flex items-center gap-1.5 text-2xs text-sub">
+        <ProgressLegendSwatch level={level} />
         {label}
-      </div>
-      <div className="text-[19px] leading-none text-ink tabular-nums">
+      </dt>
+      <dd className={cn("num mt-1 text-xl font-medium", level === 3 ? "text-sub" : "text-ink")}>
         {formatCredits(value)}
-      </div>
+      </dd>
     </div>
   );
 }
 
-function CategoryCard({
+function NumCells({
+  earned,
+  preview,
+  required,
+  strong,
+}: {
+  earned: number;
+  preview: number;
+  required: number;
+  strong?: boolean;
+}) {
+  const pct = pctOf(earned, required);
+  return (
+    <>
+      <span role="cell" className={cn("num text-right", strong ? "font-medium text-ink" : "text-ink")}>
+        {formatCredits(earned)}
+        <span className="text-faint sm:hidden"> / {formatCredits(required)}</span>
+      </span>
+      <span role="cell" className="num hidden text-right text-sub sm:block">
+        {preview > 0 ? `+${formatCredits(preview)}` : <span className="text-faint">—</span>}
+      </span>
+      <span role="cell" className="num hidden text-right text-sub sm:block">
+        {formatCredits(required)}
+      </span>
+      <span role="cell" className={cn("num text-right", pct >= 100 ? "text-ink" : "text-sub")}>
+        {pct.toFixed(0)}%
+      </span>
+    </>
+  );
+}
+
+function BundleRows({
   bundle,
-  index,
   expandedKeys,
   onToggle,
   onRefetch,
 }: {
   bundle: CategoryBundle;
-  index: number;
   expandedKeys: Set<string>;
   onToggle: (key: string) => void;
   onRefetch: () => Promise<void>;
 }) {
   const style = CATEGORY_STYLE[bundle.code];
-  const pct =
-    bundle.totalRequired > 0
-      ? Math.min(100, (bundle.totalEarned / bundle.totalRequired) * 100)
-      : bundle.totalEarned > 0
-        ? 100
-        : 0;
   const preview = roundCredits(bundle.totalInProgress + bundle.totalPlanned);
 
   return (
-    <div
-      className="trail-rise relative bg-card border border-sub/15 rounded-2xl pl-6 pr-5 py-5 overflow-hidden transition-all duration-300 hover:-translate-y-0.5 hover:border-sub/25 hover:shadow-[0_18px_36px_-26px_rgb(var(--shadow-rgb)/var(--shadow-strong))]"
-      style={{ animationDelay: `${150 + index * 70}ms` }}
-    >
-      {/* 类别色脊 */}
-      <span
-        className="absolute left-0 top-0 bottom-0 w-[3px]"
-        style={{ backgroundColor: style.color }}
-      />
-
-      <div className="flex items-center justify-between mb-1">
-        <div className="flex items-center gap-2">
-          <span
-            className="inline-block w-2.5 h-2.5 rounded-[3px]"
-            style={{ backgroundColor: style.color }}
+    <div role="rowgroup" className="border-b border-line last:border-b-0">
+      {/* 板块汇总行 */}
+      <div role="row" className={cn(ROW_GRID, "gap-y-1.5 py-2.5 text-xs")}>
+        <span role="rowheader" className="flex min-w-0 items-center gap-2 font-semibold text-ink">
+          <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ backgroundColor: style.color }} aria-hidden />
+          <span className="truncate">{bundle.name}</span>
+        </span>
+        <span role="cell" className="order-last col-span-3 sm:order-none sm:col-span-1">
+          <ProgressBar
+            earned={bundle.totalEarned}
+            inProgress={bundle.totalInProgress}
+            planned={bundle.totalPlanned}
+            required={bundle.totalRequired}
+            color={style.color}
+            height={6}
           />
-          <h2 className="text-[15px] text-ink">{bundle.name}</h2>
-        </div>
-        <div className="text-xs text-sub tabular-nums">
-          <span className="text-ink text-lg mr-0.5">{formatCredits(bundle.totalEarned)}</span>
-          <span className="text-faint">/ {formatCredits(bundle.totalRequired)}</span>
-          <span className="ml-2" style={{ color: style.text }}>
-            {pct.toFixed(0)}%
-          </span>
-        </div>
+        </span>
+        <NumCells earned={bundle.totalEarned} preview={preview} required={bundle.totalRequired} strong />
       </div>
-      <div className="mb-3 h-[14px] text-[10px] text-faint tabular-nums">
-        {preview > 0 ? `计划预览 +${formatCredits(preview)} 学分` : ""}
-      </div>
-      <ProgressBar
-        earned={bundle.totalEarned}
-        inProgress={bundle.totalInProgress}
-        planned={bundle.totalPlanned}
-        required={bundle.totalRequired}
-        color={style.color}
-        trackColor={style.bgGhost}
-        height={8}
-      />
 
-      <div className="mt-5 space-y-3.5">
-        {bundle.rows.map((row) => {
-          const key = `${bundle.code}-${row.requirementType}`;
-          const isOpen = expandedKeys.has(key);
-          const rowPct =
-            row.requiredCredits > 0
-              ? Math.min(100, (row.earnedCredits / row.requiredCredits) * 100)
-              : row.earnedCredits > 0
-                ? 100
-                : 0;
-          const rowPreview = roundCredits(row.inProgressCredits + row.plannedCredits);
-          return (
-            <div key={key}>
-              <button
-                type="button"
-                aria-expanded={isOpen}
-                onClick={() => onToggle(key)}
-                className="w-full text-left group/row"
-              >
-                <div className="flex items-baseline justify-between text-xs mb-1.5 gap-2">
-                  <div className="flex items-center gap-1.5 min-w-0">
-                    <span className="text-sub group-hover/row:text-ink transition-colors truncate">
-                      {row.requirementName}
-                    </span>
-                    <span className="text-faint tabular-nums shrink-0">
-                      {row.earnedCourses.length} 已修 · {row.plannedCourses.length} 计划
-                    </span>
-                  </div>
-                  <div className="tabular-nums shrink-0" style={{ color: style.text }}>
-                    {formatCredits(row.earnedCredits)}
-                    {rowPreview > 0 && (
-                      <span className="text-faint ml-0.5">+{formatCredits(rowPreview)}</span>
-                    )}
-                    <span className="text-faint mx-1">/</span>
-                    <span className="text-sub">{formatCredits(row.requiredCredits)}</span>
-                    <span className="text-faint ml-1.5 text-[10px]">{rowPct.toFixed(0)}%</span>
-                  </div>
-                </div>
+      {/* 要求行 */}
+      {[...bundle.rows].sort((a, b) => ROW_ORDER[a.requirementType] - ROW_ORDER[b.requirementType]).map((row) => {
+        const key = `${bundle.code}-${row.requirementType}`;
+        const isOpen = expandedKeys.has(key);
+        const rowPreview = roundCredits(row.inProgressCredits + row.plannedCredits);
+        const count = row.earnedCourses.length + row.plannedCourses.length;
+        return (
+          <div key={key}>
+            <button
+              type="button"
+              role="row"
+              aria-expanded={isOpen}
+              onClick={() => onToggle(key)}
+              className={cn(
+                ROW_GRID,
+                "w-full gap-y-1.5 py-2 text-left text-xs transition-colors hover:bg-fill",
+                isOpen && "bg-fill",
+              )}
+            >
+              <span role="rowheader" className="flex min-w-0 items-center gap-1 pl-0.5 text-sub">
+                <ChevronRight
+                  size={14}
+                  className={cn("shrink-0 text-faint transition-transform", isOpen && "rotate-90")}
+                  aria-hidden
+                />
+                <span className="truncate text-ink">{row.requirementName}</span>
+                <span className="ml-1 shrink-0 text-2xs text-faint">
+                  <span className="num">{count}</span> 门
+                </span>
+              </span>
+              <span role="cell" className="order-last col-span-3 pl-[18px] sm:order-none sm:col-span-1 sm:pl-0">
                 <ProgressBar
                   earned={row.earnedCredits}
                   inProgress={row.inProgressCredits}
                   planned={row.plannedCredits}
                   required={row.requiredCredits}
                   color={style.color}
-                  trackColor={style.bgGhost}
-                  height={6}
+                  height={4}
                 />
-              </button>
+              </span>
+              <NumCells earned={row.earnedCredits} preview={rowPreview} required={row.requiredCredits} />
+            </button>
 
-              {isOpen && (
-                <CourseStatusList
-                  row={row}
-                  color={style.text}
-                  onRefetch={onRefetch}
-                />
-              )}
-            </div>
-          );
-        })}
-      </div>
+            {isOpen && <CourseStatusList row={row} onRefetch={onRefetch} />}
+          </div>
+        );
+      })}
     </div>
   );
 }
 
-function CourseStatusList({
-  row,
-  color,
-  onRefetch,
-}: {
-  row: RequirementRow;
-  color: string;
-  onRefetch: () => Promise<void>;
-}) {
+function CourseStatusList({ row, onRefetch }: { row: RequirementRow; onRefetch: () => Promise<void> }) {
   if (row.earnedCourses.length === 0 && row.plannedCourses.length === 0) {
-    return (
-      <div className="mt-2 text-[11px] text-faint italic px-1">
-        暂无已修或计划课程
-      </div>
-    );
+    return <div className="bg-fill px-3 pb-3 pl-[34px] text-2xs text-faint sm:px-4 sm:pl-[38px]">暂无已修或计划课程</div>;
   }
   return (
-    <div className="mt-2 space-y-2">
+    <div className="space-y-2 bg-fill px-3 pb-3 pl-[34px] sm:px-4 sm:pl-[38px]">
       {row.earnedCourses.length > 0 && (
-        <CourseGroup label="已修">
+        <CourseGroup label="已修" count={row.earnedCourses.length}>
           {row.earnedCourses.map((c) => (
-            <ScorePill
-              key={`earned-${c.source}-${c.courseCode}`}
-              course={c}
-              color={color}
-              onRefetch={onRefetch}
-            />
+            <ScorePill key={`earned-${c.source}-${c.courseCode}`} course={c} onRefetch={onRefetch} />
           ))}
         </CourseGroup>
       )}
-
       {row.plannedCourses.length > 0 && (
-        <CourseGroup label="计划修读">
+        <CourseGroup label="计划修读" count={row.plannedCourses.length}>
           {row.plannedCourses.map((c) => (
             <PlannedCoursePill
               key={`planned-${c.source}-${c.courseCode}-${c.courseName}`}
               course={c}
-              color={color}
               onRefetch={onRefetch}
             />
           ))}
@@ -536,31 +469,22 @@ function CourseStatusList({
   );
 }
 
-function CourseGroup({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
+function CourseGroup({ label, count, children }: { label: string; count: number; children: React.ReactNode }) {
   return (
-    <div className="flex items-start gap-2">
-      <div className="w-14 shrink-0 pt-1 text-[10px] text-faint">{label}</div>
+    <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[72px_minmax(0,1fr)] sm:gap-3">
+      <div className="text-2xs text-sub sm:pt-1">
+        {label} <span className="num text-faint">{count}</span>
+      </div>
       <div className="flex flex-wrap gap-1.5">{children}</div>
     </div>
   );
 }
 
-// ── 成绩药丸：编辑模式下点击弹出成绩输入（Radix Popover） ─────────────────
-function ScorePill({
-  course,
-  color,
-  onRefetch,
-}: {
-  course: EarnedCourse;
-  color: string;
-  onRefetch: () => Promise<void>;
-}) {
+const pillBase =
+  "inline-flex h-6 max-w-full items-center gap-1.5 rounded-sm border px-1.5 text-2xs transition-colors disabled:cursor-default";
+
+// ── 成绩标签：编辑模式下点击弹出成绩输入 ─────────────────
+function ScorePill({ course, onRefetch }: { course: EarnedCourse; onRefetch: () => Promise<void> }) {
   const { editing } = useEditMode();
   const [open, setOpen] = useState(false);
   const score = course.score;
@@ -570,17 +494,15 @@ function ScorePill({
     <button
       type="button"
       disabled={!editing}
-      className="inline-flex min-h-[26px] items-center gap-1 rounded-md bg-sub/10 px-2 py-0.5 text-[11px] transition-colors enabled:hover:bg-sub/20 disabled:cursor-default data-[state=open]:bg-sub/20"
-      style={{ color }}
-      title={course.source === "official" ? course.courseCode ?? "" : "手动添加"}
+      className={cn(
+        pillBase,
+        "border-line bg-card text-ink enabled:hover:border-line-strong data-[state=open]:border-line-strong",
+      )}
+      title={course.source === "official" ? course.courseCode ?? "" : "自定课程"}
     >
-      {course.source === "manual" && <span className="rounded-sm bg-sub/10 px-1 text-[9px] text-sub">自</span>}
-      <span>{course.courseName}</span>
+      <span className="truncate">{course.courseName}</span>
       <span className="num text-sub">{formatCredits(course.credits)}</span>
-      <span
-        className="num ml-1 border-l border-sub/25 pl-1.5 text-[10px]"
-        style={{ color: hasScore ? color : "rgb(var(--faint) / 1)" }}
-      >
+      <span className={cn("num border-l border-line pl-1.5", hasScore ? "text-ink" : "text-faint")}>
         {hasScore ? score : "—"}
       </span>
     </button>
@@ -604,15 +526,7 @@ function ScorePill({
   );
 }
 
-function PlannedCoursePill({
-  course,
-  color,
-  onRefetch,
-}: {
-  course: PlannedCourse;
-  color: string;
-  onRefetch: () => Promise<void>;
-}) {
+function PlannedCoursePill({ course, onRefetch }: { course: PlannedCourse; onRefetch: () => Promise<void> }) {
   const { editing } = useEditMode();
   const [open, setOpen] = useState(false);
 
@@ -620,18 +534,18 @@ function PlannedCoursePill({
     <button
       type="button"
       disabled={!editing}
-      className="inline-flex min-h-[26px] items-center gap-1 rounded-md border border-dashed bg-sub/5 px-2 py-0.5 text-[11px] transition-colors enabled:hover:bg-sub/10 disabled:cursor-default data-[state=open]:bg-sub/10"
-      style={{ color, borderColor: "rgb(var(--sub) / 0.25)" }}
+      className={cn(
+        pillBase,
+        "border-transparent bg-fill-strong text-sub enabled:hover:text-ink data-[state=open]:text-ink",
+      )}
       title={course.source === "official" ? course.courseCode ?? "" : "计划课程"}
     >
-      <span>{course.courseName}</span>
-      <span className="num text-sub">{formatCredits(course.credits)}</span>
-      <span className="num text-faint">
-        {course.plannedTerm == null ? "待安排" : TERM_LABEL[course.plannedTerm]}
-      </span>
+      <span className="truncate">{course.courseName}</span>
+      <span className="num">{formatCredits(course.credits)}</span>
+      <span className="text-faint">{course.plannedTerm == null ? "待安排" : TERM_LABEL[course.plannedTerm]}</span>
       {editing && (
-        <span className="ml-1 inline-flex items-center gap-0.5 border-l border-sub/25 pl-1.5 text-[10px] text-sub">
-          <PenLine size={10} />
+        <span className="inline-flex items-center gap-0.5 border-l border-line-strong pl-1.5">
+          <PenLine size={10} aria-hidden />
           成绩
         </span>
       )}
@@ -749,7 +663,7 @@ function ScoreForm({
         <div className="truncate text-xs text-ink" title={course.courseName}>
           {course.courseName}
         </div>
-        <div className="num shrink-0 text-[10px] text-sub">{formatCredits(course.credits)} 学分</div>
+        <div className="num shrink-0 text-2xs text-sub">{formatCredits(course.credits)} 学分</div>
       </div>
       <form onSubmit={onSubmit} className="flex items-center gap-1.5">
         <input
@@ -772,18 +686,18 @@ function ScoreForm({
       </form>
       <div className="mt-2 flex min-h-[16px] items-center justify-between gap-2">
         {isPlannedCourse(course) ? (
-          <div className="text-[10px] text-sub">保存后进入已修进度</div>
+          <div className="text-2xs text-sub">保存后进入已修进度</div>
         ) : (
           <button
             type="button"
             onClick={() => void persist(null)}
             disabled={busy}
-            className="text-[10px] text-sub transition-colors hover:text-ink disabled:opacity-50"
+            className="text-2xs text-sub transition-colors hover:text-ink disabled:opacity-50"
           >
             清空分数
           </button>
         )}
-        {err && <div className="text-right text-[10px] text-danger">{err}</div>}
+        {err && <div className="text-right text-2xs text-danger">{err}</div>}
       </div>
     </div>
   );

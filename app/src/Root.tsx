@@ -4,7 +4,7 @@ import AuthPage from "./pages/AuthPage";
 import { authApi, UNAUTHORIZED_EVENT, type AppConfig, type Me } from "./lib/auth";
 import { invalidateApiCache } from "./lib/api";
 import { EditModeProvider } from "./lib/editMode";
-import { ConfirmProvider, PageError, Toaster, TooltipProvider } from "./components/ui";
+import { ConfirmProvider, PageError, Spinner, Toaster, TooltipProvider } from "./components/ui";
 
 type State =
   | { status: "loading" }
@@ -44,7 +44,7 @@ export default function Root() {
   if (state.status === "loading") {
     content = (
       <div className="flex min-h-screen items-center justify-center">
-        <span className="h-5 w-5 animate-spin rounded-full border-2 border-sub/20 border-t-brand" aria-label="加载中" />
+        <Spinner />
       </div>
     );
   } else if (state.status === "error") {

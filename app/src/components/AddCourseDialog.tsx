@@ -1,6 +1,6 @@
 import type React from "react";
 import { useEffect, useMemo, useState } from "react";
-import { Check, PenLine, Search } from "lucide-react";
+import { Check, PenLine, Search } from "../lib/icons";
 import { api } from "../lib/api";
 import { canUseInterdisciplinary } from "../lib/courseOptions";
 import { formatCredits } from "../lib/credits";
@@ -12,8 +12,7 @@ import type {
   RawCourseSearchResult,
 } from "../types";
 import { CourseEditFields } from "./CourseEditFields";
-import { CustomSelect } from "./CustomSelect";
-import { Badge, Button, Dialog, EmptyState, inputClass, Segmented } from "./ui";
+import { Badge, Button, Dialog, EmptyState, inputClass, Segmented, Select } from "./ui";
 import { cn } from "../lib/cn";
 import { useCoarsePointer } from "../hooks/useMediaQuery";
 
@@ -155,7 +154,7 @@ function phaseLabel(phase: RawCourseSearchResult["phase"]): string {
   return "实际课表";
 }
 
-function compactText(parts: Array<string | null | undefined>, separator = " · "): string {
+function compactText(parts: Array<string | null | undefined>, separator = " / "): string {
   return parts
     .map((x) => x?.trim())
     .filter(Boolean)
@@ -348,10 +347,10 @@ export function AddCourseDialog({ termNumber, onClose, onSubmitManual, onSubmitR
       bare
       dismissible={!busy}
       title="添加课程"
-      description={`${termNumber == null ? "添加到待安排" : `添加到第 ${termNumber} 学期`} · 搜索添加会同步写入时间轴与学期课表`}
+      description={`${termNumber == null ? "添加到待安排" : `添加到第 ${termNumber} 学期`}。搜索添加会同步写入时间轴与学期课表`}
       footer={
         <>
-          <div className="mr-auto min-w-0 truncate text-[11px] text-danger">{err}</div>
+          <div className="mr-auto min-w-0 truncate text-2xs text-danger">{err}</div>
           <Button variant="ghost" onClick={onClose} disabled={busy}>
             取消
           </Button>
@@ -377,8 +376,8 @@ export function AddCourseDialog({ termNumber, onClose, onSubmitManual, onSubmitR
             setErr(null);
           }}
           options={[
-            { value: "search", label: "搜索添加", icon: <Search size={13} /> },
-            { value: "manual", label: "手动添加", icon: <PenLine size={13} /> },
+            { value: "search", label: "搜索添加", icon: <Search /> },
+            { value: "manual", label: "手动添加", icon: <PenLine /> },
           ]}
         />
       </div>
@@ -401,36 +400,34 @@ export function AddCourseDialog({ termNumber, onClose, onSubmitManual, onSubmitR
                   onChange={(event) => setQuery(event.target.value)}
                   placeholder="课程名称、课程号、课序号、教师"
                   aria-label="搜索课程"
-                  className={inputClass + " h-9 pl-8 text-[13px]"}
+                  className={inputClass + " pl-8"}
                   autoFocus={!isTouch}
                 />
               </div>
-              <CustomSelect
+              <Select
                 value={termFilter == null ? "" : String(termFilter)}
                 onChange={(value) => setTermFilter(value === "" ? null : Number(value))}
                 options={TERM_FILTER_OPTIONS}
-                className="h-9"
                 ariaLabel="选择搜索学期"
               />
-              <CustomSelect
+              <Select
                 value={source}
                 onChange={(value) => setSource(value as SourceFilter)}
                 options={SOURCE_OPTIONS}
-                className="h-9"
                 ariaLabel="选择搜索来源"
               />
             </div>
-            <div className="text-[11px] text-sub">
-              {searching ? "搜索中…" : `共 ${results.length} 条结果`} ·
-              正式开课表可用于预选/正选/补选，补选新增课仅用于补选来源
+            <div className="text-2xs text-sub">
+              <span className="text-ink">{searching ? "搜索中…" : <><span className="num">{results.length}</span> 条结果</>}</span>
+              <span className="ml-3">正式开课表可用于预选、正选、补选；补选新增课仅用于补选来源</span>
             </div>
             <div className="max-h-[42dvh] min-h-0 flex-1 space-y-1.5 overflow-y-auto pr-1 md:max-h-none">
               {results.length === 0 ? (
                 <EmptyState
-                  icon={<Search size={22} strokeWidth={1.5} />}
+                  icon={<Search size={22} />}
                   title={searching ? "搜索中…" : "没有结果"}
                   description="输入关键词，或调整学期与来源筛选。"
-                  className="rounded-lg border border-dashed border-sub/20"
+                  className="rounded border border-line"
                 />
               ) : (
                 results.map((item) => {
@@ -448,19 +445,19 @@ export function AddCourseDialog({ termNumber, onClose, onSubmitManual, onSubmitR
                       onClick={() => setSelected(item)}
                       aria-pressed={active}
                       className={cn(
-                        "w-full rounded-lg border px-3 py-2 text-left transition-colors",
+                        "w-full rounded border px-3 py-2 text-left transition-colors",
                         active
-                          ? "border-brand/55 bg-brand/[0.07]"
-                          : "border-sub/15 bg-card hover:border-sub/35 hover:bg-sub/[0.03]",
+                          ? "border-brand bg-brand/5"
+                          : "border-line bg-card hover:border-line-strong",
                       )}
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
-                          <div className="flex items-center gap-1.5 truncate text-[13px] text-ink">
-                            {active && <Check size={13} className="shrink-0 text-brand" />}
+                          <div className="flex items-center gap-1.5 truncate text-xs font-medium text-ink">
+                            {active && <Check size={13} className="shrink-0 text-ink" />}
                             {item.courseName}
                           </div>
-                          <div className="num mt-0.5 text-[11px] text-sub">
+                          <div className="num mt-0.5 text-2xs text-sub">
                             {compactText([
                               item.courseCode,
                               item.sectionCode ? `课序号 ${item.sectionCode}` : null,
@@ -472,13 +469,13 @@ export function AddCourseDialog({ termNumber, onClose, onSubmitManual, onSubmitR
                         <div className="flex shrink-0 flex-col items-end gap-1">
                           <Badge>{sourceLabel(item)}</Badge>
                           {hasPlanWarning && (
-                            <Badge tone="brand">
+                            <Badge tone="warn">
                               {item.existsInCustom ? "已在我的计划" : "会匹配官方占位"}
                             </Badge>
                           )}
                         </div>
                       </div>
-                      <div className="mt-1 text-[11px] text-sub">
+                      <div className="mt-1 text-2xs text-sub">
                         {compactText([
                           `第 ${item.termNumber} 学期`,
                           item.teachingWeeks,
@@ -486,7 +483,7 @@ export function AddCourseDialog({ termNumber, onClose, onSubmitManual, onSubmitR
                           compactText([item.campus, item.classroom], " "),
                         ])}
                       </div>
-                      <div className="mt-0.5 text-[10px] text-faint">
+                      <div className="mt-0.5 text-2xs text-faint">
                         {compactText([
                           phaseLabel(item.phase),
                           item.department,
@@ -500,17 +497,17 @@ export function AddCourseDialog({ termNumber, onClose, onSubmitManual, onSubmitR
             </div>
           </div>
 
-          <div className="flex min-h-0 flex-col rounded-xl border border-sub/15 bg-bg/60 p-3">
+          <div className="flex min-h-0 flex-col rounded-md border border-line bg-bg p-3">
             <div className="mb-3 shrink-0">
-              <div className="text-[13px] text-ink">添加预览</div>
-              <div className="mt-0.5 text-[11px] text-sub">{selectedSummary}</div>
+              <div className="text-xs font-semibold text-ink">添加预览</div>
+              <div className="mt-0.5 text-2xs text-sub">{selectedSummary}</div>
             </div>
             {selected ? (
               <div className="min-h-0 flex-1 overflow-y-auto pr-1">
                 <div className="space-y-3">
-                  <div className="rounded-lg border border-sub/10 bg-card px-3 py-2">
-                    <div className="text-[13px] text-ink">{selected.courseName}</div>
-                    <div className="num mt-1 text-[11px] text-sub">
+                  <div className="rounded border border-line bg-card px-3 py-2">
+                    <div className="text-xs font-medium text-ink">{selected.courseName}</div>
+                    <div className="num mt-1 text-2xs text-sub">
                       {compactText([
                         selected.courseCode,
                         selected.sectionCode ? `课序号 ${selected.sectionCode}` : null,
@@ -518,7 +515,7 @@ export function AddCourseDialog({ termNumber, onClose, onSubmitManual, onSubmitR
                       ])}
                     </div>
                     {(selected.existsInProgram || selected.existsInCustom) && (
-                      <div className="mt-2 rounded-md bg-brand/10 px-2 py-1 text-[11px] text-brand">
+                      <div className="mt-2 rounded bg-warn/10 px-2 py-1 text-2xs text-warn">
                         {selected.existsInCustom
                           ? "该课程已在我的计划中；继续添加会用当前课表记录更新它。"
                           : "该课程匹配官方培养计划；继续添加会覆盖我的计划中的官方占位课程。"}
@@ -526,7 +523,7 @@ export function AddCourseDialog({ termNumber, onClose, onSubmitManual, onSubmitR
                     )}
                   </div>
                   <Field label="状态">
-                    <CustomSelect
+                    <Select
                       value={studyStatus}
                       onChange={(value) => setStudyStatus(value as StudyStatus)}
                       options={STUDY_STATUS_OPTIONS}
@@ -545,7 +542,7 @@ export function AddCourseDialog({ termNumber, onClose, onSubmitManual, onSubmitR
                 </div>
               </div>
             ) : (
-              <div className="flex min-h-[120px] flex-1 items-center justify-center rounded-lg border border-dashed border-sub/20 px-3 py-8 text-center text-[11px] text-sub">
+              <div className="flex min-h-[120px] flex-1 items-center justify-center rounded border border-line px-3 py-8 text-center text-2xs text-sub">
                 选择一条结果后，可调整类别、学分、状态和经法管融通归属。
               </div>
             )}
@@ -554,7 +551,7 @@ export function AddCourseDialog({ termNumber, onClose, onSubmitManual, onSubmitR
       ) : (
         <form id="add-course-manual" onSubmit={submitManual} className="px-4 py-3 sm:px-5">
           <div className="mx-auto max-w-[560px] space-y-3">
-            <div className="rounded-lg border border-sub/10 bg-sub/5 px-3 py-2 text-[11px] text-sub">
+            <div className="rounded border border-line bg-fill px-3 py-2 text-2xs text-sub">
               {manualSubtitle}，用于数据库中找不到的课程、培养方案外课程或占位课程。
             </div>
             <Field label="课程号">
@@ -562,7 +559,7 @@ export function AddCourseDialog({ termNumber, onClose, onSubmitManual, onSubmitR
                 value={manualCode}
                 onChange={(event) => setManualCode(event.currentTarget.value)}
                 placeholder="不填则自动生成；例如 B0480240"
-                className={inputClass}
+                className={inputClass + " num"}
               />
             </Field>
             <CourseEditFields
@@ -583,7 +580,7 @@ export function AddCourseDialog({ termNumber, onClose, onSubmitManual, onSubmitR
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-[11px] text-sub">{label}</span>
+      <span className="mb-1 block text-2xs font-medium text-sub">{label}</span>
       {children}
     </label>
   );

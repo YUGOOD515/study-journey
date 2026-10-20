@@ -12,7 +12,7 @@ import {
   type DragEndEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
-import { Plus, RotateCcw, Trash2 } from "lucide-react";
+import { Plus, RotateCcw, Trash } from "../lib/icons";
 import { api, type RequirementDto } from "../lib/api";
 import { formatCredits } from "../lib/credits";
 import { myPlanTotalCredits } from "../lib/planTotal";
@@ -24,17 +24,18 @@ import {
 import { useEditMode } from "../lib/editMode";
 import { useIsMobile } from "../hooks/useMediaQuery";
 import type { CourseCardDisplayOptions, Course, PlanCoursePatch } from "../types";
-import { CourseCard } from "../components/CourseCard";
-import { ManualCourseCard } from "../components/ManualCourseCard";
+import { CourseCard, ManualCourseCard } from "../components/CourseCard";
 import { AddCourseDialog } from "../components/AddCourseDialog";
 import {
   Button,
   EmptyState,
+  Metric,
   notify,
+  Page,
   PageError,
+  PageHeader,
   Segmented,
   Skeleton,
-  Stat,
   useConfirm,
 } from "../components/ui";
 import {
@@ -54,6 +55,7 @@ import {
 import {
   BoardScroller,
   CardMenu,
+  ColumnDivider,
   DisplayOptionsMenu,
   Dock,
   DockGrid,
@@ -563,12 +565,7 @@ export default function Timeline({
         {isPersonal ? (
           <>
             {officialItems.map(renderOfficialPlanned)}
-            {manualItems.length > 0 && officialItems.length > 0 && (
-              <div
-                className="col-span-full my-0.5 border-t border-dashed border-sub/20"
-                aria-hidden
-              />
-            )}
+            {manualItems.length > 0 && officialItems.length > 0 && <ColumnDivider label="自定课程" />}
             {manualItems.map(renderManual)}
             {stats.count === 0 && <EmptyTerm editing={canEdit} />}
           </>
@@ -613,17 +610,18 @@ export default function Timeline({
           trashItems.length > 0 && canEdit ? (
             <>
               <Button
-                size="xs"
+                size="sm"
                 variant="ghost"
-                icon={<RotateCcw size={12} />}
+                icon={<RotateCcw />}
                 onClick={() => void restoreAll()}
               >
                 全部恢复
               </Button>
               <Button
-                size="xs"
-                variant="danger"
-                icon={<Trash2 size={12} />}
+                size="sm"
+                variant="ghost"
+                className="text-danger hover:text-danger"
+                icon={<Trash />}
                 onClick={() => void emptyTrash()}
               >
                 清空
@@ -659,9 +657,9 @@ export default function Timeline({
         actions={
           canEdit ? (
             <Button
-              size="xs"
+              size="sm"
               variant="ghost"
-              icon={<Plus size={12} />}
+              icon={<Plus />}
               onClick={() => setAddTerm("drawer")}
             >
               添加
@@ -702,10 +700,10 @@ export default function Timeline({
   const subtitle = isPersonal
     ? canEdit
       ? isMobile
-        ? "长按卡片拖动，或用「⋯」菜单移动；违规只提示不阻止"
-        : "拖拽或用卡片菜单调整学期；违规只提示不阻止"
-      : "查看中 · 点右上角「编辑」后可调整计划"
-    : "按培养方案的开课学期排列，只读";
+        ? "长按卡片拖动，或用卡片菜单移动；违反先修或开课学期只提示、不阻止"
+        : "拖拽或用卡片菜单调整学期；违反先修或开课学期只提示、不阻止"
+      : "查看模式：切换到编辑后可调整计划"
+    : "按培养方案的开课学期排列（只读）";
 
   return (
     <DndContext
@@ -716,15 +714,24 @@ export default function Timeline({
       onDragCancel={() => setDragging(null)}
       autoScroll={{ threshold: { x: 0.12, y: 0.12 } }}
     >
-      <div className="mx-auto min-h-[calc(100dvh-3rem)] max-w-[1720px] px-3 pb-40 pt-4 sm:px-6 sm:pb-28 sm:pt-6 lg:px-8">
-        <header className="mb-4 flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
-          <div className="min-w-0">
-            <h1 className="text-lg text-ink">时间轴</h1>
-            <div className="mt-0.5 text-[11px] text-sub">{subtitle}</div>
-            <div className="mt-3 flex flex-wrap items-center gap-2">
+      <Page className="pb-40 sm:pb-28">
+        <PageHeader
+          title="时间轴"
+          meta={subtitle}
+          metrics={
+            <>
+              <Metric label="已修学分" value={formatCredits(totals.completedTotal)} />
+              <Metric
+                label={isPersonal ? "我的计划合计" : "官方计划合计"}
+                value={formatCredits(isPersonal ? totals.personalPlanTotal : totals.officialPlanTotal)}
+              />
+              <Metric label="培养方案要求" value={formatCredits(totals.requiredTotal)} />
+            </>
+          }
+          toolbar={
+            <>
               <Segmented
                 ariaLabel="视图"
-                size="sm"
                 value={viewMode}
                 onChange={setViewMode}
                 options={[
@@ -733,64 +740,44 @@ export default function Timeline({
                 ]}
               />
               <DisplayOptionsMenu value={displayOptions} onChange={setDisplayOptions} />
-            </div>
-          </div>
-          <div className="grid w-full grid-cols-3 gap-3 rounded-xl border border-sub/10 bg-card/60 p-2.5 sm:flex sm:w-auto sm:gap-6 sm:border-0 sm:bg-transparent sm:p-0">
-            <Stat
-              label="已修学分"
-              value={formatCredits(totals.completedTotal)}
-              className="text-left sm:text-right"
-            />
-            <Stat
-              label={isPersonal ? "我的计划合计" : "官方计划合计"}
-              value={formatCredits(
-                isPersonal ? totals.personalPlanTotal : totals.officialPlanTotal,
-              )}
-              className="text-left sm:text-right"
-            />
-            <Stat
-              label="培养方案要求"
-              value={formatCredits(totals.requiredTotal)}
-              className="text-left sm:text-right"
-            />
-          </div>
-        </header>
+              <Legend className="order-last w-full pt-1 lg:order-none lg:ml-auto lg:w-auto lg:pt-0" />
+            </>
+          }
+        />
 
-        <Legend />
-
-        {isMobile ? (
-          <>
-            <div
-              ref={chipsRef}
-              role="tablist"
-              aria-label="选择学期"
-              className="no-scrollbar -mx-3 mb-2 flex gap-1.5 overflow-x-auto px-3 pb-1"
-            >
-              {TERMS.map((term) => {
-                const stats = termStats(term);
-                return (
-                  <TermChip
-                    key={term}
-                    term={term}
-                    active={term === mobileTerm}
-                    isCurrent={term === currentTerm}
-                    credits={stats.credits}
-                    count={stats.count}
-                    droppable={canEdit}
-                    dragActive={dragging != null}
-                    onClick={() => setMobileTerm(term)}
-                  />
-                );
-              })}
-            </div>
-            {renderColumn(mobileTerm, true)}
-          </>
-        ) : (
-          <BoardScroller scrollToTerm={currentTerm}>
-            {TERMS.map((term) => renderColumn(term))}
-          </BoardScroller>
-        )}
-      </div>
+        <div className="mt-4">
+          {isMobile ? (
+            <>
+              <div
+                ref={chipsRef}
+                role="tablist"
+                aria-label="选择学期"
+                className="no-scrollbar -mx-4 mb-3 flex gap-1.5 overflow-x-auto px-4"
+              >
+                {TERMS.map((term) => {
+                  const stats = termStats(term);
+                  return (
+                    <TermChip
+                      key={term}
+                      term={term}
+                      active={term === mobileTerm}
+                      isCurrent={term === currentTerm}
+                      credits={stats.credits}
+                      count={stats.count}
+                      droppable={canEdit}
+                      dragActive={dragging != null}
+                      onClick={() => setMobileTerm(term)}
+                    />
+                  );
+                })}
+              </div>
+              {renderColumn(mobileTerm, true)}
+            </>
+          ) : (
+            <BoardScroller scrollToTerm={currentTerm}>{TERMS.map((term) => renderColumn(term))}</BoardScroller>
+          )}
+        </div>
+      </Page>
 
       <Dock
         active={activeDock}
@@ -848,15 +835,17 @@ export default function Timeline({
 
 function TimelineSkeleton() {
   return (
-    <div className="mx-auto max-w-[1720px] px-3 pt-4 sm:px-6 sm:pt-6 lg:px-8">
-      <Skeleton className="h-6 w-24" />
-      <Skeleton className="mt-2 h-3 w-64" />
-      <Skeleton className="mt-4 h-7 w-48" />
-      <div className="mt-6 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-8">
+    <Page>
+      <div className="border-b border-line pb-3 pt-8">
+        <Skeleton className="h-7 w-24" />
+        <Skeleton className="mt-2 h-4 w-72" />
+        <Skeleton className="mt-4 h-8 w-56" />
+      </div>
+      <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-8">
         {TERMS.map((t) => (
-          <Skeleton key={t} className="h-[360px] rounded-xl" />
+          <Skeleton key={t} className="h-[360px] rounded-md" />
         ))}
       </div>
-    </div>
+    </Page>
   );
 }
