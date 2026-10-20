@@ -75,7 +75,7 @@ export function Badge({
     <span
       title={title}
       className={cn(
-        "inline-flex h-[18px] shrink-0 items-center gap-1 whitespace-nowrap rounded-sm px-1.5 text-2xs leading-none [&_svg]:h-3 [&_svg]:w-3",
+        "inline-flex h-[18px] shrink-0 items-center gap-1 whitespace-nowrap rounded-full px-2 text-2xs leading-none [&_svg]:h-3 [&_svg]:w-3",
         toneClass,
         className,
       )}

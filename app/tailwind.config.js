@@ -1,7 +1,7 @@
 /**
  * 学旅设计系统（docs/05-frontend-design.md）
  * - 字号：6 档（11 / 12 / 13 / 15 / 20 / 28），默认 UI 12px；不使用 Tailwind 默认字号
- * - 圆角：2 / 4 / 6，不超过 6px
+ * - 圆角：8 / 10 / 16 / 20 + 胶囊（sm 小控件、DEFAULT 按钮/输入/课程卡、md 面板/弹层、lg 大卡片、full 标签）
  * - 间距：Tailwind 默认 4px 栅格
  * - 颜色：全部来自 CSS 变量，深浅色自动切换
  */
@@ -34,9 +34,10 @@ export default {
     fontWeight: { normal: "400", medium: "500", semibold: "600" },
     borderRadius: {
       none: "0",
-      sm: "2px",
-      DEFAULT: "4px",
-      md: "6px",
+      sm: "8px",
+      DEFAULT: "10px",
+      md: "16px",
+      lg: "20px",
       full: "9999px",
     },
     extend: {

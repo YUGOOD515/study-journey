@@ -538,23 +538,13 @@ export function Legend({ className }: { className?: string }) {
     >
       {Object.entries(CATEGORY_STYLE).map(([code, s]) => (
         <span key={code} className="inline-flex items-center gap-1.5">
-          <span className="inline-block h-2 w-2 rounded-sm" style={{ backgroundColor: s.color }} />
+          <span className="inline-block h-2 w-2 rounded-full" style={{ backgroundColor: s.color }} />
           {s.name}
         </span>
       ))}
       <span className="h-3 w-px bg-line-strong" aria-hidden />
-      <span className="inline-flex items-center gap-1.5">
-        <span
-          className="inline-block h-3 w-4 rounded-sm"
-          style={{ backgroundColor: "rgb(var(--sub) / 0.12)", boxShadow: "inset 0 0 0 1px rgb(var(--sub) / 0.45)" }}
-        />
-        必修
-      </span>
-      <span className="inline-flex items-center gap-1.5">
-        <span
-          className="inline-block h-3 w-4 rounded-sm"
-          style={{ backgroundColor: "rgb(var(--sub) / 0.05)", boxShadow: "inset 0 0 0 1px rgb(var(--sub) / 0.3)" }}
-        />
+      <span className="inline-flex items-center rounded-full bg-sub px-2 text-2xs font-medium leading-[18px] text-card">必修</span>
+      <span className="inline-flex items-center rounded-full px-2 text-2xs leading-[18px] text-sub shadow-[inset_0_0_0_1px_rgb(var(--sub))]">
         选修
       </span>
     </div>
