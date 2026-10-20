@@ -1,5 +1,4 @@
 import { useRef, useState, type FormEvent, type ReactNode } from "react";
-import { CalendarDays, Footprints, GanttChartSquare, ShieldCheck } from "lucide-react";
 import { Button, Field, Input, PasswordInput } from "../components/ui";
 import { ThemeToggle } from "../components/ThemeToggle";
 import { Turnstile, type TurnstileHandle } from "../components/Turnstile";
@@ -101,60 +100,30 @@ export default function AuthPage({
     reset: "设置新密码",
   }[mode];
 
-  const FEATURES = [
-    { icon: GanttChartSquare, title: "时间轴", text: "8 个学期一屏规划，拖拽排课，先修和开课学期冲突即时提示。" },
-    { icon: Footprints, title: "旅迹", text: "已修、在修、计划学分一目了然，按五大板块追踪培养方案进度。" },
-    { icon: CalendarDays, title: "学期课表", text: "按周查看真实课表，周次分布、上课地点和教师随时可查。" },
-  ];
+  const description = {
+    login: "规划课程、记录成绩、查看学期课表。",
+    register: "注册后会复制一份培养方案，之后的计划、成绩和课表仅自己可见。",
+    forgot: "输入注册邮箱，将发送重置密码链接。",
+    reset: "请输入新的密码。",
+  }[mode];
 
   return (
     <div className="flex min-h-screen flex-col">
-      <div className="flex items-center justify-between px-4 py-2.5 sm:px-6">
-        <span className="text-base tracking-tight text-brand">学旅</span>
-        <ThemeToggle />
-      </div>
-      <div className="flex flex-1 items-center justify-center px-4 pb-10 sm:pb-16">
-        <div className="grid w-full max-w-[880px] items-center gap-8 md:grid-cols-[1fr_380px] md:gap-14">
-          <section className="hidden md:block">
-            <div className="text-[10px] tracking-[0.3em] text-faint">STUDY JOURNEY</div>
-            <h2 className="mt-2 text-2xl leading-snug text-ink">
-              把四年的课，
-              <br />
-              排成一条清楚的路。
-            </h2>
-            <ul className="mt-7 space-y-4">
-              {FEATURES.map(({ icon: Icon, title: t, text }) => (
-                <li key={t} className="flex gap-3">
-                  <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-brand/10 text-brand">
-                    <Icon className="h-4 w-4" />
-                  </span>
-                  <div>
-                    <div className="text-xs text-ink">{t}</div>
-                    <div className="mt-0.5 text-[11px] leading-relaxed text-sub">{text}</div>
-                  </div>
-                </li>
-              ))}
-            </ul>
-            <div className="mt-7 flex items-center gap-1.5 text-[11px] text-faint">
-              <ShieldCheck className="h-3.5 w-3.5" />
-              每个账号的数据相互隔离，只有你自己能看到。
-            </div>
-          </section>
+      <header className="border-b border-line">
+        <div className="mx-auto flex h-12 max-w-[1440px] items-center justify-between px-4 sm:px-6">
+          <span className="flex items-center gap-2 text-sm font-semibold text-ink">
+            <span className="h-3 w-3 rounded-sm bg-brand" aria-hidden />
+            学旅
+          </span>
+          <ThemeToggle />
+        </div>
+      </header>
+      <div className="flex flex-1 justify-center px-4 pb-16 pt-16 sm:pt-24">
+        <div className="w-full max-w-[360px]">
+          <h1 className="text-lg font-semibold tracking-tight text-ink">{title}</h1>
+          <p className="mt-1 text-xs text-sub">{description}</p>
 
-          <form onSubmit={submit} className="w-full space-y-4 rounded-xl border border-sub/15 bg-card p-5 shadow-card sm:p-6">
-            <div>
-              <h1 className="text-lg text-ink">{title}</h1>
-              <p className="mt-1 text-xs leading-relaxed text-sub">
-                {mode === "register"
-                  ? "注册后会为你复制一份培养方案，之后的计划、成绩和课表只有你自己能看到。"
-                  : mode === "forgot"
-                    ? "输入注册邮箱，我们会发送重置密码链接。"
-                    : mode === "reset"
-                      ? "请输入新的密码。"
-                      : "规划课程、记录成绩、查看学期课表。"}
-              </p>
-            </div>
-
+          <form onSubmit={submit} className="mt-6 space-y-4 rounded-md border border-line bg-card p-5">
             {mode !== "reset" && (
               <Field label="邮箱">
                 <Input
@@ -164,7 +133,7 @@ export default function AuthPage({
                   inputMode="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="h-9 text-sm"
+                  className="h-9"
                   placeholder="you@example.com"
                 />
               </Field>
@@ -179,7 +148,7 @@ export default function AuthPage({
                   autoComplete={mode === "login" ? "current-password" : "new-password"}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="h-9 text-sm"
+                  className="h-9"
                 />
               </Field>
             )}
@@ -193,7 +162,7 @@ export default function AuthPage({
                   autoComplete="new-password"
                   value={password2}
                   onChange={(e) => setPassword2(e.target.value)}
-                  className="h-9 text-sm"
+                  className="h-9"
                 />
               </Field>
             )}
@@ -202,31 +171,35 @@ export default function AuthPage({
               <Turnstile key={mode} ref={turnstile} siteKey={config.turnstileSiteKey!} onToken={setCaptcha} />
             )}
 
-            {error && <p className="rounded-md bg-danger/10 px-2.5 py-1.5 text-xs text-danger">{error}</p>}
-            {notice && <p className="rounded-md bg-brand/10 px-2.5 py-1.5 text-xs text-brand">{notice}</p>}
+            {error && (
+              <p role="alert" className="rounded bg-danger/10 px-2.5 py-1.5 text-xs text-danger">
+                {error}
+              </p>
+            )}
+            {notice && <p className="rounded bg-brand/10 px-2.5 py-1.5 text-xs text-ink">{notice}</p>}
 
             <Button type="submit" variant="primary" size="lg" block loading={busy}>
               {{ login: "登录", register: "注册并登录", forgot: "发送重置邮件", reset: "保存新密码" }[mode]}
             </Button>
-
-            <div className="flex justify-between text-xs text-sub">
-              {mode === "login" ? (
-                <>
-                  <LinkButton onClick={() => go("register")}>没有账号？注册</LinkButton>
-                  {config.emailEnabled && <LinkButton onClick={() => go("forgot")}>忘记密码</LinkButton>}
-                </>
-              ) : (
-                <LinkButton
-                  onClick={() => {
-                    clearAuthParams();
-                    go("login");
-                  }}
-                >
-                  返回登录
-                </LinkButton>
-              )}
-            </div>
           </form>
+
+          <div className="mt-4 flex justify-between text-xs text-sub">
+            {mode === "login" ? (
+              <>
+                <LinkButton onClick={() => go("register")}>注册新账号</LinkButton>
+                {config.emailEnabled && <LinkButton onClick={() => go("forgot")}>忘记密码</LinkButton>}
+              </>
+            ) : (
+              <LinkButton
+                onClick={() => {
+                  clearAuthParams();
+                  go("login");
+                }}
+              >
+                返回登录
+              </LinkButton>
+            )}
+          </div>
         </div>
       </div>
     </div>
@@ -235,7 +208,7 @@ export default function AuthPage({
 
 function LinkButton({ onClick, children }: { onClick: () => void; children: ReactNode }) {
   return (
-    <button type="button" onClick={onClick} className="underline-offset-2 hover:text-ink hover:underline">
+    <button type="button" onClick={onClick} className="underline-offset-4 hover:text-ink hover:underline">
       {children}
     </button>
   );

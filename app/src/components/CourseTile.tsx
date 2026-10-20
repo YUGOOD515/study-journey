@@ -75,7 +75,7 @@ export function CourseTile({
     return (
       <div
         className={cn(
-          "relative w-[180px] cursor-grabbing rounded-md bg-card px-2.5 py-2 text-[11px] leading-tight shadow-pop ring-1 ring-brand/30",
+          "relative w-[168px] cursor-grabbing rounded bg-card px-2 py-1.5 shadow-pop",
           className,
         )}
         style={{
@@ -85,7 +85,6 @@ export function CourseTile({
           backgroundImage: surface.backgroundColor
             ? `linear-gradient(${surface.backgroundColor}, ${surface.backgroundColor})`
             : undefined,
-          transform: "rotate(-1.5deg)",
         }}
       >
         {children}
@@ -121,11 +120,10 @@ export function CourseTile({
           }
         }}
         className={cn(
-          "group/tile motion-list-item relative select-none rounded-md px-2.5 py-2 text-[11px] leading-tight outline-none transition-[transform,box-shadow,opacity] [-webkit-touch-callout:none]",
-          "hover:-translate-y-0.5 hover:shadow-sm focus-visible:ring-2 focus-visible:ring-brand/50",
+          "group/tile relative select-none rounded px-2 py-1.5 outline-none transition-[filter,opacity] [-webkit-touch-callout:none]",
+          "hover:brightness-[0.98] dark:hover:brightness-110",
           draggable ? "cursor-grab active:cursor-grabbing" : "cursor-pointer",
-          drag?.isDragging && "opacity-35 outline-dashed outline-1 outline-sub/40",
-          menu && "pr-7",
+          drag?.isDragging && "opacity-30",
           className,
         )}
         style={surface}
@@ -192,4 +190,4 @@ export function CourseTile({
 
 /** 卡片右上角“更多”按钮的统一样式 */
 export const tileMenuTriggerClass =
-  "flex h-6 w-6 items-center justify-center rounded-md text-sub opacity-0 transition-opacity hover:bg-sub/10 hover:text-ink focus-visible:opacity-100 group-hover/tile:opacity-100 data-[state=open]:bg-sub/10 data-[state=open]:opacity-100 coarse:opacity-100";
+  "flex h-6 w-6 items-center justify-center rounded-sm bg-card text-sub opacity-0 shadow-[0_0_0_1px_rgb(var(--line-strong))] transition-opacity hover:text-ink focus-visible:opacity-100 group-hover/tile:opacity-100 data-[state=open]:opacity-100 coarse:bg-transparent coarse:opacity-100 coarse:shadow-none [&_svg]:h-3.5 [&_svg]:w-3.5";

@@ -3,62 +3,61 @@
 @tailwind utilities;
 
 /*
- * 颜色用 CSS 变量驱动，rgb 三通道空格分隔，
- * 配合 tailwind.config.js 里 "rgb(var(--xxx) / <alpha-value>)" 写法，
- * 可以让 bg-card / text-sub/30 等类自动适配深浅色。
+ * 设计 token。rgb 三通道空格分隔，配合 tailwind 的 rgb(var(--x) / <alpha>) 写法。
+ * 中性色全部是实色，不再用 border-sub/xx 之类的透明度叠加。
  */
-/* ---------- 浅色配色 ---------- */
 :root {
-  /* 中性色 */
-  --bg: 250 249 245;     /* #faf9f5 暖米白 */
+  --bg: 250 249 245; /* 暖米白 */
   --card: 255 255 255;
-  --ink: 26 26 26;       /* 主文字 */
-  --sub: 90 90 90;       /* 次要文字（比原来略深，可读性↑） */
-  --brand: 201 100 66;   /* Claude 暖橘 */
-  --hairline: 0 0 0;     /* 描边颜色基底 */
-  --faint: 112 112 112;  /* 弱化文字：对比度 ≥ 4.5:1（替代 text-sub/50 之类的半透明灰） */
+  --ink: 26 26 26; /* 主文字 15.9:1 */
+  --sub: 90 90 90; /* 次要文字 */
+  --faint: 112 112 112; /* 弱文字 ≥4.5:1 */
+  --line: 230 228 221; /* 默认分隔线 / 边框 */
+  --line-strong: 208 205 197; /* 控件边框、悬停 */
+  --fill: 243 241 235; /* 悬停 / 次级底色 */
+  --fill-strong: 234 231 223; /* 选中 / 轨道 */
+  --brand: 201 100 66;
   --danger: 196 52 52;
+  --warn: 166 104 18;
 
-  /* 阴影颜色基底（恒为黑，深色模式也是黑） */
-  --shadow-rgb: 0 0 0;
-  --shadow-strong: 0.12;
-  --shadow-soft: 0.06;
+  --shadow-pop: 0 1px 2px rgb(0 0 0 / 0.05), 0 8px 24px rgb(0 0 0 / 0.08);
 
-  /* 5 大板块：base 用于色点/边/进度条，text 用于课程名文字 */
-  --cat-ge: 107 141 184;       /* 通识教育 */
+  /* 5 大板块 */
+  --cat-ge: 107 141 184;
   --cat-ge-text: 74 104 137;
-  --cat-mp: 184 122 155;       /* 大类平台 */
+  --cat-mp: 184 122 155;
   --cat-mp-text: 138 86 115;
-  --cat-pe: 201 100 66;        /* 专业教育（同主橘） */
+  --cat-pe: 201 100 66;
   --cat-pe-text: 157 74 48;
-  --cat-qe: 139 166 115;       /* 素质教育 */
+  --cat-qe: 139 166 115;
   --cat-qe-text: 99 122 79;
-  --cat-pr: 168 149 128;       /* 实践教育 */
+  --cat-pr: 168 149 128;
   --cat-pr-text: 122 106 88;
 
-  /* 课程卡背景的不同强度 */
-  --cat-bg-soft: 0.12;   /* 必修 */
-  --cat-bg-ghost: 0.05;  /* 选修 */
+  --cat-bg-soft: 0.12;
+  --cat-bg-ghost: 0.05;
   --cat-border: 0.45;
+  --cat-border-ghost: 0.3;
+
+  color-scheme: light;
 }
 
-/* ---------- 深色配色（独立调过，非简单反转） ---------- */
 html.dark {
-  --bg: 24 24 24;        /* #181818 比纯黑略暖 */
-  --card: 36 36 36;      /* #242424 */
-  --ink: 240 240 240;    /* #f0f0f0 主文字，对比 14:1 */
-  --sub: 175 175 175;    /* #afafaf 次要文字（比 a3a3 略亮以求清晰） */
-  --brand: 232 130 90;
-  --hairline: 255 255 255;
+  --bg: 24 24 24;
+  --card: 36 36 36;
+  --ink: 240 240 240;
+  --sub: 175 175 175;
   --faint: 140 140 140;
+  --line: 48 48 47;
+  --line-strong: 68 68 66;
+  --fill: 40 40 39;
+  --fill-strong: 52 52 51;
+  --brand: 232 130 90;
   --danger: 240 110 100;
+  --warn: 226 170 80;
 
-  /* 深色下需要更强的阴影才能感知到层级（卡片和背景差异小） */
-  --shadow-strong: 0.55;
-  --shadow-soft: 0.30;
+  --shadow-pop: 0 1px 2px rgb(0 0 0 / 0.4), 0 8px 24px rgb(0 0 0 / 0.45);
 
-  /* 类别色：亮度↑、饱和度略↓，避免在深色背景上过于刺眼；
-     text 在深色下要明显比 base 更亮才好读 */
   --cat-ge: 145 178 218;
   --cat-ge-text: 188 213 235;
   --cat-mp: 215 164 190;
@@ -70,138 +69,39 @@ html.dark {
   --cat-pr: 200 181 153;
   --cat-pr-text: 222 207 184;
 
-  /* 深色下半透明背景层：alpha 不能太高，否则卡片整体过亮 */
   --cat-bg-soft: 0.13;
   --cat-bg-ghost: 0.06;
-  --cat-border: 0.50;
+  --cat-border: 0.5;
+  --cat-border-ghost: 0.32;
+
+  color-scheme: dark;
 }
 
-html, body {
-  font-family: "SF Mono", "SFMono-Regular", "PingFang SC", "Microsoft YaHei", "Noto Sans SC", "Noto Sans CJK SC", ui-monospace, monospace;
-  font-weight: 500;
+html {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-text-size-adjust: 100%;
+}
+body {
+  @apply bg-bg font-sans text-xs text-ink;
+  font-weight: 400;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
-body {
-  @apply bg-bg text-ink;
-  transition: background-color 200ms ease, color 200ms ease;
+/* 数字：等宽 + 表格数字，统一用于学分、成绩、课程号、周次、节次 */
+.num {
+  font-family: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
 }
 
-:root {
-  --motion-apple: cubic-bezier(0.22, 1, 0.36, 1);
-  --motion-page-duration: 420ms;
+/* 键盘焦点 */
+:where(a, button, summary, input, textarea, [role="button"], [role="tab"], [role="menuitem"], [role="menuitemcheckbox"], [role="menuitemradio"], [role="option"], [role="radio"], [role="switch"], [tabindex]):focus-visible {
+  outline: 2px solid rgb(var(--brand) / 0.7);
+  outline-offset: 1px;
 }
 
-.page-transition-stage {
-  position: relative;
-  min-height: calc(100vh - 48px);
-  overflow-x: hidden;
-}
-
-.page-transition-layer {
-  width: 100%;
-}
-
-.page-transition-layer[data-direction="1"] {
-  --page-enter-x: 34px;
-  --page-exit-x: -22px;
-}
-
-.page-transition-layer[data-direction="-1"] {
-  --page-enter-x: -34px;
-  --page-exit-x: 22px;
-}
-
-.page-transition-enter,
-.page-transition-exit {
-  will-change: opacity, transform;
-}
-
-.page-transition-enter {
-  position: relative;
-  z-index: 1;
-  animation: pageTransitionEnter var(--motion-page-duration) var(--motion-apple) both;
-}
-
-.page-transition-exit {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-  animation: pageTransitionExit var(--motion-page-duration) var(--motion-apple) both;
-}
-
-.motion-list-item {
-  animation: motionItemIn 320ms var(--motion-apple) both;
-}
-
-.motion-overlay-in {
-  animation: motionOverlayIn 180ms ease-out both;
-}
-
-.motion-panel-in {
-  transform-origin: center 48%;
-  animation: motionPanelIn 280ms var(--motion-apple) both;
-}
-
-@keyframes pageTransitionEnter {
-  from {
-    opacity: 0;
-    transform: translate3d(var(--page-enter-x), 0, 0);
-  }
-  55% {
-    opacity: 1;
-  }
-  to {
-    opacity: 1;
-    transform: translate3d(0, 0, 0);
-  }
-}
-
-@keyframes pageTransitionExit {
-  from {
-    opacity: 1;
-    transform: translate3d(0, 0, 0);
-  }
-  to {
-    opacity: 0;
-    transform: translate3d(var(--page-exit-x), 0, 0);
-  }
-}
-
-@keyframes motionItemIn {
-  from {
-    opacity: 0;
-    transform: translate3d(0, 6px, 0) scale(0.992);
-  }
-  to {
-    opacity: 1;
-    transform: translate3d(0, 0, 0) scale(1);
-  }
-}
-
-@keyframes motionOverlayIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-@keyframes motionPanelIn {
-  from {
-    opacity: 0;
-    transform: translate3d(0, 8px, 0) scale(0.985);
-  }
-  to {
-    opacity: 1;
-    transform: translate3d(0, 0, 0) scale(1);
-  }
-}
-
-/* 滚动条柔化 */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
@@ -210,125 +110,47 @@ body {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgb(var(--sub) / 0.25);
+  background: rgb(var(--line-strong));
   border-radius: 4px;
 }
-::-webkit-scrollbar-thumb:hover {
-  background: rgb(var(--sub) / 0.45);
-}
-
-
-@keyframes selectMenuIn {
-  from {
-    opacity: 0;
-    transform: translateY(-4px) scale(0.985);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-
-/* 旅迹页：卡片入场（淡入 + 上浮），用 animation-delay 做错峰 */
-@keyframes trailRise {
-  from {
-    opacity: 0;
-    transform: translateY(12px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-.trail-rise {
-  animation: trailRise 560ms cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-
-/* 进度环：沿描边"画"出弧线，--ring-arc 由组件内联给出 */
-@keyframes ringDraw {
-  from {
-    stroke-dashoffset: var(--ring-arc);
-  }
-  to {
-    stroke-dashoffset: 0;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .trail-rise,
-  .page-transition-enter,
-  .page-transition-exit,
-  .motion-list-item,
-  .motion-overlay-in,
-  .motion-panel-in {
-    animation: none;
-  }
-
-  .page-transition-exit {
-    opacity: 0;
-  }
-}
-
-/* ---------- 交互基线 ---------- */
-
-/* 键盘焦点：统一的品牌色焦点环（鼠标点击不显示）。放在 utilities 之后，覆盖 outline-none。 */
-:where(a, button, summary, [role="button"], [role="tab"], [role="menuitem"], [role="menuitemcheckbox"], [role="menuitemradio"], [role="option"], [role="switch"], [tabindex]):focus-visible {
-  outline: 2px solid rgb(var(--brand) / 0.6);
-  outline-offset: 2px;
-}
-
-html {
-  -webkit-tap-highlight-color: transparent;
-}
-
-/* 数字统一等宽，表格/统计不跳动 */
-.num {
-  font-variant-numeric: tabular-nums;
-}
-
-/* 横向滚动容器两侧渐隐，提示还有内容 */
-.scroll-fade-x {
-  --fade-l: 0px;
-  --fade-r: 24px;
-  mask-image: linear-gradient(to right, transparent 0, #000 var(--fade-l), #000 calc(100% - var(--fade-r)), transparent 100%);
-}
-
 .no-scrollbar {
   scrollbar-width: none;
 }
 .no-scrollbar::-webkit-scrollbar {
   display: none;
 }
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom);
+}
 
-/* Radix 弹层入场 */
-@keyframes popIn {
-  from { opacity: 0; transform: translateY(4px) scale(0.98); }
-  to { opacity: 1; transform: translateY(0) scale(1); }
+/* 唯一一套弹层动效：淡入 120ms；手机抽屉自下而上 */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 @keyframes sheetIn {
   from { transform: translateY(100%); }
   to { transform: translateY(0); }
 }
-.animate-pop-in {
-  animation: popIn 160ms var(--motion-apple) both;
+.animate-fade {
+  animation: fadeIn 120ms ease-out both;
 }
-.animate-sheet-in {
-  animation: sheetIn 260ms var(--motion-apple) both;
+.animate-sheet {
+  animation: sheetIn 200ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
-
-/* 底部安全区（iPhone 横条） */
-.pb-safe {
-  padding-bottom: env(safe-area-inset-bottom);
+@media (min-width: 640px) {
+  .animate-sheet {
+    animation: fadeIn 120ms ease-out both;
+  }
 }
-
 @media (prefers-reduced-motion: reduce) {
-  .animate-pop-in,
-  .animate-sheet-in {
+  .animate-fade,
+  .animate-sheet {
     animation: none;
   }
 }
 
-/* 手机上输入框字号 ≥16px，避免 iOS 聚焦时自动放大页面 */
+/* 手机输入框 ≥16px，避免 iOS 聚焦缩放 */
 @media (hover: none) and (pointer: coarse) {
   input:not([type="checkbox"]):not([type="radio"]),
   textarea,

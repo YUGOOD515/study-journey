@@ -1,15 +1,10 @@
 import * as RS from "@radix-ui/react-select";
-import { Check, ChevronDown } from "lucide-react";
+import { Check, ChevronDown } from "../../lib/icons";
 import { cn } from "../../lib/cn";
+import { popoverPanelClass } from "./Popover";
 
-export type SelectOption<T extends string> = {
-  value: T;
-  label: string;
-  disabled?: boolean;
-  hint?: string;
-};
+export type SelectOption<T extends string> = { value: T; label: string; disabled?: boolean; hint?: string };
 
-// Radix Select 不允许空字符串作为值，内部做一次映射
 const EMPTY = "__empty__";
 const toInner = (v: string) => (v === "" ? EMPTY : v);
 const toOuter = (v: string) => (v === EMPTY ? "" : v);
@@ -34,17 +29,13 @@ export function Select<T extends string>({
   placeholder?: string;
 }) {
   return (
-    <RS.Root
-      value={toInner(value)}
-      onValueChange={(v) => onChange(toOuter(v) as T)}
-      disabled={disabled}
-    >
+    <RS.Root value={toInner(value)} onValueChange={(v) => onChange(toOuter(v) as T)} disabled={disabled}>
       <RS.Trigger
         aria-label={ariaLabel}
         className={cn(
-          "inline-flex w-full min-w-0 items-center justify-between gap-1.5 rounded-md border border-sub/20 bg-card text-left text-ink outline-none transition-[border-color,box-shadow]",
-          "hover:border-sub/40 focus-visible:border-brand/60 focus-visible:ring-2 focus-visible:ring-brand/15 data-[state=open]:border-brand/60 disabled:opacity-60",
-          compact ? "h-7 px-2 text-[11px]" : "h-8 px-2.5 text-xs",
+          "inline-flex w-full min-w-0 items-center justify-between gap-1.5 rounded border border-line-strong bg-card text-left text-xs text-ink outline-none transition-colors",
+          "hover:border-faint/60 data-[state=open]:border-brand disabled:opacity-50",
+          compact ? "h-7 px-2" : "h-8 px-2.5",
           className,
         )}
       >
@@ -60,7 +51,10 @@ export function Select<T extends string>({
           position="popper"
           sideOffset={4}
           collisionPadding={8}
-          className="z-toast max-h-[min(320px,var(--radix-select-content-available-height))] min-w-[var(--radix-select-trigger-width)] overflow-hidden rounded-lg border border-sub/15 bg-card text-xs text-ink shadow-pop animate-pop-in"
+          className={cn(
+            popoverPanelClass,
+            "z-toast max-h-[min(320px,var(--radix-select-content-available-height))] min-w-[var(--radix-select-trigger-width)] overflow-hidden",
+          )}
         >
           <RS.Viewport className="p-1">
             {options.map((option) => (
@@ -68,15 +62,13 @@ export function Select<T extends string>({
                 key={option.value || EMPTY}
                 value={toInner(option.value)}
                 disabled={option.disabled}
-                className="relative flex h-8 cursor-default select-none items-center gap-2 rounded-md pl-2 pr-7 outline-none data-[disabled]:opacity-45 data-[highlighted]:bg-sub/10 data-[state=checked]:text-brand"
+                className="relative flex h-8 cursor-default select-none items-center gap-2 rounded-sm pl-7 pr-2 outline-none data-[disabled]:opacity-40 data-[highlighted]:bg-fill"
               >
-                <RS.ItemText>{option.label}</RS.ItemText>
-                {option.hint && (
-                  <span className="ml-auto text-[10px] text-faint">{option.hint}</span>
-                )}
-                <RS.ItemIndicator className="absolute right-2">
+                <RS.ItemIndicator className="absolute left-2">
                   <Check className="h-3.5 w-3.5" />
                 </RS.ItemIndicator>
+                <RS.ItemText>{option.label}</RS.ItemText>
+                {option.hint && <span className="ml-auto text-2xs text-faint">{option.hint}</span>}
               </RS.Item>
             ))}
           </RS.Viewport>

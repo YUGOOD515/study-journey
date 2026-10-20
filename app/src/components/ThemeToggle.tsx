@@ -1,4 +1,4 @@
-import { Monitor, Moon, Sun } from "lucide-react";
+import { Monitor, Moon, Sun } from "../lib/icons";
 import { useTheme, type ThemeMode } from "../hooks/useTheme";
 import { IconButton } from "./ui";
 
@@ -9,7 +9,7 @@ export function ThemeToggle() {
   const Icon = mode === "light" ? Sun : mode === "dark" ? Moon : Monitor;
   return (
     <IconButton label={`主题：${LABEL[mode]}（点击切换）`} onClick={cycle}>
-      <Icon className="h-[15px] w-[15px]" />
+      <Icon />
     </IconButton>
   );
 }

@@ -2,6 +2,7 @@ export * from "./Button";
 export * from "./Dialog";
 export * from "./Confirm";
 export * from "./Field";
+export * from "./Layout";
 export * from "./Menu";
 export * from "./Popover";
 export * from "./Select";
