@@ -21,6 +21,7 @@
 | 11 | `docs/10-api-redesign.md` | API 契约与课程状态机 |
 | 12 | `docs/16-credit-rule-finalization-and-frontend-plan.md` | 经法管融通学分口径定稿 |
 | 13 | `docs/15-经法管融通学分规则-需求对齐问卷.md` | 经法管融通业务规则需求确认（16 的依据） |
+| 14 | `docs/19-demo-mode.md` | 示例模式（临时账号、示例数据生成规则） |
 
 ## 归档文档
 

@@ -3,8 +3,9 @@ import { Button, Field, Input, PasswordInput } from "../components/ui";
 import { ThemeToggle } from "../components/ThemeToggle";
 import { Turnstile, type TurnstileHandle } from "../components/Turnstile";
 import { authApi, type AppConfig } from "../lib/auth";
+import { Eye } from "../lib/icons";
 
-type Mode = "login" | "register" | "forgot" | "reset";
+export type Mode = "login" | "register" | "forgot" | "reset";
 
 function initialMode(): Mode {
   const params = new URLSearchParams(window.location.search);
@@ -21,17 +22,26 @@ function clearAuthParams() {
 export default function AuthPage({
   config,
   onSignedIn,
+  onStartDemo,
+  initial,
+  initialError,
 }: {
   config: AppConfig;
   onSignedIn: () => Promise<void> | void;
+  /** 进入示例模式；失败时抛出错误，由本页显示。 */
+  onStartDemo: () => Promise<void>;
+  initial?: Mode;
+  initialError?: string;
 }) {
-  const [mode, setMode] = useState<Mode>(initialMode);
+  const [mode, setMode] = useState<Mode>(() => initial ?? initialMode());
+  const [demoBusy, setDemoBusy] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [password2, setPassword2] = useState("");
   const [captcha, setCaptcha] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(() => {
+    if (initialError) return initialError;
     const err = new URLSearchParams(window.location.search).get("error");
     return err ? "链接无效或已过期，请重新申请" : null;
   });
@@ -47,6 +57,17 @@ export default function AuthPage({
     setNotice(null);
     setPassword("");
     setPassword2("");
+  };
+
+  const startDemo = async () => {
+    setError(null);
+    setDemoBusy(true);
+    try {
+      await onStartDemo();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      setDemoBusy(false);
+    }
   };
 
   const submit = async (e: FormEvent) => {
@@ -200,6 +221,17 @@ export default function AuthPage({
               </LinkButton>
             )}
           </div>
+
+          {(mode === "login" || mode === "register") && (
+            <div className="mt-8 border-t border-line pt-6">
+              <Button size="lg" block icon={<Eye />} loading={demoBusy} onClick={() => void startDemo()}>
+                先看看示例
+              </Button>
+              <p className="mt-2 text-2xs leading-relaxed text-sub">
+                免注册体验一位大三同学的完整 8 学期计划、成绩与课表，可以随意编辑；示例数据 24 小时后自动清除。
+              </p>
+            </div>
+          )}
         </div>
       </div>
     </div>

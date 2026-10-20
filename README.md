@@ -8,6 +8,7 @@
 - 后端：Cloudflare Worker + Hono（`app/server`），静态资源由同一个 Worker 托管
 - 数据库：Cloudflare D1（迁移在 `d1/migrations/`）
 - 账号：Better Auth 邮箱密码登录 + Turnstile 人机验证；每个用户的计划、成绩、课表互相隔离
+- 示例模式：不注册也能访问 `/demo` 体验完整的八学期示例数据（临时账号，24 小时后清除，见 [docs/19](docs/19-demo-mode.md)）
 
 ## 快速启动（本地）
 
