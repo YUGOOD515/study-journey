@@ -74,7 +74,7 @@ export function SectionHeader({
   className?: string;
 }) {
   return (
-    <div className={cn("flex items-end justify-between gap-4", className)}>
+    <div className={cn("flex items-baseline justify-between gap-4", className)}>
       <div className="min-w-0">
         <h2 className="text-base font-semibold text-ink">{title}</h2>
         {description && <p className="mt-0.5 text-2xs text-sub">{description}</p>}

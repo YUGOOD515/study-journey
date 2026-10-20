@@ -745,7 +745,7 @@ export default function Timeline({
           }
         />
 
-        <div className="mt-4">
+        <div className="mt-6">
           {isMobile ? (
             <>
               <div
