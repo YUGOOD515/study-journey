@@ -156,7 +156,7 @@ export function TermColumn({
       )}
     >
       <header
-        className={cn("border-b border-line px-2.5 pb-2 pt-2.5", isCurrent && "shadow-[inset_0_2px_0_rgb(var(--brand))]")}
+        className={cn("border-b border-line px-3.5 pb-2 pt-2.5", isCurrent && "shadow-[inset_0_2px_0_rgb(var(--brand))]")}
       >
         <div className="flex h-5 items-center justify-between gap-2">
           <span className="flex min-w-0 items-center gap-1.5">
@@ -313,13 +313,13 @@ export function BoardScroller({ children, scrollToTerm }: { children: React.Reac
         </div>
       )}
       <div ref={ref} className="no-scrollbar -mx-4 overflow-x-auto px-4 pb-2 sm:-mx-6 sm:px-6">
-        <div className="grid auto-cols-[minmax(168px,1fr)] grid-flow-col items-stretch gap-2">{children}</div>
+        <div className="grid auto-cols-[minmax(160px,1fr)] grid-flow-col items-stretch gap-2">{children}</div>
       </div>
     </div>
   );
 }
 
-/* 底部坞站：待安排 / 垃圾篓 ------------------------------------------- */
+/* 底部坞站：待安排 / 垃圾篓（左下角，与右下角通知对称：距左、距底各 24px） */
 
 export type DockKey = "pending" | "trash";
 
@@ -393,7 +393,7 @@ export function Dock({
   panel: React.ReactNode;
 }) {
   return (
-    <div className="pointer-events-none fixed inset-x-0 bottom-[calc(64px+env(safe-area-inset-bottom))] z-dock flex flex-col items-center gap-2 px-3 sm:bottom-4">
+    <div className="pointer-events-none fixed inset-x-0 bottom-[calc(64px+env(safe-area-inset-bottom))] z-dock flex flex-col items-start gap-2 px-3 sm:bottom-6 sm:px-6">
       {active && panel}
       <div
         className={cn(
@@ -538,23 +538,13 @@ export function Legend({ className }: { className?: string }) {
     >
       {Object.entries(CATEGORY_STYLE).map(([code, s]) => (
         <span key={code} className="inline-flex items-center gap-1.5">
-          <span className="inline-block h-2 w-2 rounded-sm" style={{ backgroundColor: s.color }} />
+          <span className="inline-block h-2 w-2 rounded-full" style={{ backgroundColor: s.color }} />
           {s.name}
         </span>
       ))}
       <span className="h-3 w-px bg-line-strong" aria-hidden />
-      <span className="inline-flex items-center gap-1.5">
-        <span
-          className="inline-block h-3 w-4 rounded-sm"
-          style={{ backgroundColor: "rgb(var(--sub) / 0.12)", boxShadow: "inset 0 0 0 1px rgb(var(--sub) / 0.45)" }}
-        />
-        必修
-      </span>
-      <span className="inline-flex items-center gap-1.5">
-        <span
-          className="inline-block h-3 w-4 rounded-sm"
-          style={{ backgroundColor: "rgb(var(--sub) / 0.05)", boxShadow: "inset 0 0 0 1px rgb(var(--sub) / 0.3)" }}
-        />
+      <span className="inline-flex items-center rounded-full bg-sub px-2 text-2xs font-medium leading-[18px] text-card">必修</span>
+      <span className="inline-flex items-center rounded-full px-2 text-2xs leading-[18px] text-sub shadow-[inset_0_0_0_1px_rgb(var(--sub))]">
         选修
       </span>
     </div>

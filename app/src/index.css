@@ -7,6 +7,12 @@
  * 中性色全部是实色，不再用 border-sub/xx 之类的透明度叠加。
  */
 :root {
+  /* 圆角（tailwind rounded-sm / rounded / rounded-md / rounded-lg） */
+  --radius-sm: 8px;
+  --radius: 10px;
+  --radius-md: 16px;
+  --radius-lg: 20px;
+
   --bg: 250 249 245; /* 暖米白 */
   --card: 255 255 255;
   --ink: 26 26 26; /* 主文字 15.9:1 */
@@ -156,5 +162,27 @@ body {
   textarea,
   select {
     font-size: max(16px, 1em) !important;
+  }
+}
+
+/*
+ * G2 连续圆角：支持 corner-shape 的浏览器（Chrome / Edge 139+）用 squircle。
+ * 同样的半径 squircle 看起来更方，所以半径 ×1.5 保持与普通圆角一致的观感；
+ * 不支持的浏览器保持普通圆角。胶囊、色点、圆形按钮仍用正圆。
+ */
+@supports (corner-shape: squircle) {
+  :root {
+    --radius-sm: 11px;
+    --radius: 15px;
+    --radius-md: 24px;
+    --radius-lg: 30px;
+  }
+  *,
+  ::before,
+  ::after {
+    corner-shape: squircle;
+  }
+  .rounded-full {
+    corner-shape: round;
   }
 }

@@ -1,7 +1,8 @@
 /**
  * 学旅设计系统（docs/05-frontend-design.md）
  * - 字号：6 档（11 / 12 / 13 / 15 / 20 / 28），默认 UI 12px；不使用 Tailwind 默认字号
- * - 圆角：2 / 4 / 6，不超过 6px
+ * - 圆角：8 / 10 / 16 / 20 + 胶囊（sm 小控件、DEFAULT 按钮/输入/课程卡、md 面板/弹层、lg 大卡片、full 标签）；
+ *   支持 corner-shape 的浏览器用 squircle（G2 连续曲线），半径 ×1.5 保持观感一致
  * - 间距：Tailwind 默认 4px 栅格
  * - 颜色：全部来自 CSS 变量，深浅色自动切换
  */
@@ -34,9 +35,11 @@ export default {
     fontWeight: { normal: "400", medium: "500", semibold: "600" },
     borderRadius: {
       none: "0",
-      sm: "2px",
-      DEFAULT: "4px",
-      md: "6px",
+      // 数值在 index.css 的 --radius-* 里；支持 corner-shape 的浏览器改用 G2 连续曲线并相应放大
+      sm: "var(--radius-sm)",
+      DEFAULT: "var(--radius)",
+      md: "var(--radius-md)",
+      lg: "var(--radius-lg)",
       full: "9999px",
     },
     extend: {
