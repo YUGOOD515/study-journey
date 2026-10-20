@@ -196,6 +196,7 @@ export function flowItemsFromProgress(
         credits: c.credits,
         categoryCode: c.categoryCode,
         isEarned: c.studyStatus === "已修读",
+        isInProgress: c.studyStatus === "正在修读",
         assignment: assignmentOf(c.creditCountTo),
       });
     }

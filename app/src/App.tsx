@@ -10,6 +10,8 @@ import { EditModeToggle } from "./components/EditModeToggle";
 import { currentTermNumber } from "./lib/currentTerm";
 import { cn } from "./lib/cn";
 import type { Me } from "./lib/auth";
+import type { Mode as AuthMode } from "./pages/AuthPage";
+import { DemoBanner } from "./components/DemoBanner";
 
 type Tab = "timeline" | "trail" | "term-schedule";
 
@@ -25,7 +27,7 @@ function tabOf(path: string): Tab {
   return "timeline";
 }
 
-export default function App({ me, onSignedOut }: { me: Me; onSignedOut: () => void }) {
+export default function App({ me, onSignedOut }: { me: Me; onSignedOut: (next?: AuthMode) => void }) {
   const [location, navigate] = useLocation();
   const [, scheduleParams] = useRoute<{ term: string }>("/schedule/:term");
   const tab = tabOf(location);
@@ -78,6 +80,8 @@ export default function App({ me, onSignedOut }: { me: Me; onSignedOut: () => vo
           </div>
         </div>
       </nav>
+
+      {me.isDemo && <DemoBanner onLeave={onSignedOut} />}
 
       <main>
         <Switch>
