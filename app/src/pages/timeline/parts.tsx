@@ -319,7 +319,7 @@ export function BoardScroller({ children, scrollToTerm }: { children: React.Reac
   );
 }
 
-/* 底部坞站：待安排 / 垃圾篓 ------------------------------------------- */
+/* 底部坞站：待安排 / 垃圾篓（左下角，与右下角通知对称：距左、距底各 24px） */
 
 export type DockKey = "pending" | "trash";
 
@@ -393,7 +393,7 @@ export function Dock({
   panel: React.ReactNode;
 }) {
   return (
-    <div className="pointer-events-none fixed inset-x-0 bottom-[calc(64px+env(safe-area-inset-bottom))] z-dock flex flex-col items-center gap-2 px-3 sm:bottom-4">
+    <div className="pointer-events-none fixed inset-x-0 bottom-[calc(64px+env(safe-area-inset-bottom))] z-dock flex flex-col items-start gap-2 px-3 sm:bottom-6 sm:px-6">
       {active && panel}
       <div
         className={cn(

@@ -62,7 +62,7 @@ app/src/index.css
 
 | 页面 | 文件 | 作用 |
 |---|---|---|
-| 时间轴 | `app/src/pages/Timeline.tsx`（+ `pages/timeline/`） | 我的计划、官方计划、待安排、垃圾篓、课程添加与编辑 |
+| 时间轴 | `app/src/pages/Timeline.tsx`（+ `pages/timeline/`） | 我的计划、官方计划、待安排、垃圾篓、课程添加与编辑；待安排 / 垃圾篓坞站固定在左下角并左对齐（距左、距底 24px），与右下角的通知对称 |
 | 旅迹 | `app/src/pages/Trail.tsx` | 一张总览卡（总进度条）→ 五大板块卡片（圆环 + 必修/选修/经法管融通分项小卡）→ 点分项打开居中弹窗（手机为底部抽屉），按已修/在修/计划分组列出课程，编辑模式下可填写成绩；经法管融通的学分归属在其分项弹窗里调整 |
 | 学期课表 | `app/src/pages/TermSchedule.tsx` | 周课表网格（节次 × 星期）、手机按天列表、课程周次分布 |
 | 登录 / 注册 | `app/src/pages/AuthPage.tsx` | 单列表单 |
