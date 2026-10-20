@@ -15,6 +15,8 @@ export interface Me {
   name: string;
   emailVerified: boolean;
   enrollmentYear: number;
+  /** 示例模式的临时账号（24 小时后自动清除）。 */
+  isDemo?: boolean;
 }
 
 export const UNAUTHORIZED_EVENT = "study-journey:unauthorized";
@@ -105,6 +107,9 @@ export const authApi = {
 
   signOut: () => call("/api/auth/sign-out", { body: {} }),
 
+  /** 创建示例账号（服务端写入演示数据并设置会话 Cookie）。 */
+  startDemo: () => call<{ demo: true }>("/api/demo/session", { body: {} }),
+
   requestPasswordReset: (email: string, captchaToken: string | null) =>
     call("/api/auth/request-password-reset", {
       body: { email, redirectTo: `${window.location.origin}/?auth=reset` },
@@ -120,4 +125,13 @@ export const authApi = {
     }),
 
   deleteAccount: (password: string) => call("/api/auth/delete-user", { body: { password } }),
+
+  /** 退出示例：直接删除临时账号（新建的会话无需密码）；失败时退回普通退出。 */
+  async endDemo(): Promise<void> {
+    try {
+      await call("/api/auth/delete-user", { body: {} });
+    } catch {
+      await call("/api/auth/sign-out", { body: {} });
+    }
+  },
 };

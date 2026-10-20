@@ -40,5 +40,6 @@ export {
   Sun,
   Trash,
   TriangleAlert,
+  UserPlus,
   X,
 } from "lucide-react";

@@ -18,6 +18,7 @@ export interface FlowItem {
   credits: number;
   categoryCode: CategoryCode;
   isEarned: boolean;
+  isInProgress: boolean;
   assignment: Assignment;
 }
 
@@ -119,7 +120,7 @@ export function InterdisciplinaryFlow({
                   </span>
                 </td>
                 <td className="num py-2 pr-3 text-right text-ink">{formatCredits(it.credits)}</td>
-                <td className="hidden py-2 pr-3 text-sub sm:table-cell">{it.isEarned ? "已修" : "计划"}</td>
+                <td className="hidden py-2 pr-3 text-sub sm:table-cell">{it.isEarned ? "已修" : it.isInProgress ? "在修" : "计划"}</td>
                 <td className="py-1.5 text-right">
                   <div
                     role="radiogroup"

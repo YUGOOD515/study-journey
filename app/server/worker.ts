@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import type { AppEnv } from "./app-types";
 import { authFeatures, createAuth, trustedOrigins } from "./auth";
+import { createDemoSession, DemoError, isDemoEmail } from "./demo/demo";
 import { Db } from "./db";
 import type { Env } from "./env";
 import { expectNumber } from "./lib/validate";
@@ -39,6 +40,25 @@ api.on(["GET", "POST"], "/auth/*", async (c) => {
   return createAuth(c.env, c.req.raw).handler(c.req.raw);
 });
 
+/** 示例模式：创建一个 24 小时的临时账号并写入演示数据，响应里带会话 Cookie。 */
+api.post("/demo/session", async (c) => {
+  const origin = c.req.header("origin");
+  if (!origin || !trustedOrigins(c.env, c.req.raw).includes(origin)) {
+    return c.json(errorBody("FORBIDDEN", "请求来源不受信任"), 403);
+  }
+  try {
+    const headers = await createDemoSession(c.env, c.req.raw);
+    headers.set("Content-Type", "application/json");
+    headers.set("Cache-Control", "no-store");
+    return new Response(JSON.stringify({ ok: true, data: { demo: true } }), { status: 200, headers });
+  } catch (err) {
+    if (err instanceof DemoError) {
+      return c.json(errorBody("PRECONDITION_FAILED", err.message), err.status);
+    }
+    throw err;
+  }
+});
+
 // ---- 需要登录的接口 -------------------------------------------------------
 
 /** 写请求必须来自本站（Cookie 会话下的 CSRF 防护）。 */
@@ -68,7 +88,7 @@ api.use("*", async (c, next) => {
 
 api.get("/me", (c) => {
   const user = c.var.user;
-  return ok(c, { ...user, enrollmentYear: c.var.ctx.enrollmentYear });
+  return ok(c, { ...user, enrollmentYear: c.var.ctx.enrollmentYear, isDemo: isDemoEmail(user.email) });
 });
 
 api.patch("/me", async (c) => {
@@ -80,7 +100,7 @@ api.patch("/me", async (c) => {
     [year, userId]
   );
   rememberEnrollmentYear(userId, year);
-  return ok(c, { ...c.var.user, enrollmentYear: year });
+  return ok(c, { ...c.var.user, enrollmentYear: year, isDemo: isDemoEmail(c.var.user.email) });
 });
 
 // 含冒号的批量动作要先注册，避免被 /courses/:code、/trash/:code 抢匹配。
