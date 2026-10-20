@@ -156,7 +156,7 @@ export function TermColumn({
       )}
     >
       <header
-        className={cn("border-b border-line px-2.5 pb-2 pt-2.5", isCurrent && "shadow-[inset_0_2px_0_rgb(var(--brand))]")}
+        className={cn("border-b border-line px-3.5 pb-2 pt-2.5", isCurrent && "shadow-[inset_0_2px_0_rgb(var(--brand))]")}
       >
         <div className="flex h-5 items-center justify-between gap-2">
           <span className="flex min-w-0 items-center gap-1.5">
@@ -313,7 +313,7 @@ export function BoardScroller({ children, scrollToTerm }: { children: React.Reac
         </div>
       )}
       <div ref={ref} className="no-scrollbar -mx-4 overflow-x-auto px-4 pb-2 sm:-mx-6 sm:px-6">
-        <div className="grid auto-cols-[minmax(168px,1fr)] grid-flow-col items-stretch gap-2">{children}</div>
+        <div className="grid auto-cols-[minmax(160px,1fr)] grid-flow-col items-stretch gap-2">{children}</div>
       </div>
     </div>
   );

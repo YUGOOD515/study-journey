@@ -1,5 +1,5 @@
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
-import { Check, ChevronRight, PenLine, X } from "../lib/icons";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Check, ChevronRight, PenLine } from "../lib/icons";
 import { api } from "../lib/api";
 import { CATEGORY_STYLE } from "../lib/categoryStyle";
 import { formatCredits, roundCredits } from "../lib/credits";
@@ -20,6 +20,7 @@ import { useEditMode } from "../lib/editMode";
 import { cn } from "../lib/cn";
 import {
   Button,
+  Dialog,
   inputClass,
   notify,
   Page,
@@ -98,16 +99,7 @@ export default function Trail() {
     [planInputs],
   );
 
-  const select = (key: string) => {
-    setSelected((prev) => (prev === key ? null : key));
-    // 详情在板块网格下方；窄屏时滚动过去
-    requestAnimationFrame(() => {
-      const id = window.matchMedia("(min-width: 640px)").matches
-        ? "trail-detail"
-        : "trail-detail-inline";
-      document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-    });
-  };
+  const select = (key: string) => setSelected(key);
 
   // 经法管融通 流向图 items —— 全部来自后端进度结果（唯一真相源）
   // 注意：所有 hooks 必须在早 return 之前调用，否则违反 Rules of Hooks
@@ -188,17 +180,16 @@ export default function Trail() {
     (r) => `${selectedBundle.code}:${r.requirementType}` === selected,
   );
 
-  const renderDetail = (variant: "inline" | "below") =>
+  const detail =
     selectedBundle && selectedRow ? (
-      <DetailPanel
-        variant={variant}
+      <DetailDialog
         bundle={selectedBundle}
         row={selectedRow}
         onClose={() => setSelected(null)}
         onRefetch={refetchTrailData}
       >
         {selectedRow.requirementType === "interdisciplinary" && flowItems.length > 0 && (
-          <div className="mt-4 rounded bg-fill p-3 sm:p-4">
+          <div className="mt-5 rounded bg-fill p-3 sm:p-4">
             <div className="text-xs font-medium text-ink">学分归属</div>
             <p className="mt-0.5 text-2xs text-sub">
               计入「大类平台」上限 <span className="num">{interOverflow?.cap ?? 6}</span>{" "}
@@ -224,7 +215,7 @@ export default function Trail() {
             )}
           </div>
         )}
-      </DetailPanel>
+      </DetailDialog>
     ) : null;
 
   return (
@@ -250,26 +241,20 @@ export default function Trail() {
             </span>
           }
         />
-        <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+        <div className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
           {bundles.map((b) => (
-            <Fragment key={b.code}>
-              <BundleCard
-                bundle={b}
-                selected={selected}
-                onSelect={select}
-                overflowCourses={
-                  b.code === "major_platform" ? (interOverflow?.overflowCourses.length ?? 0) : 0
-                }
-              />
-              {/* 手机：详情紧跟在所属板块下面 */}
-              {selectedBundle?.code === b.code && (
-                <div className="sm:hidden">{renderDetail("inline")}</div>
-              )}
-            </Fragment>
+            <BundleCard
+              key={b.code}
+              bundle={b}
+              selected={selected}
+              onSelect={select}
+              overflowCourses={
+                b.code === "major_platform" ? (interOverflow?.overflowCourses.length ?? 0) : 0
+              }
+            />
           ))}
         </div>
-
-        <div className="hidden sm:block">{renderDetail("below")}</div>
+        {detail}
       </section>
     </Page>
   );
@@ -292,7 +277,7 @@ function OverviewCard({
 }) {
   const pct = pctOf(totals.earned, totals.required);
   return (
-    <Panel className="mt-6 rounded-lg p-5 sm:px-6" aria-label="总览">
+    <Panel className="mt-6 rounded-lg p-5" aria-label="总览">
       <div className="flex items-end justify-between gap-6">
         <div className="min-w-0">
           <div className="text-2xs text-sub">已修学分</div>
@@ -367,6 +352,18 @@ function statusText(earned: number, preview: number, required: number) {
   return `还差 ${formatCredits(left)} 学分未安排`;
 }
 
+/** 弹窗里的状态：比卡片多给出在修 / 计划的拆分 */
+function detailStatus(earned: number, inProgress: number, planned: number, required: number) {
+  const parts: string[] = [];
+  if (inProgress > 0) parts.push(`在修 ${formatCredits(inProgress)}`);
+  if (planned > 0) parts.push(`计划 ${formatCredits(planned)}`);
+  if (required > 0 && earned >= required) return ["已完成", ...parts].join(" · ");
+  const left = roundCredits(required - earned - inProgress - planned);
+  if (left > 0) parts.push(`还有 ${formatCredits(left)} 学分未安排`);
+  else if (required > 0) parts.push("可补齐");
+  return parts.length ? parts.join(" · ") : statusText(earned, 0, required);
+}
+
 function LegendItem({ level, label }: { level: 0 | 1 | 3; label: string }) {
   return (
     <span className="inline-flex items-center gap-1.5">
@@ -394,7 +391,7 @@ function BundleCard({
 
   return (
     <article
-      className="flex flex-col rounded-lg border border-line bg-card p-4"
+      className="flex flex-col rounded-lg border border-line bg-card p-5"
       aria-label={bundle.name}
     >
       <header className="flex items-center gap-2">
@@ -479,7 +476,8 @@ function RowCard({
   return (
     <button
       type="button"
-      aria-expanded={active}
+      aria-haspopup="dialog"
+      aria-pressed={active}
       onClick={onClick}
       className={cn(
         "flex w-full items-center gap-3 rounded px-2.5 py-2 text-left transition-colors",
@@ -525,15 +523,13 @@ function RowCard({
 
 /* 分项详情 --------------------------------------------------------- */
 
-function DetailPanel({
-  variant,
+function DetailDialog({
   bundle,
   row,
   onClose,
   onRefetch,
   children,
 }: {
-  variant: "inline" | "below";
   bundle: CategoryBundle;
   row: RequirementRow;
   onClose: () => void;
@@ -541,53 +537,75 @@ function DetailPanel({
   children?: React.ReactNode;
 }) {
   const style = CATEGORY_STYLE[bundle.code];
+  const preview = roundCredits(row.inProgressCredits + row.plannedCredits);
+  const pct = pctOf(row.earnedCredits, row.requiredCredits);
   const inProgress = row.plannedCourses.filter((c) => c.origin === "record");
   const planned = row.plannedCourses.filter((c) => c.origin !== "record");
   const empty = row.earnedCourses.length === 0 && row.plannedCourses.length === 0;
   return (
-    <Panel
-      id={variant === "inline" ? "trail-detail-inline" : "trail-detail"}
-      className={cn(
-        "animate-fade scroll-mt-20 rounded-lg",
-        variant === "below" && "mt-3",
-        "p-4 sm:p-5",
-      )}
-      aria-label={`${bundle.name} ${row.requirementName}`}
-    >
-      <header className="flex items-center gap-2">
-        <span
-          className="h-2.5 w-2.5 shrink-0 rounded-full"
-          style={{ backgroundColor: style.color }}
-          aria-hidden
-        />
-        <h3 className="text-sm font-semibold text-ink">
+    <Dialog
+      open
+      onOpenChange={(open) => !open && onClose()}
+      size="md"
+      title={
+        <span className="flex items-center gap-2">
+          <span
+            className="h-2.5 w-2.5 shrink-0 rounded-full"
+            style={{ backgroundColor: style.color }}
+            aria-hidden
+          />
           {bundle.name}
-          <span className="mx-1.5 text-faint">·</span>
+          <span className="text-faint">·</span>
           {row.requirementName}
-        </h3>
-        <span className="num text-xs text-sub">
-          {formatCredits(row.earnedCredits)} / {formatCredits(row.requiredCredits)} 学分
         </span>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="ml-auto"
-          icon={<X />}
-          onClick={onClose}
-          aria-label="收起"
+      }
+    >
+      <div className="flex items-center gap-4">
+        <ProgressRing
+          earned={row.earnedCredits}
+          preview={preview}
+          required={row.requiredCredits}
+          color={style.color}
+          size={64}
+          stroke={7}
         >
-          收起
-        </Button>
-      </header>
+          <span className="num text-xs font-semibold leading-none" style={{ color: style.text }}>
+            {pct.toFixed(0)}
+            <span className="text-2xs font-medium">%</span>
+          </span>
+        </ProgressRing>
+        <div className="min-w-0">
+          <div className="flex items-baseline gap-1">
+            <span className="num text-base font-semibold text-ink">
+              {formatCredits(row.earnedCredits)}
+            </span>
+            <span className="num text-xs text-faint">
+              / {formatCredits(row.requiredCredits)} 学分
+            </span>
+          </div>
+          <div className="mt-0.5 text-2xs text-sub">
+            {detailStatus(
+              row.earnedCredits,
+              row.inProgressCredits,
+              row.plannedCredits,
+              row.requiredCredits,
+            )}
+          </div>
+        </div>
+      </div>
+
       {children}
+
       {empty ? (
-        <div className="mt-4 text-2xs text-faint">暂无已修或计划课程</div>
+        <div className="mt-5 rounded bg-fill px-3 py-6 text-center text-2xs text-faint">
+          暂无已修或计划课程
+        </div>
       ) : (
-        <div className="mt-4 space-y-3">
+        <div className="mt-5 space-y-4">
           {row.earnedCourses.length > 0 && (
             <CourseGroup label="已修" count={row.earnedCourses.length}>
               {row.earnedCourses.map((c) => (
-                <ScorePill
+                <EarnedRow
                   key={`earned-${c.source}-${c.courseCode}`}
                   course={c}
                   onRefetch={onRefetch}
@@ -598,7 +616,7 @@ function DetailPanel({
           {inProgress.length > 0 && (
             <CourseGroup label="在修" count={inProgress.length}>
               {inProgress.map((c) => (
-                <PlannedCoursePill
+                <PlannedRow
                   key={`ip-${c.source}-${c.courseCode}-${c.courseName}`}
                   course={c}
                   onRefetch={onRefetch}
@@ -609,7 +627,7 @@ function DetailPanel({
           {planned.length > 0 && (
             <CourseGroup label="计划" count={planned.length}>
               {planned.map((c) => (
-                <PlannedCoursePill
+                <PlannedRow
                   key={`planned-${c.source}-${c.courseCode}-${c.courseName}`}
                   course={c}
                   onRefetch={onRefetch}
@@ -619,7 +637,7 @@ function DetailPanel({
           )}
         </div>
       )}
-    </Panel>
+    </Dialog>
   );
 }
 
@@ -633,20 +651,48 @@ function CourseGroup({
   children: React.ReactNode;
 }) {
   return (
-    <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[64px_minmax(0,1fr)] sm:gap-3">
-      <div className="text-2xs text-sub sm:pt-1">
+    <section>
+      <h4 className="mb-1 text-2xs text-sub">
         {label} <span className="num text-faint">{count}</span>
-      </div>
-      <div className="flex flex-wrap gap-1.5">{children}</div>
-    </div>
+      </h4>
+      <ul className="divide-y divide-line rounded border border-line">{children}</ul>
+    </section>
   );
 }
 
-const pillBase =
-  "inline-flex h-7 max-w-full items-center gap-1.5 rounded-full border px-2.5 text-2xs transition-colors disabled:cursor-default";
+/** 课程行：课程名 + 课程号 | 学分 | 右侧（学期 / 成绩，编辑模式下可点开填写） */
+function CourseLine({
+  name,
+  code,
+  credits,
+  meta,
+  action,
+}: {
+  name: string;
+  code: string | null;
+  credits: number;
+  meta?: React.ReactNode;
+  action: React.ReactNode;
+}) {
+  return (
+    <li className="grid min-h-10 grid-cols-[minmax(0,1fr)_auto_64px] items-center gap-x-3 px-3 py-1.5 text-xs">
+      <span className="min-w-0">
+        <span className="block truncate text-ink">{name}</span>
+        {code && <span className="num block text-2xs text-faint">{code}</span>}
+      </span>
+      <span className="num text-right text-2xs text-sub">
+        {formatCredits(credits)} 学分{meta && <span className="text-faint"> · {meta}</span>}
+      </span>
+      <span className="flex justify-end">{action}</span>
+    </li>
+  );
+}
 
-// ── 成绩标签：编辑模式下点击弹出成绩输入 ─────────────────
-function ScorePill({
+const scoreButtonClass =
+  "num inline-flex h-7 min-w-[52px] items-center justify-center gap-1 rounded-sm px-2 text-xs transition-colors";
+
+// ── 已修课程：显示成绩；编辑模式下点击修改 ─────────────────
+function EarnedRow({
   course,
   onRefetch,
 }: {
@@ -656,31 +702,28 @@ function ScorePill({
   const { editing } = useEditMode();
   const [open, setOpen] = useState(false);
   const score = course.score;
-  const hasScore = score != null;
+  const text = score != null ? String(score) : "—";
+  const code = course.source === "official" ? course.courseCode : null;
 
-  const pill = (
-    <button
-      type="button"
-      disabled={!editing}
-      className={cn(
-        pillBase,
-        "border-line bg-card text-ink enabled:hover:border-line-strong data-[state=open]:border-line-strong",
-      )}
-      title={course.source === "official" ? (course.courseCode ?? "") : "自定课程"}
-    >
-      <span className="truncate">{course.courseName}</span>
-      <span className="num text-sub">{formatCredits(course.credits)}</span>
-      <span className={cn("num border-l border-line pl-1.5", hasScore ? "text-ink" : "text-faint")}>
-        {hasScore ? score : "—"}
-      </span>
-    </button>
-  );
-
-  if (!editing) return pill;
-  return (
+  const action = !editing ? (
+    <span className={cn("num text-xs", score != null ? "font-medium text-ink" : "text-faint")}>
+      {text}
+    </span>
+  ) : (
     <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>{pill}</PopoverTrigger>
-      <PopoverContent align="start" className="w-[260px] p-3">
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          aria-label={`修改 ${course.courseName} 的成绩`}
+          className={cn(
+            scoreButtonClass,
+            "bg-fill font-medium text-ink hover:bg-fill-strong data-[state=open]:bg-fill-strong",
+          )}
+        >
+          {text}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-[260px] p-3">
         <ScoreForm
           course={course}
           initialScore={score ?? null}
@@ -692,9 +735,14 @@ function ScorePill({
       </PopoverContent>
     </Popover>
   );
+
+  return (
+    <CourseLine name={course.courseName} code={code} credits={course.credits} action={action} />
+  );
 }
 
-function PlannedCoursePill({
+// ── 在修 / 计划课程：显示学期；编辑模式下可填成绩转为已修 ─────────
+function PlannedRow({
   course,
   onRefetch,
 }: {
@@ -703,36 +751,27 @@ function PlannedCoursePill({
 }) {
   const { editing } = useEditMode();
   const [open, setOpen] = useState(false);
+  const term = course.plannedTerm == null ? "待安排" : TERM_LABEL[course.plannedTerm];
+  const code = course.source === "official" ? course.courseCode : null;
 
-  const pill = (
-    <button
-      type="button"
-      disabled={!editing}
-      className={cn(
-        pillBase,
-        "border-transparent bg-fill-strong text-sub enabled:hover:text-ink data-[state=open]:text-ink",
-      )}
-      title={course.source === "official" ? (course.courseCode ?? "") : "计划课程"}
-    >
-      <span className="truncate">{course.courseName}</span>
-      <span className="num">{formatCredits(course.credits)}</span>
-      <span className="text-faint">
-        {course.plannedTerm == null ? "待安排" : TERM_LABEL[course.plannedTerm]}
-      </span>
-      {editing && (
-        <span className="inline-flex items-center gap-0.5 border-l border-line-strong pl-1.5">
-          <PenLine size={10} aria-hidden />
-          成绩
-        </span>
-      )}
-    </button>
-  );
-
-  if (!editing) return pill;
-  return (
+  const action = !editing ? (
+    <span className="text-2xs text-faint">—</span>
+  ) : (
     <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>{pill}</PopoverTrigger>
-      <PopoverContent align="start" className="w-[260px] p-3">
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          aria-label={`填写 ${course.courseName} 的成绩`}
+          className={cn(
+            scoreButtonClass,
+            "text-2xs text-sub hover:bg-fill hover:text-ink data-[state=open]:bg-fill",
+          )}
+        >
+          <PenLine size={12} aria-hidden />
+          成绩
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-[260px] p-3">
         <ScoreForm
           course={course}
           initialScore={null}
@@ -743,6 +782,16 @@ function PlannedCoursePill({
         />
       </PopoverContent>
     </Popover>
+  );
+
+  return (
+    <CourseLine
+      name={course.courseName}
+      code={code}
+      credits={course.credits}
+      meta={term}
+      action={action}
+    />
   );
 }
 

@@ -41,10 +41,10 @@ app/src/index.css
 | 字体 | 正文系统无衬线（PingFang SC / 系统 UI 字体）；**所有数字**使用 `.num`（`ui-monospace` 等宽 + `tabular-nums`），保证纵向对齐 |
 | 字号 | 只有 6 档：`2xs` 11/16、`xs` 12/18（正文默认）、`sm` 13/20、`base` 15/22、`lg` 20/28（页面标题）、`xl` 28/32（总览大数字） |
 | 字重 | 400 / 500 / 600 三档 |
-| 圆角 | `rounded-sm` 8px（菜单项、分段按钮内项、小按钮）、`rounded` 10px（按钮、输入框、课程卡、分项小卡）、`rounded-md` 16px（面板、弹窗、悬停卡、学期列）、`rounded-lg` 20px（旅迹总览与板块大卡片）、`rounded-full`（标签、徽标、进度条、色点） |
+| 圆角 | 由 `index.css` 中的 CSS 变量驱动：`rounded-sm` 8px（菜单项、分段按钮内项、小按钮）、`rounded` 10px（按钮、输入框、课程卡、分项小卡）、`rounded-md` 16px（面板、弹窗、悬停卡、学期列）、`rounded-lg` 20px（旅迹总览与板块大卡片）、`rounded-full`（标签、徽标、进度条、色点）。支持 `corner-shape: squircle` 的浏览器（Chrome / Edge 139+）自动改用 G2 连续曲线，半径同时放大 1.5 倍（11/15/24/30px）以保持观感一致；`rounded-full` 始终为正圆；其他浏览器为普通圆角 |
 | 性质标签 | 课程卡右下角胶囊：必修 = 类别色实心，选修 / 跨专业 / 经法管融通 = 类别色描边（`NatureTag`） |
 | 进度 | 只做示意：总体用一条胶囊进度条，板块与分项用圆环（`ProgressRing`）。只分两档：已修 = 实色，在修与计划 = 同色 30% 浅色，其余为底槽 |
-| 间距 | 4px 基准；页面容器统一 `max-w-[1440px] px-4 sm:px-6` |
+| 间距 | 4px 基准；页面容器统一 `max-w-[1440px] px-4 sm:px-6`；页头分隔线到正文 24px，区块之间 32px，大卡片内边距 20px（`p-5`），卡片网格间距 16px；时间轴列头文字与课程卡文字左对齐（`px-3.5`） |
 | 颜色 | 沿用原版色系：暖米白 `bg`、`ink / sub / faint` 文本层级；`line / line-strong` 实色描边；`fill / fill-strong` 实色底；`brand` 暖橘用于主按钮、选中态、焦点、进度与"本学期 / 今天"；`warn` 用于超限与提醒；`danger` 用于删除 |
 | 类别色 | 5 个培养方案板块各一色（`--cat-*`）。课程卡与课表色块统一用 `categorySurface()`：必修 = 类别浅底 + 类别描边，选修 = 更浅底 + 更浅描边；课程名用类别文字色。四边等宽 1px，**任何卡片都不加左侧强调色条** |
 | 图标 | 与个人网站（selfsite）同一套 Lucide，线宽统一 1.6，由 `LucideProvider` 下发；全站只从 `lib/icons.ts` 引入，使用 Lucide 规范名（如 `TriangleAlert`、`LoaderCircle`） |
@@ -63,7 +63,7 @@ app/src/index.css
 | 页面 | 文件 | 作用 |
 |---|---|---|
 | 时间轴 | `app/src/pages/Timeline.tsx`（+ `pages/timeline/`） | 我的计划、官方计划、待安排、垃圾篓、课程添加与编辑 |
-| 旅迹 | `app/src/pages/Trail.tsx` | 一张总览卡（总进度条）→ 五大板块卡片（圆环 + 必修/选修/经法管融通分项小卡）→ 点开分项在下方（手机端就地）展开课程，可填写成绩；经法管融通的学分归属在其分项详情里调整 |
+| 旅迹 | `app/src/pages/Trail.tsx` | 一张总览卡（总进度条）→ 五大板块卡片（圆环 + 必修/选修/经法管融通分项小卡）→ 点分项打开居中弹窗（手机为底部抽屉），按已修/在修/计划分组列出课程，编辑模式下可填写成绩；经法管融通的学分归属在其分项弹窗里调整 |
 | 学期课表 | `app/src/pages/TermSchedule.tsx` | 周课表网格（节次 × 星期）、手机按天列表、课程周次分布 |
 | 登录 / 注册 | `app/src/pages/AuthPage.tsx` | 单列表单 |
 
