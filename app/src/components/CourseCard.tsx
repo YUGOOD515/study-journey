@@ -34,7 +34,7 @@ export function courseSurface(course: Pick<Course, "categoryCode" | "requirement
  * - 类别浅底 + 1px 类别描边标识板块；必修更实，选修更浅。课程名用类别文字色。
  * - 第 1 行：课程号（等宽、弱）＋ 学分（等宽、右对齐）
  * - 第 2 行：课程名 12/500
- * - 第 3 行：性质 ＋ 成绩；警告单独一行
+ * - 第 3 行：成绩（左）＋ 性质标签（右下角：必修实心、选修描边）；警告单独一行
  */
 export function CourseCard({
   course,
@@ -96,14 +96,16 @@ export function CourseCard({
           {course.courseName}
         </div>
         {showBottom && (
-          <div className="mt-1 flex h-4 items-center justify-between gap-2 text-2xs">
-            <span className="text-sub">{displayOptions.showNature ? course.requirementType : ""}</span>
-            {displayOptions.showScore && score != null && (
+          <div className="mt-1.5 flex h-[18px] items-center justify-between gap-2 text-2xs">
+            {displayOptions.showScore && score != null ? (
               <span className="num inline-flex items-center gap-0.5 font-medium text-brand">
                 <Check className="h-3 w-3" />
                 {score}
               </span>
+            ) : (
+              <span />
             )}
+            {displayOptions.showNature && <NatureTag course={course} />}
           </div>
         )}
         {movedToTerm != null && (
@@ -119,6 +121,24 @@ export function CourseCard({
         )}
       </div>
     </CourseTile>
+  );
+}
+
+/** 性质标签：必修 = 类别色实心胶囊；选修/经法管融通 = 类别色描边胶囊 */
+export function NatureTag({ course }: { course: Pick<Course, "categoryCode" | "requirementType"> }) {
+  const style = CATEGORY_STYLE[course.categoryCode] ?? CATEGORY_STYLE.general_education;
+  const required = course.requirementType === "必修";
+  return (
+    <span
+      className="inline-flex h-[18px] shrink-0 items-center rounded-full px-2 text-2xs font-medium leading-none"
+      style={
+        required
+          ? { backgroundColor: style.color, color: "rgb(var(--card))" }
+          : { boxShadow: `inset 0 0 0 1px ${style.color}`, color: style.text }
+      }
+    >
+      {course.requirementType}
+    </span>
   );
 }
 
