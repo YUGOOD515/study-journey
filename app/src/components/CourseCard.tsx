@@ -1,8 +1,10 @@
-import { Check } from "lucide-react";
+import { AlertTriangle, Check } from "lucide-react";
 import type { CourseCardDisplayOptions, Course, PlanCoursePatch } from "../types";
 import { CATEGORY_STYLE } from "../lib/categoryStyle";
 import { DEFAULT_COURSE_CARD_DISPLAY_OPTIONS } from "../lib/courseCardDisplay";
 import { formatCredits } from "../lib/credits";
+import { TERM_LABEL } from "../lib/offeredTerm";
+import { cn } from "../lib/cn";
 import { CourseTile, type DragBinding, type TileMenu } from "./CourseTile";
 
 interface Props {
@@ -18,8 +20,27 @@ interface Props {
   detailActions?: React.ReactNode;
   drag?: DragBinding;
   overlay?: boolean;
+  /** 手动添加 / 开课数据添加的自定义课程 */
+  custom?: boolean;
 }
 
+/** 卡片底色：左侧 2px 类别色条；必修为浅类别底色，选修为白底 + 1px 描边 */
+export function courseSurface(course: Pick<Course, "categoryCode" | "requirementType">): React.CSSProperties {
+  const style = CATEGORY_STYLE[course.categoryCode] ?? CATEGORY_STYLE.general_education;
+  const isRequired = course.requirementType === "必修";
+  return {
+    backgroundColor: isRequired ? style.bgSoft : "rgb(var(--card))",
+    boxShadow: `inset 2px 0 0 ${style.color}, inset 0 0 0 1px ${isRequired ? "transparent" : "rgb(var(--line))"}`,
+  };
+}
+
+/**
+ * 课程卡（时间轴）。
+ * - 左侧 2px 类别色条标识板块；必修为浅类别底色，选修为白底。
+ * - 第 1 行：课程号（等宽、弱）＋ 学分（等宽、右对齐）
+ * - 第 2 行：课程名 12/500
+ * - 第 3 行：性质 ＋ 成绩；警告单独一行
+ */
 export function CourseCard({
   course,
   completedScore,
@@ -33,22 +54,26 @@ export function CourseCard({
   detailActions,
   drag,
   overlay,
+  custom = false,
 }: Props) {
-  const style = CATEGORY_STYLE[course.categoryCode] ?? CATEGORY_STYLE.general_education;
-  const isRequired = course.requirementType === "必修";
   const score = completedScore ?? course.score ?? null;
   const item: Course = {
     ...course,
     plannedTerm: plannedTerm !== undefined ? plannedTerm : course.plannedTerm,
+    score,
   };
+  const customTerm = course.actualTerm ?? course.plannedTerm;
+  const codeText = custom
+    ? `${course.studyStatus === "计划修读" ? "计划" : "自定"} / ${customTerm == null ? "待安排" : TERM_LABEL[customTerm]}`
+    : course.courseCode;
+
+  const showTop = displayOptions.showCourseCode || displayOptions.showCredits;
+  const showBottom = displayOptions.showNature || (displayOptions.showScore && score != null);
 
   return (
     <CourseTile
       item={item}
-      surface={{
-        backgroundColor: isRequired ? style.bgSoft : style.bgGhost,
-        border: `1px ${isRequired ? "solid" : "dashed"} ${style.border}`,
-      }}
+      surface={courseSurface(course)}
       editable={editable}
       onSave={onSave}
       menu={menu}
@@ -56,40 +81,50 @@ export function CourseCard({
       drag={drag}
       overlay={overlay}
     >
-      {displayOptions.showCourseCode && (
-        <div className="num text-[9px] text-sub">{course.courseCode}</div>
-      )}
-      <div className="mt-0.5 font-medium" style={{ color: style.text }}>
-        {course.courseName}
+      <div className="pl-1">
+        {showTop && (
+          <div className="flex h-4 items-center justify-between gap-2 text-2xs">
+            <span className={cn("min-w-0 truncate text-faint", !custom && "num")}>
+              {displayOptions.showCourseCode ? codeText : ""}
+            </span>
+            {displayOptions.showCredits && (
+              <span className={cn("num shrink-0 text-sub", menu && "group-hover/tile:invisible coarse:invisible")}>
+                {formatCredits(course.credits)}
+              </span>
+            )}
+          </div>
+        )}
+        <div className={cn("text-xs font-medium text-ink", showTop && "mt-0.5", !showTop && menu && "pr-6")}>
+          {course.courseName}
+        </div>
+        {showBottom && (
+          <div className="mt-1 flex h-4 items-center justify-between gap-2 text-2xs">
+            <span className="text-sub">{displayOptions.showNature ? course.requirementType : ""}</span>
+            {displayOptions.showScore && score != null && (
+              <span className="num inline-flex items-center gap-0.5 font-medium text-ink">
+                <Check className="h-3 w-3" strokeWidth={2.5} />
+                {score}
+              </span>
+            )}
+          </div>
+        )}
+        {movedToTerm != null && (
+          <div className="mt-1 text-2xs text-sub">
+            实际在学期 <span className="num">{movedToTerm}</span>
+          </div>
+        )}
+        {warning && (
+          <div className="mt-1 flex items-start gap-1 text-2xs text-warn">
+            <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
+            <span>{warning}</span>
+          </div>
+        )}
       </div>
-      {(displayOptions.showCredits || displayOptions.showNature) && (
-        <div className="mt-1 flex items-center justify-between text-[10px]">
-          {displayOptions.showCredits ? (
-            <span className="num" style={{ color: style.text }}>
-              {formatCredits(course.credits)} 学分
-            </span>
-          ) : (
-            <span />
-          )}
-          {displayOptions.showNature && (
-            <span
-              className={isRequired ? "rounded-sm px-1 text-white" : "text-sub"}
-              style={isRequired ? { backgroundColor: style.color } : undefined}
-            >
-              {course.requirementType}
-            </span>
-          )}
-        </div>
-      )}
-      {displayOptions.showScore && score != null && (
-        <div className="num mt-1 flex items-center gap-0.5 text-[10px] text-brand">
-          <Check size={11} strokeWidth={2.5} /> {score}
-        </div>
-      )}
-      {movedToTerm != null && (
-        <div className="num mt-1 text-[10px] text-sub">实际在学期 {movedToTerm}</div>
-      )}
-      {warning && <div className="mt-1 text-[10px] leading-snug text-brand">{warning}</div>}
     </CourseTile>
   );
+}
+
+/** 自定义课程（手动添加 / 开课数据添加）：同一张卡，课程号位置显示来源与学期 */
+export function ManualCourseCard(props: Omit<Props, "custom" | "completedScore" | "plannedTerm" | "movedToTerm" | "warning">) {
+  return <CourseCard {...props} custom />;
 }

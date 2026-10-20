@@ -1,6 +1,5 @@
 import type React from "react";
-import { CustomSelect } from "./CustomSelect";
-import { inputClass as baseInputClass } from "./ui";
+import { inputClass as baseInputClass, Select } from "./ui";
 import { cn } from "../lib/cn";
 import type { CourseEditDraft, CourseNature } from "../types";
 import {
@@ -52,11 +51,11 @@ export function CourseEditFields({
     });
   };
 
-  const inputClass = compact ? cn(baseInputClass, "h-7 px-2 text-[11px]") : baseInputClass;
-  const labelClass = compact ? "text-[10px] text-sub" : "text-[11px] text-sub";
+  const inputClass = compact ? cn(baseInputClass, "h-7 px-2") : baseInputClass;
+  const labelClass = "text-2xs font-medium text-sub";
 
   return (
-    <div className={compact ? "space-y-1.5" : "space-y-3"}>
+    <div className={compact ? "space-y-2" : "space-y-3"}>
       {showCourseName && (
         <Field label="课程名" compact={compact} labelClass={labelClass}>
           <input
@@ -68,37 +67,34 @@ export function CourseEditFields({
       )}
 
       <Field label="类别" compact={compact} labelClass={labelClass}>
-        <CustomSelect
+        <Select
           value={draft.category_code}
           onChange={(value) => setCategory(value as CourseEditDraft["category_code"])}
           options={COURSE_CATEGORY_OPTIONS.map((option) => ({ value: option.code, label: option.name }))}
-          className={inputClass}
           compact={compact}
           ariaLabel="选择课程类别"
         />
       </Field>
 
-      <div className={compact ? "grid grid-cols-2 gap-1.5" : "grid grid-cols-2 gap-3"}>
+      <div className={compact ? "grid grid-cols-2 gap-2" : "grid grid-cols-2 gap-3"}>
         <Field label="性质" compact labelClass={labelClass}>
-          <CustomSelect
+          <Select
             value={isInter ? "选修" : draft.course_nature}
             disabled={isInter}
             onChange={(value) => setDraft({ course_nature: value as CourseNature })}
             options={COURSE_NATURE_OPTIONS.map((option) => ({ value: option, label: option }))}
-            className={inputClass + (isInter ? " opacity-70" : "")}
             compact={compact}
             ariaLabel="选择课程性质"
           />
         </Field>
         <Field label="计划" compact labelClass={labelClass}>
-          <CustomSelect
+          <Select
             value={draft.planned_term == null ? "" : String(draft.planned_term)}
             onChange={(value) => setDraft({ planned_term: value === "" ? null : Number(value) })}
             options={[
               { value: "", label: "未设置" },
               ...TERM_OPTIONS.map((term) => ({ value: String(term), label: `第 ${term} 学期` })),
             ]}
-            className={inputClass}
             compact={compact}
             ariaLabel="选择计划学期"
           />
@@ -106,7 +102,7 @@ export function CourseEditFields({
       </div>
 
       {allowInterdisciplinary && (
-        <div className={compact ? "rounded-md border border-sub/10 bg-sub/5 px-2 py-1.5" : "rounded-md border border-sub/15 bg-sub/5 px-3 py-2"}>
+        <div className={compact ? "rounded border border-line px-2 py-1.5" : "rounded border border-line px-3 py-2"}>
           <label className="flex items-center justify-between gap-2">
             <span className={labelClass}>经法管融通</span>
             <input
@@ -114,20 +110,19 @@ export function CourseEditFields({
               checked={isInter}
               disabled={!interAllowed}
               onChange={(event) => setInterdisciplinary(event.target.checked)}
-              className="h-3.5 w-3.5 accent-[rgb(var(--brand))] disabled:opacity-40"
+              className="h-3.5 w-3.5 accent-[rgb(var(--ink))] disabled:opacity-40"
             />
           </label>
           {!interAllowed && (
-            <div className="mt-1 text-[10px] text-faint">仅通识教育和大类平台可设置</div>
+            <div className="mt-1 text-2xs text-faint">仅通识教育和大类平台可设置</div>
           )}
           {isInter && (
             <div className="mt-1.5">
               <div className={labelClass + " mb-1"}>学分计入</div>
-              <CustomSelect
+              <Select
                 value={draft.assigned_to}
                 onChange={(value) => setDraft({ assigned_to: value as CourseEditDraft["assigned_to"] })}
                 options={CREDIT_ASSIGNMENT_OPTIONS.map((option) => ({ value: option.value, label: option.label }))}
-                className={inputClass}
                 compact={compact}
                 ariaLabel="选择学分计入方向"
               />
@@ -136,13 +131,23 @@ export function CourseEditFields({
         </div>
       )}
 
-      <div className={compact ? "grid grid-cols-2 gap-1.5" : "grid grid-cols-2 gap-3"}>
+      <div className={compact ? "grid grid-cols-3 gap-2" : "grid grid-cols-3 gap-3"}>
         <Field label="学分" compact labelClass={labelClass}>
           <NumberInput value={draft.credits} onChange={(credits) => setDraft({ credits })} inputClass={inputClass} step="0.01" />
         </Field>
         <Field label="成绩" compact labelClass={labelClass}>
           <NumberInput value={draft.score} onChange={(score) => setDraft({ score })} inputClass={inputClass} allowEmpty max={100} />
         </Field>
+        <Field label="先修" compact labelClass={labelClass}>
+          <input
+            value={draft.prerequisite_course_code}
+            placeholder="课程号"
+            onChange={(event) => setDraft({ prerequisite_course_code: event.target.value })}
+            className={cn(inputClass, "num")}
+          />
+        </Field>
+      </div>
+      <div className={compact ? "grid grid-cols-3 gap-2" : "grid grid-cols-3 gap-3"}>
         <Field label="讲课" compact labelClass={labelClass}>
           <NumberInput value={draft.lecture_hours} onChange={(lecture_hours) => setDraft({ lecture_hours })} inputClass={inputClass} />
         </Field>
@@ -151,14 +156,6 @@ export function CourseEditFields({
         </Field>
         <Field label="课外" compact labelClass={labelClass}>
           <NumberInput value={draft.extra_hours} onChange={(extra_hours) => setDraft({ extra_hours })} inputClass={inputClass} />
-        </Field>
-        <Field label="先修" compact labelClass={labelClass}>
-          <input
-            value={draft.prerequisite_course_code}
-            placeholder="课程号"
-            onChange={(event) => setDraft({ prerequisite_course_code: event.target.value })}
-            className={inputClass}
-          />
         </Field>
       </div>
 
@@ -226,7 +223,7 @@ function NumberInput({
       onBlur={() => {
         if (!allowEmpty && value.trim() === "") onChange("0");
       }}
-      className={inputClass}
+      className={cn(inputClass, "num")}
     />
   );
 }

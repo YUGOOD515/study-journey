@@ -4,9 +4,10 @@ import { extendTailwindMerge } from "tailwind-merge";
 const twMerge = extendTailwindMerge({
   extend: {
     classGroups: {
-      "text-color": [{ text: ["faint", "danger", "ink", "sub", "brand"] }],
+      "font-size": [{ text: ["2xs", "xs", "sm", "base", "lg", "xl"] }],
+      "text-color": [{ text: ["faint", "danger", "ink", "sub", "brand", "warn", "bg", "card"] }],
       z: [{ z: ["nav", "dock", "overlay", "popover", "toast"] }],
-      shadow: [{ shadow: ["card", "pop", "dock"] }],
+      shadow: [{ shadow: ["pop"] }],
     },
   },
 });
