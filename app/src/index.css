@@ -10,43 +10,44 @@
   --bg: 250 249 245; /* 暖米白 */
   --card: 255 255 255;
   --ink: 26 26 26; /* 主文字 15.9:1 */
-  --sub: 87 87 84; /* 次要文字 7.0:1 */
-  --faint: 112 111 106; /* 弱文字 4.8:1 */
+  --sub: 90 90 90; /* 次要文字 */
+  --faint: 112 112 112; /* 弱文字 ≥4.5:1 */
   --line: 230 228 221; /* 默认分隔线 / 边框 */
   --line-strong: 208 205 197; /* 控件边框、悬停 */
   --fill: 243 241 235; /* 悬停 / 次级底色 */
   --fill-strong: 234 231 223; /* 选中 / 轨道 */
   --brand: 201 100 66;
-  --danger: 190 50 50;
+  --danger: 196 52 52;
   --warn: 166 104 18;
 
   --shadow-pop: 0 1px 2px rgb(0 0 0 / 0.05), 0 8px 24px rgb(0 0 0 / 0.08);
 
   /* 5 大板块 */
   --cat-ge: 107 141 184;
-  --cat-ge-text: 66 96 130;
+  --cat-ge-text: 74 104 137;
   --cat-mp: 184 122 155;
-  --cat-mp-text: 128 76 105;
+  --cat-mp-text: 138 86 115;
   --cat-pe: 201 100 66;
-  --cat-pe-text: 148 66 40;
+  --cat-pe-text: 157 74 48;
   --cat-qe: 139 166 115;
-  --cat-qe-text: 86 110 66;
+  --cat-qe-text: 99 122 79;
   --cat-pr: 168 149 128;
-  --cat-pr-text: 110 94 76;
+  --cat-pr-text: 122 106 88;
 
   --cat-bg-soft: 0.12;
   --cat-bg-ghost: 0.05;
   --cat-border: 0.45;
+  --cat-border-ghost: 0.3;
 
   color-scheme: light;
 }
 
 html.dark {
   --bg: 24 24 24;
-  --card: 33 33 33;
-  --ink: 238 238 236;
-  --sub: 176 176 172;
-  --faint: 140 140 136;
+  --card: 36 36 36;
+  --ink: 240 240 240;
+  --sub: 175 175 175;
+  --faint: 140 140 140;
   --line: 48 48 47;
   --line-strong: 68 68 66;
   --fill: 40 40 39;
@@ -71,6 +72,7 @@ html.dark {
   --cat-bg-soft: 0.13;
   --cat-bg-ghost: 0.06;
   --cat-border: 0.5;
+  --cat-border-ghost: 0.32;
 
   color-scheme: dark;
 }

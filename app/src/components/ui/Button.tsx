@@ -1,12 +1,12 @@
 import { forwardRef } from "react";
-import { Loader2 } from "lucide-react";
+import { LoaderCircle } from "../../lib/icons";
 import { cn } from "../../lib/cn";
 
 export type ButtonVariant = "primary" | "secondary" | "ghost" | "danger" | "danger-solid";
 export type ButtonSize = "sm" | "md" | "lg";
 
 const VARIANT: Record<ButtonVariant, string> = {
-  primary: "border-ink bg-ink text-bg hover:bg-ink/85",
+  primary: "border-brand bg-brand text-white hover:bg-brand/90 active:bg-brand/80",
   secondary: "border-line-strong bg-card text-ink hover:bg-fill",
   ghost: "border-transparent text-sub hover:bg-fill hover:text-ink",
   danger: "border-line-strong bg-card text-danger hover:border-danger/50 hover:bg-danger/5",
@@ -44,7 +44,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       className={cn(BASE, VARIANT[variant], SIZE[size], block && "w-full", className)}
       {...rest}
     >
-      {loading ? <Loader2 className="animate-spin" aria-hidden /> : icon}
+      {loading ? <LoaderCircle className="animate-spin" aria-hidden /> : icon}
       {children}
     </button>
   );

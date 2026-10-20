@@ -1,6 +1,6 @@
-import { AlertTriangle, Check } from "lucide-react";
+import { TriangleAlert, Check } from "../lib/icons";
 import type { CourseCardDisplayOptions, Course, PlanCoursePatch } from "../types";
-import { CATEGORY_STYLE } from "../lib/categoryStyle";
+import { CATEGORY_STYLE, categorySurface } from "../lib/categoryStyle";
 import { DEFAULT_COURSE_CARD_DISPLAY_OPTIONS } from "../lib/courseCardDisplay";
 import { formatCredits } from "../lib/credits";
 import { TERM_LABEL } from "../lib/offeredTerm";
@@ -24,19 +24,14 @@ interface Props {
   custom?: boolean;
 }
 
-/** 卡片底色：左侧 2px 类别色条；必修为浅类别底色，选修为白底 + 1px 描边 */
+/** 卡片底色：类别浅底 + 1px 类别描边（必修更实，选修更浅） */
 export function courseSurface(course: Pick<Course, "categoryCode" | "requirementType">): React.CSSProperties {
-  const style = CATEGORY_STYLE[course.categoryCode] ?? CATEGORY_STYLE.general_education;
-  const isRequired = course.requirementType === "必修";
-  return {
-    backgroundColor: isRequired ? style.bgSoft : "rgb(var(--card))",
-    boxShadow: `inset 2px 0 0 ${style.color}, inset 0 0 0 1px ${isRequired ? "transparent" : "rgb(var(--line))"}`,
-  };
+  return categorySurface(course.categoryCode, course.requirementType === "必修");
 }
 
 /**
  * 课程卡（时间轴）。
- * - 左侧 2px 类别色条标识板块；必修为浅类别底色，选修为白底。
+ * - 类别浅底 + 1px 类别描边标识板块；必修更实，选修更浅。课程名用类别文字色。
  * - 第 1 行：课程号（等宽、弱）＋ 学分（等宽、右对齐）
  * - 第 2 行：课程名 12/500
  * - 第 3 行：性质 ＋ 成绩；警告单独一行
@@ -81,7 +76,7 @@ export function CourseCard({
       drag={drag}
       overlay={overlay}
     >
-      <div className="pl-1">
+      <div>
         {showTop && (
           <div className="flex h-4 items-center justify-between gap-2 text-2xs">
             <span className={cn("min-w-0 truncate text-faint", !custom && "num")}>
@@ -94,15 +89,18 @@ export function CourseCard({
             )}
           </div>
         )}
-        <div className={cn("text-xs font-medium text-ink", showTop && "mt-0.5", !showTop && menu && "pr-6")}>
+        <div
+          className={cn("text-xs font-medium", showTop && "mt-0.5", !showTop && menu && "pr-6")}
+          style={{ color: (CATEGORY_STYLE[course.categoryCode] ?? CATEGORY_STYLE.general_education).text }}
+        >
           {course.courseName}
         </div>
         {showBottom && (
           <div className="mt-1 flex h-4 items-center justify-between gap-2 text-2xs">
             <span className="text-sub">{displayOptions.showNature ? course.requirementType : ""}</span>
             {displayOptions.showScore && score != null && (
-              <span className="num inline-flex items-center gap-0.5 font-medium text-ink">
-                <Check className="h-3 w-3" strokeWidth={2.5} />
+              <span className="num inline-flex items-center gap-0.5 font-medium text-brand">
+                <Check className="h-3 w-3" />
                 {score}
               </span>
             )}
@@ -115,7 +113,7 @@ export function CourseCard({
         )}
         {warning && (
           <div className="mt-1 flex items-start gap-1 text-2xs text-warn">
-            <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
+            <TriangleAlert className="mt-0.5 h-3 w-3 shrink-0" />
             <span>{warning}</span>
           </div>
         )}

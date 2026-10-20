@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ChevronRight, PenLine } from "lucide-react";
+import { ChevronRight, PenLine } from "../lib/icons";
 import { api } from "../lib/api";
 import { CATEGORY_STYLE } from "../lib/categoryStyle";
 import { formatCredits, roundCredits } from "../lib/credits";
@@ -211,7 +211,7 @@ export default function Trail() {
               inProgress={totals.inProgress}
               planned={totals.planned}
               required={totals.required}
-              color="rgb(var(--ink))"
+              color="rgb(var(--brand))"
               height={8}
             />
           </div>

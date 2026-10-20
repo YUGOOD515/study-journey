@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { GraduationCap, KeyRound, LogOut, Settings, Trash2 } from "lucide-react";
+import { GraduationCap, KeyRound, LogOut, Settings, Trash } from "../lib/icons";
 import { authApi, type Me } from "../lib/auth";
 import {
   Button,
@@ -211,7 +211,7 @@ function AccountSettingsDialog({
         <form onSubmit={(e) => void deleteAccount(e)} className="space-y-4">
           <div className="rounded border border-line p-3">
             <div className="flex items-center gap-1.5 text-xs font-medium text-danger">
-              <Trash2 />
+              <Trash />
               注销账号
             </div>
             <p className="mt-1 text-2xs text-sub">

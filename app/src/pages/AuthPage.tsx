@@ -172,11 +172,11 @@ export default function AuthPage({
             )}
 
             {error && (
-              <p role="alert" className="border-l-2 border-danger pl-2 text-xs text-danger">
+              <p role="alert" className="rounded bg-danger/10 px-2.5 py-1.5 text-xs text-danger">
                 {error}
               </p>
             )}
-            {notice && <p className="border-l-2 border-ink pl-2 text-xs text-ink">{notice}</p>}
+            {notice && <p className="rounded bg-brand/10 px-2.5 py-1.5 text-xs text-ink">{notice}</p>}
 
             <Button type="submit" variant="primary" size="lg" block loading={busy}>
               {{ login: "登录", register: "注册并登录", forgot: "发送重置邮件", reset: "保存新密码" }[mode]}

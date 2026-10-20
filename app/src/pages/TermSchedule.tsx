@@ -1,5 +1,5 @@
 import { type MouseEvent as ReactMouseEvent, useEffect, useMemo, useRef, useState } from "react";
-import { CalendarX2, ChevronLeft, ChevronRight, SlidersHorizontal } from "lucide-react";
+import { CalendarX2, ChevronLeft, ChevronRight, SlidersHorizontal } from "../lib/icons";
 import { api } from "../lib/api";
 import { cn } from "../lib/cn";
 import { CATEGORY_STYLE, type CategoryStyle } from "../lib/categoryStyle";
@@ -231,7 +231,7 @@ export default function TermSchedule({
       ) : !hasData ? (
         <Panel className="mt-6">
           <EmptyState
-            icon={<CalendarX2 strokeWidth={1.5} />}
+            icon={<CalendarX2 />}
             title={`${TERM_LABEL[termNumber]}还没有实际课表数据`}
             description="实际课表来自教务系统导出的上课安排。可切换到其他学期查看，文字较浅的学期暂无数据。"
             className="py-16"
@@ -489,9 +489,9 @@ function CourseWeekTracks({
         {hoverWeek != null && hoverWeek !== selectedWeek && (
           <div className="absolute bottom-0 top-5 w-px bg-line-strong" style={{ left: `${weekCenterPercent(hoverWeek, weeks)}%` }} />
         )}
-        <div className="absolute bottom-0 top-5 w-px bg-ink" style={{ left: `${weekCenterPercent(selectedWeek, weeks)}%` }} />
+        <div className="absolute bottom-0 top-5 w-px bg-brand" style={{ left: `${weekCenterPercent(selectedWeek, weeks)}%` }} />
         <div
-          className="num absolute top-0 h-4 min-w-4 -translate-x-1/2 rounded-sm bg-ink px-1 text-center text-2xs leading-4 text-bg"
+          className="num absolute top-0 h-4 min-w-4 -translate-x-1/2 rounded-sm bg-brand px-1 text-center text-2xs leading-4 text-white"
           style={{ left: `${weekCenterPercent(selectedWeek, weeks)}%` }}
         >
           {selectedWeek}
@@ -743,7 +743,7 @@ function DayList({
                 {item.value === today && <span className="h-1 w-1 rounded-full bg-brand" aria-label="今天" />}
               </span>
               <span className="num mt-0.5 text-2xs font-normal">{count > 0 ? count : "–"}</span>
-              {active && <span className="absolute inset-x-2 bottom-0 h-0.5 rounded-sm bg-ink" aria-hidden />}
+              {active && <span className="absolute inset-x-2 bottom-0 h-0.5 rounded-sm bg-brand" aria-hidden />}
             </button>
           );
         })}
@@ -825,16 +825,19 @@ function ScheduleCourseCard({
           }
         }}
         className={cn(
-          "relative z-[1] min-w-0 cursor-pointer overflow-hidden rounded py-1.5 pl-2.5 pr-2 text-2xs transition-[filter] hover:brightness-[0.97] dark:hover:brightness-110",
+          "relative z-[1] min-w-0 cursor-pointer overflow-hidden rounded px-2 py-1.5 text-2xs transition-[filter] hover:brightness-[0.97] dark:hover:brightness-110",
           comfortable ? "" : "m-1",
         )}
         style={{
           gridRow,
-          backgroundColor: visual.isRequired ? visual.style.bgSoft : "rgb(var(--card))",
-          boxShadow: `inset 2px 0 0 ${visual.style.color}, inset 0 0 0 1px ${visual.isRequired ? "transparent" : "rgb(var(--line-strong))"}`,
+          backgroundColor: visual.isRequired ? visual.style.bgSoft : visual.style.bgGhost,
+          boxShadow: `inset 0 0 0 1px ${visual.isRequired ? visual.style.border : visual.style.borderGhost}`,
         }}
       >
-        <div className={cn("font-medium text-ink", comfortable ? "text-xs" : "line-clamp-2 text-2xs")}>
+        <div
+          className={cn("font-medium", comfortable ? "text-xs" : "line-clamp-2 text-2xs")}
+          style={{ color: visual.style.text }}
+        >
           {meeting.course_name}
         </div>
         {!comfortable && (

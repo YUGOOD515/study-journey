@@ -1,6 +1,6 @@
 import type React from "react";
 import { useEffect, useMemo, useState } from "react";
-import { Check, PenLine, Search } from "lucide-react";
+import { Check, PenLine, Search } from "../lib/icons";
 import { api } from "../lib/api";
 import { canUseInterdisciplinary } from "../lib/courseOptions";
 import { formatCredits } from "../lib/credits";
@@ -424,7 +424,7 @@ export function AddCourseDialog({ termNumber, onClose, onSubmitManual, onSubmitR
             <div className="max-h-[42dvh] min-h-0 flex-1 space-y-1.5 overflow-y-auto pr-1 md:max-h-none">
               {results.length === 0 ? (
                 <EmptyState
-                  icon={<Search size={22} strokeWidth={1.5} />}
+                  icon={<Search size={22} />}
                   title={searching ? "搜索中…" : "没有结果"}
                   description="输入关键词，或调整学期与来源筛选。"
                   className="rounded border border-line"
@@ -447,7 +447,7 @@ export function AddCourseDialog({ termNumber, onClose, onSubmitManual, onSubmitR
                       className={cn(
                         "w-full rounded border px-3 py-2 text-left transition-colors",
                         active
-                          ? "border-ink bg-fill"
+                          ? "border-brand bg-brand/5"
                           : "border-line bg-card hover:border-line-strong",
                       )}
                     >
@@ -515,7 +515,7 @@ export function AddCourseDialog({ termNumber, onClose, onSubmitManual, onSubmitR
                       ])}
                     </div>
                     {(selected.existsInProgram || selected.existsInCustom) && (
-                      <div className="mt-2 border-l-2 border-warn pl-2 text-2xs text-warn">
+                      <div className="mt-2 rounded bg-warn/10 px-2 py-1 text-2xs text-warn">
                         {selected.existsInCustom
                           ? "该课程已在我的计划中；继续添加会用当前课表记录更新它。"
                           : "该课程匹配官方培养计划；继续添加会覆盖我的计划中的官方占位课程。"}

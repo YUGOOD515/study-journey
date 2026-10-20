@@ -1,12 +1,12 @@
 import { forwardRef, useState } from "react";
-import { Eye, EyeOff } from "lucide-react";
+import { Eye, EyeOff } from "../../lib/icons";
 import { cn } from "../../lib/cn";
 
 export const inputClass =
-  "h-8 w-full rounded border border-line-strong bg-card px-2.5 text-xs text-ink placeholder:text-faint outline-none transition-colors hover:border-faint/60 focus:border-ink focus-visible:outline-none disabled:opacity-50";
+  "h-8 w-full rounded border border-line-strong bg-card px-2.5 text-xs text-ink placeholder:text-faint outline-none transition-colors hover:border-faint/60 focus:border-brand focus-visible:outline-none disabled:opacity-50";
 
 export const textareaClass =
-  "w-full rounded border border-line-strong bg-card px-2.5 py-1.5 text-xs text-ink placeholder:text-faint outline-none transition-colors hover:border-faint/60 focus:border-ink focus-visible:outline-none disabled:opacity-50";
+  "w-full rounded border border-line-strong bg-card px-2.5 py-1.5 text-xs text-ink placeholder:text-faint outline-none transition-colors hover:border-faint/60 focus:border-brand focus-visible:outline-none disabled:opacity-50";
 
 export function Field({
   label,

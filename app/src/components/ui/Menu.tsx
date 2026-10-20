@@ -1,5 +1,5 @@
 import * as DM from "@radix-ui/react-dropdown-menu";
-import { Check, ChevronRight } from "lucide-react";
+import { Check, ChevronRight } from "../../lib/icons";
 import { cn } from "../../lib/cn";
 import { popoverPanelClass } from "./Popover";
 
@@ -46,11 +46,11 @@ export function MenuItem({
 
 export function MenuCheckboxItem({ className, children, ...rest }: DM.DropdownMenuCheckboxItemProps) {
   return (
-    <DM.CheckboxItem className={cn(ITEM, className)} {...rest}>
+    <DM.CheckboxItem className={cn(ITEM, "group", className)} {...rest}>
       <span className="flex w-4 shrink-0 justify-center">
-        <span className="flex h-3.5 w-3.5 items-center justify-center rounded-sm border border-line-strong">
+        <span className="flex h-3.5 w-3.5 items-center justify-center rounded-sm border border-line-strong group-data-[state=checked]:border-brand group-data-[state=checked]:bg-brand">
           <DM.ItemIndicator>
-            <Check className="!h-3 !w-3 text-ink" strokeWidth={3} />
+            <Check className="!h-3 !w-3 text-white" strokeWidth={2.4} />
           </DM.ItemIndicator>
         </span>
       </span>
@@ -68,7 +68,7 @@ export function MenuRadioItem({ className, children, ...rest }: DM.DropdownMenuR
     <DM.RadioItem className={cn(ITEM, className)} {...rest}>
       <span className="flex w-4 shrink-0 justify-center">
         <DM.ItemIndicator>
-          <Check className="text-ink" />
+          <Check className="text-brand" />
         </DM.ItemIndicator>
       </span>
       <span className="min-w-0 flex-1 truncate">{children}</span>

@@ -1,5 +1,5 @@
 import * as RS from "@radix-ui/react-select";
-import { Check, ChevronDown } from "lucide-react";
+import { Check, ChevronDown } from "../../lib/icons";
 import { cn } from "../../lib/cn";
 import { popoverPanelClass } from "./Popover";
 
@@ -34,7 +34,7 @@ export function Select<T extends string>({
         aria-label={ariaLabel}
         className={cn(
           "inline-flex w-full min-w-0 items-center justify-between gap-1.5 rounded border border-line-strong bg-card text-left text-xs text-ink outline-none transition-colors",
-          "hover:border-faint/60 data-[state=open]:border-ink disabled:opacity-50",
+          "hover:border-faint/60 data-[state=open]:border-brand disabled:opacity-50",
           compact ? "h-7 px-2" : "h-8 px-2.5",
           className,
         )}
