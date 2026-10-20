@@ -1,6 +1,6 @@
 import type React from "react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "react";
-import { Pencil, RotateCcw, Trash2 } from "lucide-react";
+import { Pencil, RotateCcw, Trash } from "../lib/icons";
 import { createPortal } from "react-dom";
 import type {
   CategoryCode,
@@ -181,7 +181,7 @@ export function CourseDetailContent({
             showNote
           />
           {error && (
-            <div className="border-l-2 border-danger pl-2 text-2xs text-danger">{error}</div>
+            <div className="rounded bg-danger/10 px-2 py-1 text-2xs text-danger">{error}</div>
           )}
           <div className="flex gap-2 pt-1">
             <Button
@@ -290,7 +290,7 @@ export function CourseDetailContent({
                     size={size}
                     variant="danger"
                     className="flex-1"
-                    icon={<Trash2 size={13} />}
+                    icon={<Trash size={13} />}
                     onClick={() => void onPermanentDelete()}
                   >
                     永久删除

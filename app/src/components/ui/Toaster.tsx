@@ -1,5 +1,5 @@
 import { Toaster as Sonner, toast } from "sonner";
-import { AlertTriangle, CheckCircle2, Info, XCircle } from "lucide-react";
+import { TriangleAlert, CircleCheck, Info, CircleX } from "../../lib/icons";
 
 export function Toaster() {
   return (
@@ -10,9 +10,9 @@ export function Toaster() {
       visibleToasts={4}
       gap={8}
       icons={{
-        success: <CheckCircle2 className="h-4 w-4 text-ink" />,
-        error: <XCircle className="h-4 w-4 text-danger" />,
-        warning: <AlertTriangle className="h-4 w-4 text-warn" />,
+        success: <CircleCheck className="h-4 w-4 text-brand" />,
+        error: <CircleX className="h-4 w-4 text-danger" />,
+        warning: <TriangleAlert className="h-4 w-4 text-warn" />,
         info: <Info className="h-4 w-4 text-sub" />,
       }}
       toastOptions={{

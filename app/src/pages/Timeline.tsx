@@ -12,7 +12,7 @@ import {
   type DragEndEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
-import { Plus, RotateCcw, Trash2 } from "lucide-react";
+import { Plus, RotateCcw, Trash } from "../lib/icons";
 import { api, type RequirementDto } from "../lib/api";
 import { formatCredits } from "../lib/credits";
 import { myPlanTotalCredits } from "../lib/planTotal";
@@ -621,7 +621,7 @@ export default function Timeline({
                 size="sm"
                 variant="ghost"
                 className="text-danger hover:text-danger"
-                icon={<Trash2 />}
+                icon={<Trash />}
                 onClick={() => void emptyTrash()}
               >
                 清空

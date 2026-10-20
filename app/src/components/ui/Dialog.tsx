@@ -1,5 +1,5 @@
 import * as RD from "@radix-ui/react-dialog";
-import { X } from "lucide-react";
+import { X } from "../../lib/icons";
 import { cn } from "../../lib/cn";
 import { IconButton } from "./Button";
 

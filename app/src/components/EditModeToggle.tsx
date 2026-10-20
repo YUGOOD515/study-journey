@@ -1,4 +1,4 @@
-import { Eye, PencilLine } from "lucide-react";
+import { Eye, PencilLine } from "../lib/icons";
 import { useEditMode } from "../lib/editMode";
 import { cn } from "../lib/cn";
 import { notify } from "./ui";

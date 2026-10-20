@@ -1,21 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type React from "react";
 import { useDraggable, useDroppable } from "@dnd-kit/core";
-import {
-  ArrowRightLeft,
-  CalendarDays,
-  Check,
-  ChevronLeft,
-  ChevronRight,
-  Inbox,
-  Lock,
-  MoreHorizontal,
-  Pencil,
-  Plus,
-  SlidersHorizontal,
-  Trash2,
-  X,
-} from "lucide-react";
+import { ArrowRightLeft, CalendarDays, Check, ChevronLeft, ChevronRight, Inbox, Lock, Ellipsis, Pencil, Plus, SlidersHorizontal, Trash, X } from "../../lib/icons";
 import type { Course, CourseCardDisplayOptions } from "../../types";
 import { cn } from "../../lib/cn";
 import { CATEGORY_STYLE } from "../../lib/categoryStyle";
@@ -79,7 +65,7 @@ export function CardMenu({
     <Menu modal={false}>
       <MenuTrigger asChild>
         <button type="button" className={tileMenuTriggerClass} aria-label={`${payload.courseName} 的操作`}>
-          <MoreHorizontal />
+          <Ellipsis />
         </button>
       </MenuTrigger>
       <MenuContent align="end" className="w-44">
@@ -119,7 +105,7 @@ export function CardMenu({
           </MenuItem>
         )}
         <MenuSeparator />
-        <MenuItem danger icon={<Trash2 />} onSelect={() => onTrash(payload)}>
+        <MenuItem danger icon={<Trash />} onSelect={() => onTrash(payload)}>
           移入垃圾篓
         </MenuItem>
       </MenuContent>
@@ -165,7 +151,7 @@ export function TermColumn({
       data-term={term}
       className={cn(
         "flex min-w-0 flex-col overflow-hidden rounded-md border bg-card transition-colors duration-100",
-        isOver && isTarget ? "border-ink bg-fill" : isTarget ? "border-line-strong" : "border-line",
+        isOver && isTarget ? "border-brand bg-brand/5" : isTarget ? "border-line-strong" : "border-line",
         full ? "min-h-[40vh]" : "min-h-[240px]",
       )}
     >
@@ -268,13 +254,13 @@ export function TermChip({
       onClick={onClick}
       className={cn(
         "relative flex h-12 min-w-[76px] shrink-0 flex-col justify-center rounded border bg-card px-2.5 text-left transition-colors",
-        active ? "border-ink" : "border-line",
+        active ? "border-brand" : "border-line",
         dragActive && droppable && !active && "border-line-strong",
-        isOver && "border-ink bg-fill",
+        isOver && "border-brand bg-brand/5",
         isCurrent && "shadow-[inset_0_2px_0_rgb(var(--brand))]",
       )}
     >
-      <span className={cn("text-xs", active ? "font-semibold text-ink" : "text-sub")}>{TERM_LABEL[term]}</span>
+      <span className={cn("text-xs", active ? "font-semibold text-brand" : "text-sub")}>{TERM_LABEL[term]}</span>
       <span className="mt-0.5 text-2xs text-faint">
         <span className="num">{formatCredits(credits)}</span> 分 <span className="num">{count}</span> 门
       </span>
@@ -431,7 +417,7 @@ export function Dock({
             <span className="h-5 w-px shrink-0 bg-line" aria-hidden />
             <DockButton
               id="trash"
-              icon={<Trash2 className="shrink-0" />}
+              icon={<Trash className="shrink-0" />}
               title="垃圾篓"
               count={trash.count}
               credits={trash.credits}
@@ -483,7 +469,7 @@ export function DockPanel({
       aria-label={title}
       className={cn(
         "animate-fade pointer-events-auto flex max-h-[min(46vh,520px)] w-full max-w-[1100px] flex-col overflow-hidden rounded-md border bg-card shadow-pop",
-        isOver ? (dropId === "trash" ? "border-danger" : "border-ink") : dragActive && droppable ? "border-line-strong" : "border-line",
+        isOver ? (dropId === "trash" ? "border-danger" : "border-brand") : dragActive && droppable ? "border-line-strong" : "border-line",
       )}
     >
       <div className="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-line pl-4 pr-2">
@@ -560,14 +546,14 @@ export function Legend({ className }: { className?: string }) {
       <span className="inline-flex items-center gap-1.5">
         <span
           className="inline-block h-3 w-4 rounded-sm"
-          style={{ backgroundColor: "rgb(var(--sub) / 0.14)", boxShadow: "inset 2px 0 0 rgb(var(--sub))" }}
+          style={{ backgroundColor: "rgb(var(--sub) / 0.12)", boxShadow: "inset 0 0 0 1px rgb(var(--sub) / 0.45)" }}
         />
         必修
       </span>
       <span className="inline-flex items-center gap-1.5">
         <span
-          className="inline-block h-3 w-4 rounded-sm bg-card"
-          style={{ boxShadow: "inset 2px 0 0 rgb(var(--sub)), inset 0 0 0 1px rgb(var(--line-strong))" }}
+          className="inline-block h-3 w-4 rounded-sm"
+          style={{ backgroundColor: "rgb(var(--sub) / 0.05)", boxShadow: "inset 0 0 0 1px rgb(var(--sub) / 0.3)" }}
         />
         选修
       </span>

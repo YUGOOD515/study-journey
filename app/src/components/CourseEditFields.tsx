@@ -110,7 +110,7 @@ export function CourseEditFields({
               checked={isInter}
               disabled={!interAllowed}
               onChange={(event) => setInterdisciplinary(event.target.checked)}
-              className="h-3.5 w-3.5 accent-[rgb(var(--ink))] disabled:opacity-40"
+              className="h-3.5 w-3.5 accent-[rgb(var(--brand))] disabled:opacity-40"
             />
           </label>
           {!interAllowed && (

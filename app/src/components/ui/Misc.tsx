@@ -69,7 +69,7 @@ export function Badge({
     danger: "bg-danger/10 text-danger",
     warn: "bg-warn/10 text-warn",
     outline: "border border-line-strong text-sub",
-    solid: "bg-ink text-bg",
+    solid: "bg-brand text-white",
   }[tone];
   return (
     <span

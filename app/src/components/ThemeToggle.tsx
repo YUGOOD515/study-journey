@@ -1,4 +1,4 @@
-import { Monitor, Moon, Sun } from "lucide-react";
+import { Monitor, Moon, Sun } from "../lib/icons";
 import { useTheme, type ThemeMode } from "../hooks/useTheme";
 import { IconButton } from "./ui";
 

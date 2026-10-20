@@ -43,8 +43,10 @@ app/src/index.css
 | 字重 | 400 / 500 / 600 三档 |
 | 圆角 | `rounded-sm` 2px（徽标、进度条、标签）、`rounded` 4px（按钮、输入框、课程卡）、`rounded-md` 6px（面板、弹窗） |
 | 间距 | 4px 基准；页面容器统一 `max-w-[1440px] px-4 sm:px-6` |
-| 颜色 | `bg / card / ink / sub / faint` 文本层级；`line / line-strong` 实色描边；`fill / fill-strong` 实色底；`brand` 只用于"本学期 / 今天"等少量强调；`warn` 用于超限与提醒；`danger` 用于删除 |
-| 类别色 | 5 个培养方案板块各一色（`--cat-*`），课程卡以左侧 2px 色条 + 必修浅底 / 选修白底描边表达，不再用虚线区分 |
+| 颜色 | 沿用原版色系：暖米白 `bg`、`ink / sub / faint` 文本层级；`line / line-strong` 实色描边；`fill / fill-strong` 实色底；`brand` 暖橘用于主按钮、选中态、焦点、进度与"本学期 / 今天"；`warn` 用于超限与提醒；`danger` 用于删除 |
+| 类别色 | 5 个培养方案板块各一色（`--cat-*`）。课程卡与课表色块统一用 `categorySurface()`：必修 = 类别浅底 + 类别描边，选修 = 更浅底 + 更浅描边；课程名用类别文字色。四边等宽 1px，**任何卡片都不加左侧强调色条** |
+| 图标 | 与个人网站（selfsite）同一套 Lucide，线宽统一 1.6，由 `LucideProvider` 下发；全站只从 `lib/icons.ts` 引入，使用 Lucide 规范名（如 `TriangleAlert`、`LoaderCircle`） |
+| 模式 | 每次打开默认**查看模式**（只读），需要调整时在顶栏切到编辑 |
 | 阴影 | 只有浮层（菜单、弹窗、悬停卡）使用 `shadow-pop`，其余一律用 1px 描边 |
 | 动效 | 仅 120ms 淡入与手机底部抽屉滑入；遵守 `prefers-reduced-motion` |
 | 焦点 | 统一 `focus-visible` 2px brand 轮廓 |

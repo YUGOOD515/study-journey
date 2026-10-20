@@ -41,7 +41,7 @@ export function ProgressBar({ earned, required, color, trackColor, inProgress = 
 }
 
 /** 进度条图例：已修 / 在修 / 计划 / 待修 */
-export function ProgressLegendSwatch({ level, color = "rgb(var(--ink))" }: { level: 0 | 1 | 2 | 3; color?: string }) {
+export function ProgressLegendSwatch({ level, color = "rgb(var(--brand))" }: { level: 0 | 1 | 2 | 3; color?: string }) {
   if (level === 3) return <span className="inline-block h-2 w-2 rounded-sm bg-fill-strong" aria-hidden />;
   return (
     <span

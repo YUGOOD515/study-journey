@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from "react";
 import { Redirect, Route, Switch, useLocation, useRoute } from "wouter";
-import { CalendarDays, Footprints, GanttChartSquare } from "lucide-react";
+import { CalendarDays, Footprints, SquareChartGantt } from "./lib/icons";
 import Timeline from "./pages/Timeline";
 import TermSchedule from "./pages/TermSchedule";
 import Trail from "./pages/Trail";
@@ -14,7 +14,7 @@ import type { Me } from "./lib/auth";
 type Tab = "timeline" | "trail" | "term-schedule";
 
 const TABS: Array<{ id: Tab; label: string; href: string; icon: typeof CalendarDays }> = [
-  { id: "timeline", label: "时间轴", href: "/timeline", icon: GanttChartSquare },
+  { id: "timeline", label: "时间轴", href: "/timeline", icon: SquareChartGantt },
   { id: "trail", label: "旅迹", href: "/trail", icon: Footprints },
   { id: "term-schedule", label: "学期课表", href: "/schedule", icon: CalendarDays },
 ];
@@ -63,7 +63,7 @@ export default function App({ me, onSignedOut }: { me: Me; onSignedOut: () => vo
                   onClick={() => navigate(t.href)}
                   className={cn(
                     "-mb-px inline-flex items-center border-b-2 text-xs transition-colors",
-                    tab === t.id ? "border-ink font-medium text-ink" : "border-transparent text-sub hover:text-ink",
+                    tab === t.id ? "border-brand font-medium text-ink" : "border-transparent text-sub hover:text-ink",
                   )}
                 >
                   {t.label}
