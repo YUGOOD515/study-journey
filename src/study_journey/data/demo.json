@@ -1,0 +1,492 @@
+{
+ "description": "演示数据：一位 2024 级金融学（数字金融）同学，正在读大三。必修课按培养方案安排，选修课按毕业要求挑选，成绩随机生成。",
+ "courses": [
+  {
+   "code": "B0301812",
+   "term": 3,
+   "score": 86
+  },
+  {
+   "code": "B2400055",
+   "term": 1,
+   "score": 82
+  },
+  {
+   "code": "B2400090",
+   "term": 3,
+   "score": 95
+  },
+  {
+   "code": "B1302450",
+   "term": 2,
+   "score": 96
+  },
+  {
+   "code": "B0800243",
+   "term": 2,
+   "score": 94
+  },
+  {
+   "code": "B1500030",
+   "term": 3,
+   "score": 86
+  },
+  {
+   "code": "B1500040",
+   "term": 6,
+   "score": 93
+  },
+  {
+   "code": "B1500010",
+   "term": 1,
+   "score": 88
+  },
+  {
+   "code": "B1500020",
+   "term": 2,
+   "score": 88
+  },
+  {
+   "code": "B0301432",
+   "term": 4,
+   "score": 91
+  },
+  {
+   "code": "B2090020",
+   "term": 1,
+   "score": 85
+  },
+  {
+   "code": "B2090030",
+   "term": 1,
+   "score": 81
+  },
+  {
+   "code": "B0300633",
+   "term": 4,
+   "score": 86
+  },
+  {
+   "code": "B2200010",
+   "term": 1,
+   "score": 87
+  },
+  {
+   "code": "B1100023",
+   "term": 1,
+   "score": 94
+  },
+  {
+   "code": "B1100030",
+   "term": 2,
+   "score": 93
+  },
+  {
+   "code": "B1302460",
+   "term": 1,
+   "score": 89
+  },
+  {
+   "code": "B1890010",
+   "term": 6,
+   "score": 89
+  },
+  {
+   "code": "B0200133",
+   "term": 2,
+   "score": 91
+  },
+  {
+   "code": "B0901470",
+   "term": 4,
+   "score": 92
+  },
+  {
+   "code": "B2490014",
+   "term": 1,
+   "score": 87
+  },
+  {
+   "code": "B2490024",
+   "term": 2,
+   "score": 88
+  },
+  {
+   "code": "B2490034",
+   "term": 3,
+   "score": 91
+  },
+  {
+   "code": "B2490044",
+   "term": 4,
+   "score": 87
+  },
+  {
+   "code": "B2490064",
+   "term": 6,
+   "score": 92
+  },
+  {
+   "code": "B2490074",
+   "term": 7,
+   "score": 88
+  },
+  {
+   "code": "B2490084",
+   "term": 8,
+   "score": 99
+  },
+  {
+   "code": "B2490054",
+   "term": 5,
+   "score": 85
+  },
+  {
+   "code": "B0200193",
+   "term": 1,
+   "score": 97
+  },
+  {
+   "code": "B2490090",
+   "term": 4,
+   "score": 84
+  },
+  {
+   "code": "B2490050",
+   "term": 1,
+   "score": 92
+  },
+  {
+   "code": "B0200242",
+   "term": 1,
+   "score": 87
+  },
+  {
+   "code": "B0290050",
+   "term": 3,
+   "score": 81
+  },
+  {
+   "code": "B0301860",
+   "term": 6,
+   "score": 86
+  },
+  {
+   "code": "B1301960",
+   "term": 5,
+   "score": 91
+  },
+  {
+   "code": "B0900434",
+   "term": 3,
+   "score": 86
+  },
+  {
+   "code": "B1890070",
+   "term": 5,
+   "score": 92
+  },
+  {
+   "code": "B1890030",
+   "term": 8,
+   "score": 89
+  },
+  {
+   "code": "B2400080",
+   "term": 2,
+   "score": 91
+  },
+  {
+   "code": "B0400150",
+   "term": 4,
+   "score": 82
+  },
+  {
+   "code": "B1890120",
+   "term": 3,
+   "score": 86
+  },
+  {
+   "code": "B0600270",
+   "term": 3,
+   "score": 86
+  },
+  {
+   "code": "B0901323",
+   "term": 4,
+   "score": 89
+  },
+  {
+   "code": "B0301890",
+   "term": 6,
+   "score": 89
+  },
+  {
+   "code": "B0301940",
+   "term": 4,
+   "score": 95
+  },
+  {
+   "code": "B0390090",
+   "term": 5,
+   "score": 88
+  },
+  {
+   "code": "B0300883",
+   "term": 4,
+   "score": 88
+  },
+  {
+   "code": "B0301480",
+   "term": 7,
+   "score": 93
+  },
+  {
+   "code": "B0300404",
+   "term": 3,
+   "score": 94
+  },
+  {
+   "code": "B0300580",
+   "term": 4,
+   "score": 94
+  },
+  {
+   "code": "B0301960",
+   "term": 6,
+   "score": 96
+  },
+  {
+   "code": "B0300490",
+   "term": 6,
+   "score": 85
+  },
+  {
+   "code": "B0301870",
+   "term": 5,
+   "score": 90
+  },
+  {
+   "code": "B0300560",
+   "term": 6,
+   "score": 90
+  },
+  {
+   "code": "B0300510",
+   "term": 5,
+   "score": 86
+  },
+  {
+   "code": "B0300470",
+   "term": 6,
+   "score": 84
+  },
+  {
+   "code": "B2400015",
+   "term": 2,
+   "score": 91
+  },
+  {
+   "code": "B0900470",
+   "term": 1,
+   "score": 90
+  },
+  {
+   "code": "B0900490",
+   "term": 2,
+   "score": 85
+  },
+  {
+   "code": "B1380110",
+   "term": 2,
+   "score": 85,
+   "custom": {
+    "name": "Python数据科学导论",
+    "category": "general_education",
+    "nature": "选修",
+    "subcategory": "科学思维与人文精神",
+    "credits": 2,
+    "lecture_hours": 0,
+    "experiment_hours": 0,
+    "extra_hours": 0,
+    "credit_count_to": null
+   }
+  },
+  {
+   "code": "B1080250",
+   "term": 2,
+   "score": 84,
+   "custom": {
+    "name": "职场高情商工作技巧",
+    "category": "general_education",
+    "nature": "选修",
+    "subcategory": "创新创业与就业实践",
+    "credits": 1,
+    "lecture_hours": 0,
+    "experiment_hours": 0,
+    "extra_hours": 0,
+    "credit_count_to": null
+   }
+  },
+  {
+   "code": "B1580270",
+   "term": 3,
+   "score": 86,
+   "custom": {
+    "name": "定向越野",
+    "category": "general_education",
+    "nature": "选修",
+    "subcategory": "交叉融通与全面发展",
+    "credits": 1,
+    "lecture_hours": 0,
+    "experiment_hours": 0,
+    "extra_hours": 0,
+    "credit_count_to": null
+   }
+  },
+  {
+   "code": "M1885380",
+   "term": 3,
+   "score": 87,
+   "custom": {
+    "name": "走进民航",
+    "category": "general_education",
+    "nature": "选修",
+    "subcategory": null,
+    "credits": 2,
+    "lecture_hours": 0,
+    "experiment_hours": 0,
+    "extra_hours": 0,
+    "credit_count_to": null
+   }
+  },
+  {
+   "code": "B0902750",
+   "term": 4,
+   "score": 92,
+   "custom": {
+    "name": "Python数据分析",
+    "category": "general_education",
+    "nature": "选修",
+    "subcategory": null,
+    "credits": 3,
+    "lecture_hours": 48,
+    "experiment_hours": 0,
+    "extra_hours": 0,
+    "credit_count_to": null
+   }
+  },
+  {
+   "code": "B1302680",
+   "term": 4,
+   "score": 86,
+   "custom": {
+    "name": "机器学习与深度学习",
+    "category": "general_education",
+    "nature": "跨专业",
+    "subcategory": null,
+    "credits": 2,
+    "lecture_hours": 32,
+    "experiment_hours": 0,
+    "extra_hours": 0,
+    "credit_count_to": null
+   }
+  },
+  {
+   "code": "B1302670",
+   "term": 5,
+   "score": 92,
+   "custom": {
+    "name": "计算机网络",
+    "category": "general_education",
+    "nature": "跨专业",
+    "subcategory": null,
+    "credits": 3,
+    "lecture_hours": 48,
+    "experiment_hours": 0,
+    "extra_hours": 0,
+    "credit_count_to": null
+   }
+  },
+  {
+   "code": "B0480090",
+   "term": 5,
+   "score": 98,
+   "custom": {
+    "name": "商法与企业经营管理",
+    "category": "general_education",
+    "nature": "经法管融通",
+    "subcategory": "通识教育（经法管融通）",
+    "credits": 2,
+    "lecture_hours": 32,
+    "experiment_hours": 0,
+    "extra_hours": 0,
+    "credit_count_to": "通识教育-选修"
+   }
+  },
+  {
+   "code": "B0480240",
+   "term": 3,
+   "score": 89,
+   "custom": {
+    "name": "金融创新与金融法典型案例分析",
+    "category": "general_education",
+    "nature": "经法管融通",
+    "subcategory": "大类平台（经法管融通）",
+    "credits": 2,
+    "lecture_hours": 0,
+    "experiment_hours": 0,
+    "extra_hours": 0,
+    "credit_count_to": "大类平台-选修"
+   }
+  },
+  {
+   "code": "B0780020",
+   "term": 5,
+   "score": 92,
+   "custom": {
+    "name": "税法（税）",
+    "category": "general_education",
+    "nature": "经法管融通",
+    "subcategory": "通识教育（经法管融通）",
+    "credits": 2,
+    "lecture_hours": 32,
+    "experiment_hours": 0,
+    "extra_hours": 0,
+    "credit_count_to": "大类平台-选修"
+   }
+  },
+  {
+   "code": "B0280080",
+   "term": 5,
+   "score": 95,
+   "custom": {
+    "name": "生活中的经济学",
+    "category": "general_education",
+    "nature": "经法管融通",
+    "subcategory": "通识教育（经法管融通）",
+    "credits": 2,
+    "lecture_hours": 32,
+    "experiment_hours": 0,
+    "extra_hours": 0,
+    "credit_count_to": "大类平台-选修"
+   }
+  },
+  {
+   "code": "P001",
+   "term": 7,
+   "score": 91,
+   "custom": {
+    "name": "课外素质教育",
+    "category": "quality_education",
+    "nature": "选修",
+    "subcategory": null,
+    "credits": 6,
+    "lecture_hours": 0,
+    "experiment_hours": 0,
+    "extra_hours": 96,
+    "credit_count_to": null
+   }
+  }
+ ]
+}

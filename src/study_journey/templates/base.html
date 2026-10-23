@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}学旅{% endblock %}</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22%3E%3Ccircle cx=%228%22 cy=%228%22 r=%226%22 fill=%22%233E5C76%22/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+</head>
+<body class="min-h-screen">
+  {% if is_demo %}
+  <div class="border-b border-line bg-surface">
+    <div class="mx-auto flex max-w-[1440px] flex-wrap items-center justify-between gap-x-6 gap-y-2 px-6 py-2 text-xs text-ink-2 lg:px-12">
+      <p>这是演示数据。你可以随意调整课程安排，改动只保存在当前浏览器里。</p>
+      <form method="post" action="{{ url_for('timeline.reset') }}">
+        <button class="font-medium text-blue underline-offset-4 hover:underline">恢复初始安排</button>
+      </form>
+    </div>
+  </div>
+  {% endif %}
+  <header class="mx-auto flex max-w-[1440px] items-baseline justify-between gap-6 px-6 pt-8 lg:px-12">
+    <a href="/" class="font-serif text-lg font-semibold tracking-wide">学旅</a>
+    <p class="text-xs text-ink-2">{{ catalog.program }}，第 {{ calendar.current_term }} 学期</p>
+  </header>
+  <main class="mx-auto max-w-[1440px] px-6 pb-24 lg:px-12">
+    {% block content %}{% endblock %}
+  </main>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

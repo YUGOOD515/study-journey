@@ -40,3 +40,13 @@ app/.dev.vars
 *.tsbuildinfo
 fetch/outputs/
 seeds/v2_001_insert_data.sql
+
+# Python / Flask 重写
+.venv/
+__pycache__/
+instance/
+python_modules/
+.wrangler/
+node_modules/
+src/vendor/
+pylock.toml

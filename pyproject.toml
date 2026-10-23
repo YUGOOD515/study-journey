@@ -1,0 +1,31 @@
+[project]
+name = "study-journey"
+version = "0.2.0"
+description = "学旅：中南财经政法大学本科四年选课规划"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "flask>=3.1",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "pytailwindcss>=0.2",
+]
+# 只在本地导入学校 Excel 时需要
+importers = [
+    "openpyxl>=3.1",
+]
+# Cloudflare 演示部署
+worker = [
+    "workers-py",
+    "workers-runtime-sdk",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

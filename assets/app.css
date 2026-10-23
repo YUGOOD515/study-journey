@@ -1,0 +1,83 @@
+@import "tailwindcss";
+@source "../src/study_journey/templates";
+@source "../public/static/js";
+
+/* 设计 tokens（apply-jiy-design-style）。颜色和间距都用 CSS 变量，深浅色自动切换。 */
+:root {
+  --bg: #fafafa; --surface: #ffffff; --ink: #15191d; --ink-2: #4e5761; --line: #e5e7eb;
+  --fill: #f2f3f5; --blue: #3e5c76; --green: #1f3d33; --gold: #b8913a; --danger: #a33a3a;
+  /* 五大类课程 */
+  --cat-ge: #4c6e91; --cat-mp: #3d7a63; --cat-pe: #6e5a8a; --cat-qe: #9a6b3f; --cat-pr: #6b7682;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0e1113; --surface: #171b1e; --ink: #ecedee; --ink-2: #a9b0b7; --line: #2a2f34;
+    --fill: #1f2428; --blue: #7fa2c1; --green: #6fa48c; --gold: #d2ae5c; --danger: #e07a7a;
+    --cat-ge: #86a7c8; --cat-mp: #74b398; --cat-pe: #a693c2; --cat-qe: #cf9e6c; --cat-pr: #9aa4ae;
+    color-scheme: dark;
+  }
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-line: var(--line);
+  --color-fill: var(--fill);
+  --color-blue: var(--blue);
+  --color-green: var(--green);
+  --color-gold: var(--gold);
+  --color-danger: var(--danger);
+  --color-cat: var(--cat);
+
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Noto Sans SC",
+    "Microsoft YaHei", sans-serif;
+  --font-serif: "Noto Serif SC", "Source Han Serif SC", "Songti SC", "STSong", serif;
+
+  /* 字号只用这 6 档 */
+  --text-xs: 12px; --text-xs--line-height: 18px;
+  --text-sm: 13px; --text-sm--line-height: 20px;
+  --text-base: 15px; --text-base--line-height: 24px;
+  --text-lg: 20px; --text-lg--line-height: 28px;
+  --text-xl: 28px; --text-xl--line-height: 40px;
+  --text-2xl: 40px; --text-2xl--line-height: 52px;
+
+  --radius-sm: 4px; --radius-md: 8px; --radius-lg: 12px;
+}
+
+@layer base {
+  body { @apply bg-bg text-ink font-sans text-sm antialiased; }
+  :focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+}
+
+[data-cat="general_education"] { --cat: var(--cat-ge); }
+[data-cat="major_platform"] { --cat: var(--cat-mp); }
+[data-cat="professional_education"] { --cat: var(--cat-pe); }
+[data-cat="quality_education"] { --cat: var(--cat-qe); }
+[data-cat="practice_education"] { --cat: var(--cat-pr); }
+
+.num { font-variant-numeric: tabular-nums; }
+
+/* 学分条：已修实色、在修半透明、计划用斜线 */
+.bar-in-progress { background: color-mix(in srgb, var(--cat) 45%, transparent); }
+.bar-planned {
+  background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--cat) 30%, transparent) 0 2px, transparent 2px 6px);
+}
+
+/* 课程卡：必修实心色点，选修空心圆环 */
+.dot { width: 8px; height: 8px; border-radius: 9999px; flex: none; margin-top: 6px; }
+.dot-required { background: var(--cat); }
+.dot-elective { box-shadow: inset 0 0 0 1.5px var(--cat); }
+
+.board { scroll-snap-type: x proximity; scroll-padding-inline: 24px; }
+.board [data-year] { scroll-snap-align: start; }
+
+/* 拖拽状态（SortableJS） */
+.sortable-ghost { opacity: .35; }
+.sortable-chosen { box-shadow: 0 8px 24px rgb(0 0 0 / .12); }
+[data-dropzone].is-target { background: color-mix(in srgb, var(--blue) 6%, transparent); }
+
+dialog::backdrop { background: rgb(0 0 0 / .32); }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
