@@ -1,0 +1,31 @@
+[project]
+name = "study-journey"
+version = "0.2.0"
+description = "Study Journey: four-year course planner for ZUEL undergraduates"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "flask>=3.1",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "pytailwindcss>=0.2",
+]
+# Only needed for importing school Excel files locally
+importers = [
+    "openpyxl>=3.1",
+]
+# Cloudflare demo deployment
+worker = [
+    "workers-py",
+    "workers-runtime-sdk",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

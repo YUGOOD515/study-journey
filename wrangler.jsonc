@@ -1,0 +1,16 @@
+{
+  // Study Journey demo (Flask on Python Workers). Local dev: uv run --group worker pywrangler dev
+  // Keep this file ASCII-only: pywrangler reads it with the system encoding (GBK on Chinese Windows).
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "study-journey",
+  "main": "src/worker.py",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["python_workers"],
+  // /static/* is served by Cloudflare assets; everything else goes to Flask
+  "assets": { "directory": "./public" },
+  // Program and demo data are JSON files and must be uploaded with the code
+  "rules": [{ "type": "Text", "globs": ["**/*.json"], "fallthrough": true }],
+  "observability": { "enabled": true },
+  "preview_urls": true,
+  "workers_dev": true
+}

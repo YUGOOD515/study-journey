@@ -1,0 +1,79 @@
+{% from "components/course.html" import course_card %}
+{% from "components/progress.html" import credit_strip %}
+{% set earned = progress.total('earned') %}{% set doing = progress.total('in_progress') %}{% set plan = progress.total('planned') %}
+{% set gap = progress.required - earned - doing - plan %}
+<div id="workspace">
+  {% if error %}
+  <p role="alert" class="mt-6 rounded-md border border-danger/30 bg-surface px-4 py-3 text-sm text-danger">{{ error }}</p>
+  {% endif %}
+
+  <section class="mt-12 max-w-[960px]">
+    <h1 class="font-serif text-xl font-semibold sm:text-2xl">
+      已修 <span class="num">{{ earned|credits }}</span> 学分，距离毕业还差 <span class="num">{{ (progress.required - earned)|credits }}</span> 学分
+    </h1>
+    <p class="mt-3 max-w-[40em] text-base leading-[1.7] text-ink-2">
+      本学期在修 <span class="num text-ink">{{ doing|credits }}</span> 学分，之后计划修读 <span class="num text-ink">{{ plan|credits }}</span> 学分。
+      {% if gap > 0 %}按现在的安排，还有 <span class="num font-medium text-gold">{{ gap|credits }}</span> 学分没有着落，可以从下方“待安排的课程”里补上。
+      {% else %}按现在的安排，可以达到毕业要求的 <span class="num text-ink">{{ progress.required|credits }}</span> 学分。{% endif %}
+    </p>
+  </section>
+  {{ credit_strip(progress) }}
+
+  <section class="mt-16" aria-labelledby="board-title">
+    <h2 id="board-title" class="sr-only">八学期课程安排</h2>
+    <div class="board -mx-6 overflow-x-auto px-6 pb-4 lg:mx-0 lg:px-0">
+      <div class="grid min-w-[1280px] grid-cols-4 gap-6">
+        {% for year in timeline.years %}
+        {% set yi = loop.index0 %}
+        <div data-year{% if year|selectattr('is_current')|list %} data-current-year{% endif %} class="border-t-2 {{ 'border-blue' if year|selectattr('is_current')|list else 'border-ink' }} pt-3">
+          <div class="flex items-baseline justify-between">
+            <h3 class="font-serif text-lg font-semibold">{{ ['大一', '大二', '大三', '大四'][yi] }}</h3>
+            <span class="num text-xs text-ink-2">{{ calendar.year_label(yi) }}</span>
+          </div>
+          <div class="mt-4 grid grid-cols-2 gap-3">
+            {% for col in year %}
+            <div class="min-w-0">
+              <div class="flex items-baseline justify-between border-b border-line pb-2">
+                <span class="text-xs font-medium {{ 'text-blue' if col.is_current else 'text-ink' }}">
+                  {{ col.label }}{% if col.is_current %}<span class="ml-1 font-normal">本学期</span>{% endif %}
+                </span>
+                <span class="num text-xs text-ink-2">{{ col.credits|credits }} 学分</span>
+              </div>
+              <div class="mt-3 flex min-h-[96px] flex-col gap-2 rounded-md transition-colors"
+                   data-dropzone data-term="{{ col.term }}" data-accept="{{ 'false' if col.is_past else 'true' }}">
+                {% for card in col.cards %}{{ course_card(card) }}{% endfor %}
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </section>
+
+  <section class="mt-16" aria-labelledby="pending-title">
+    <div class="flex flex-wrap items-baseline justify-between gap-4 border-t-2 border-ink pt-3">
+      <h2 id="pending-title" class="font-serif text-lg font-semibold">待安排的课程</h2>
+      <p class="text-xs text-ink-2">拖到上方的学期里，或者点一下课程选择学期。</p>
+    </div>
+    {% if timeline.pending %}
+    <div class="mt-6 grid gap-8 lg:grid-cols-2">
+      {% for code, cards in timeline.pending.items() %}
+      <div data-cat="{{ code }}">
+        <h3 class="flex items-center gap-2 text-sm font-medium">
+          <span class="dot dot-required mt-0"></span>{{ catalog.category_names[code] }}
+          <span class="num font-normal text-ink-2">{{ cards|length }} 门</span>
+        </h3>
+        <div class="mt-3 grid min-h-[64px] gap-2 rounded-md sm:grid-cols-2" data-dropzone data-term="pending" data-accept="true">
+          {% for card in cards %}{{ course_card(card, show_offered=true) }}{% endfor %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="mt-6 min-h-[64px] rounded-md border border-dashed border-line px-4 py-6 text-sm text-ink-2"
+         data-dropzone data-term="pending" data-accept="true">培养方案里的课程都已经安排好了。想换掉某门课，把它拖到这里。</div>
+    {% endif %}
+  </section>
+</div>

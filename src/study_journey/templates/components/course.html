@@ -1,0 +1,28 @@
+{# 课程卡。card: models.timeline.Card；show_offered: 是否显示建议学期（待安排区用） #}
+{% macro course_card(card, show_offered=false) %}
+{% set item = card.item %}{% set c = item.course %}
+{% set allowed = c.allowed_terms %}
+<button type="button"
+  class="group flex w-full items-start gap-2 rounded-md border border-line bg-surface px-3 py-2 text-left transition-colors
+         {{ 'cursor-pointer hover:border-ink-2' if not item.locked else 'cursor-default' }}"
+  data-card data-cat="{{ c.category }}" data-code="{{ c.code }}"
+  {% if not item.locked %}data-movable{% else %}data-locked{% endif %}
+  data-name="{{ c.name }}" data-credits="{{ c.credits|credits }}" data-nature="{{ c.nature }}"
+  data-status="{{ item.status }}" data-term="{{ item.term or '' }}"
+  data-offered="{{ '不限' if allowed|length == 8 else ('第 %d 学期'|format(allowed[0]) if allowed|length == 1 else '第 %d–%d 学期'|format(allowed[0], allowed[-1])) }}"
+  {% if item.score is not none %}data-score="{{ item.score|round(1)|credits }}"{% endif %}
+  {% if card.warning %}data-warning="{{ card.warning }}"{% endif %}
+  aria-label="{{ c.name }}，{{ c.credits|credits }} 学分，{{ item.status }}">
+  <span class="dot {{ 'dot-required' if c.is_required else 'dot-elective' }}" aria-hidden="true"></span>
+  <span class="min-w-0 flex-1">
+    <span class="line-clamp-2 text-sm {{ 'text-ink-2' if item.status == '已修读' else 'text-ink' }}">{{ c.name }}</span>
+    <span class="mt-1 flex flex-wrap items-center gap-x-2 text-xs text-ink-2 [&>span]:whitespace-nowrap">
+      <span class="num">{{ c.credits|credits }} 学分</span>
+      {% if c.nature != '必修' %}<span>{{ c.nature }}</span>{% endif %}
+      {% if show_offered and allowed|length < 8 %}<span>建议第 {{ allowed[0] }}{% if allowed|length > 1 %}–{{ allowed[-1] }}{% endif %} 学期</span>{% endif %}
+      {% if card.warning %}<span class="font-medium text-gold" title="{{ card.warning }}">需留意</span>{% endif %}
+      {% if item.score is not none %}<span class="num ml-auto text-ink">{{ item.score|round(1)|credits }}</span>{% endif %}
+    </span>
+  </span>
+</button>
+{% endmacro %}

@@ -1,5 +1,78 @@
 # 学旅 Study Journey
 
+学旅是面向中南财经政法大学本科生的四年选课规划工具：按培养方案把课程排进八个学期，自动计算毕业学分进度，并提醒开课学期和先修顺序。
+
+> **flask-rewrite 分支**：整个项目正在从 React + Hono（TypeScript）重写为 **Python Flask + Jinja + Tailwind CSS + 少量 JS**。
+> 新代码在 `src/`、`public/`、`assets/`、`tests/`；旧的 TypeScript 代码（`app/`、`d1/` 等）暂时保留作对照，迁移完成后删除。
+
+## 技术栈
+
+- 后端：Flask，按 MVC 组织：`models/` 数据与业务规则，`controllers/` 路由，`templates/` 视图
+- 前端：Jinja 服务端渲染 + Tailwind CSS v4 + SortableJS（拖拽排课）
+- 数据：本地版用 SQLite；演示版用内置示例数据，改动只存在访客自己的浏览器会话里
+- 项目管理：uv；演示部署：Cloudflare Python Workers
+- 不需要账号，大家在自己电脑上运行
+
+## 本地运行（PowerShell）
+
+```powershell
+uv sync                                             # 安装依赖（含开发工具）
+$env:PYTHONPATH = "src"
+uv run flask --app study_journey --debug run        # 本地版：http://127.0.0.1:5000
+$env:STUDY_JOURNEY_MODE = "demo"                    # 切到演示数据后再运行上一条
+uv run pytest                                       # 测试
+```
+
+本地版的数据保存在 `instance/study_journey.sqlite3`（不进 Git）。入学年份默认 2024，可用环境变量 `ENROLLMENT_YEAR` 修改。
+
+## 修改样式
+
+样式源文件是 `assets/app.css`（设计 tokens 也在这里），改完重新生成：
+
+```powershell
+uv run tailwindcss -i assets/app.css -o public/static/css/app.css --minify   # 开发时加 --watch
+```
+
+## 更新培养方案数据
+
+```powershell
+uv run --group importers python -m study_journey.services.importers.program_xlsx src_data/培养方案.xlsx src/study_journey/data/program.json
+```
+
+导入器只导出培养方案本身，不导出表格里的完成学期、成绩、意愿度等个人字段。
+
+## Cloudflare 演示部署
+
+```powershell
+uv run --group worker pywrangler dev                                             # 用 Cloudflare 本地运行时预览
+uv run --group worker pywrangler versions upload --preview-alias flask-rewrite   # 上传预览版本，不影响线上
+uv run --group worker pywrangler deploy                                          # 合并到主干后正式发布
+```
+
+## 目录
+
+```text
+├─ pyproject.toml / uv.lock
+├─ wrangler.jsonc            # Cloudflare 演示版配置
+├─ assets/app.css            # Tailwind 源文件与设计 tokens
+├─ public/static/            # 生成的 CSS、JS、第三方库（Cloudflare 直接返回）
+├─ src/
+│  ├─ worker.py              # Cloudflare 入口（演示模式）
+│  └─ study_journey/
+│     ├─ models/             # Model：培养方案、计划、学分进度、时间轴、数据仓库
+│     ├─ controllers/        # Controller：Flask 路由
+│     ├─ templates/          # View：Jinja 页面与组件
+│     ├─ services/importers/ # 学校数据导入
+│     └─ data/               # 培养方案与演示数据（JSON）
+├─ tests/
+├─ fetch/、scripts/          # 原有 Python 抓取与导入脚本，后续并入 services/
+└─ app/、d1/、docs/ …        # 旧 TypeScript 版本，迁移完成后删除
+```
+
+---
+
+## 旧版说明（TypeScript）
+
 学旅是面向本科课程规划的 Web 应用：培养方案课程、自选课程、八学期时间轴、学分进度、学期课表、垃圾篓，以及学校开课数据查询。
 
 现在它是一个**开放注册的多用户网站**，运行在 Cloudflare 上：
