@@ -71,63 +71,137 @@
 .dot-required { background: var(--cat); }
 .dot-elective { box-shadow: inset 0 0 0 1.5px var(--cat); }
 
-/* 学期列：手机上横向滑动；平板两列；宽屏一行排开（列多时横向滚动） */
+/* 图标（Lucide）：线宽统一 1.6 */
+.icon { flex: none; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ---------- 动效：只做功能性的短过渡（120–200ms），尊重 prefers-reduced-motion ---------- */
+:root { interpolate-size: allow-keywords; }
+@keyframes fade-in { from { opacity: 0; } }
+@keyframes rise-in { from { opacity: 0; transform: translateY(4px) scale(.98); } }
+@keyframes sheet-in { from { transform: translateY(100%); } }
+
+/* 八个学期：一行横向排开，可以横向滚动，滚动时按列对齐 */
 .board {
-  display: grid; gap: 16px; grid-auto-flow: column; grid-auto-columns: min(78vw, 280px);
-  overflow-x: auto; margin-inline: -24px; padding: 0 24px 8px;
-  scroll-snap-type: x proximity; scroll-padding-inline: 24px;
+  display: grid; grid-auto-flow: column; grid-auto-columns: min(78vw, 248px); gap: 16px;
+  overflow-x: auto; overscroll-behavior-x: contain; scroll-snap-type: x proximity;
+  margin-inline: -24px; padding: 0 24px 12px; scroll-padding-inline: 24px;
+  min-height: calc(100dvh - var(--summary-h, 64px) - 160px);
+  scrollbar-width: thin; scrollbar-color: var(--line) transparent;
+}
+/* 宽屏正好放下四列（本学期起的一学年半 / 两学年），其余横向滚动 */
+@media (min-width: 1024px) {
+  .board { margin-inline: 0; padding-inline: 0; scroll-padding-inline: 0; grid-auto-columns: max(216px, calc((100% - 48px) / 4)); }
 }
 .board > [data-column] { scroll-snap-align: start; }
-@media (min-width: 640px) {
-  .board { grid-auto-flow: row; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 40px 24px; overflow: visible; margin: 0; padding: 0; }
-}
-@media (min-width: 1280px) {
-  .board { grid-auto-flow: column; grid-template-columns: none; grid-auto-columns: minmax(200px, 1fr); gap: 16px; overflow-x: auto; padding-bottom: 8px; }
-}
+.board:focus-visible { outline-offset: 4px; }
+/* 滚动边缘渐隐，提示还能往哪边滚 */
+.board[data-start="false"][data-end="false"] { mask-image: linear-gradient(90deg, transparent, #000 24px, #000 calc(100% - 24px), transparent); }
+.board[data-start="false"][data-end="true"] { mask-image: linear-gradient(90deg, transparent, #000 24px); }
+.board[data-start="true"][data-end="false"] { mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent); }
 
-/* 课程库 */
-.chip[aria-pressed="true"] { border-color: var(--ink); color: var(--ink); font-weight: 500; }
-.unschedule { display: none; }
-.is-dragging .unschedule { display: block; }
-.placed > summary::-webkit-details-marker { display: none; }
-.caret { display: inline-block; width: 0; height: 0; margin-right: 6px; vertical-align: 1px;
-  border-left: 4px solid currentColor; border-block: 3px solid transparent; transition: transform .15s; }
-.placed[open] .caret { transform: rotate(90deg); }
+/* 课程卡 */
+.course-card { transition: border-color 120ms, box-shadow 120ms, opacity 120ms; -webkit-touch-callout: none; user-select: none; }
+.course-card.is-movable { cursor: grab; }
+.course-card.is-movable:hover { border-color: var(--ink-2); }
+.course-card.is-locked { cursor: pointer; }
+::view-transition-group(*) { animation-duration: 200ms; animation-timing-function: cubic-bezier(.2, .8, .2, 1); }
+::view-transition-old(root), ::view-transition-new(root) { animation: none; }
+
+/* 拖拽：浮起的副本跟着指针；原卡片变淡；可以放的区域显示提示 */
+.drag-ghost {
+  position: fixed; z-index: 60; margin: 0; pointer-events: none; cursor: grabbing;
+  box-shadow: 0 12px 32px rgb(0 0 0 / .16), 0 2px 6px rgb(0 0 0 / .08); border-color: var(--ink-2);
+  will-change: transform;
+}
+.drag-ghost.is-landing { box-shadow: 0 1px 2px rgb(0 0 0 / .06); }
+.drag-ghost.is-vanishing { transition: opacity 160ms, transform 160ms; opacity: 0; }
+.is-drag-source { opacity: .35; }
+.is-dragging, .is-dragging * { cursor: grabbing !important; user-select: none; }
+[data-dropzone] { position: relative; transition: background-color 150ms; }
+.is-dragging [data-column][data-accept="true"] .drop-area { background: color-mix(in srgb, var(--ink) 2%, transparent); }
+[data-dropzone].is-target .drop-area, #library.is-target { background: color-mix(in srgb, var(--blue) 8%, transparent); }
+[data-dropzone].is-target::after {
+  content: attr(data-drop-label); position: absolute; left: 50%; bottom: 16px; translate: -50% 0; z-index: 5;
+  padding: 4px 12px; border-radius: 9999px; background: var(--blue); color: var(--surface);
+  font-size: 12px; line-height: 18px; white-space: nowrap; pointer-events: none; animation: fade-in 120ms;
+}
+#library.is-target::after { position: sticky; display: block; width: max-content; margin: 16px auto 0; translate: none; }
+
+/* 分段选择（课程库筛选、课表侧栏标签） */
+.seg[aria-pressed="true"], .seg[aria-selected="true"] { background: var(--surface); color: var(--ink); font-weight: 500; box-shadow: 0 1px 2px rgb(0 0 0 / .06); }
+
+/* 折叠列表：小箭头旋转，内容高度过渡（支持的浏览器） */
+.disclosure > summary::-webkit-details-marker { display: none; }
+.disclosure .caret { transition: transform 150ms; }
+.disclosure[open] > summary .caret { transform: rotate(90deg); }
+.disclosure::details-content { height: 0; overflow: clip; transition: height 200ms, content-visibility 200ms allow-discrete; }
+.disclosure[open]::details-content { height: auto; }
+
+/* 课程库筛选 */
 #library[data-filter="pending"] [data-placed],
 #library[data-filter="pending"] [data-lib-group]:not([data-has-pending]),
 #library[data-filter="pending"] [data-lib-section]:not([data-has-pending]),
 #library[data-filter="required"] [data-lib-group]:not([data-nature="必修"]) { display: none; }
-#library[data-filter="pending"] [data-library]:not(:has([data-has-pending])) [data-all-placed] { display: block; }
+#library[data-filter="pending"] [data-library]:not(:has([data-has-pending])) [data-all-placed] { display: flex; }
 
-/* 拖拽状态（SortableJS） */
-.sortable-ghost { opacity: .35; }
-.sortable-chosen { box-shadow: 0 8px 24px rgb(0 0 0 / .12); }
-[data-dropzone].is-target { background: color-mix(in srgb, var(--blue) 6%, transparent); }
-
-dialog::backdrop { background: rgb(0 0 0 / .32); }
-@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
-
-/* 学期课表的课块：类别色细边 + 浅底；冲突时金色描边 */
-.tt-block {
-  background: color-mix(in srgb, var(--cat) 12%, var(--surface));
-  box-shadow: inset 3px 0 0 var(--cat);
+/* 弹窗：桌面居中淡入；手机从底部滑出 */
+dialog[open] { animation: rise-in 160ms cubic-bezier(.2, .8, .2, 1); }
+dialog[open]::backdrop { background: rgb(0 0 0 / .32); animation: fade-in 160ms; }
+@media (max-width: 639px) {
+  dialog.sheet { margin: auto 0 0; width: 100%; max-width: 100%; max-height: 85dvh; border-radius: 12px 12px 0 0; }
+  dialog.sheet[open] { animation: sheet-in 200ms cubic-bezier(.2, .8, .2, 1); }
 }
-.tt-conflict { outline: 1.5px solid var(--gold); outline-offset: -1.5px; }
 
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after, ::view-transition-group(*) { transition: none !important; animation: none !important; }
+}
+
+/* ---------- 学期课表 ---------- */
+/* 课块：类别色描边 + 浅底；冲突时金色描边 */
+.tt-block {
+  display: block; border: 1px solid color-mix(in srgb, var(--cat) 45%, transparent);
+  background: color-mix(in srgb, var(--cat) 12%, var(--surface));
+  transition: background-color 120ms, opacity 150ms;
+}
+.tt-block:hover { background: color-mix(in srgb, var(--cat) 20%, var(--surface)); }
+.tt-conflict { border-color: var(--gold); box-shadow: 0 0 0 1px var(--gold); }
+.tt-dim { opacity: .45; }
 /* 挑教学班时的候选时间：虚线框；会冲突的用金色，已选的用蓝色实线 */
 .tt-ghost {
-  display: block; color: var(--ink);
+  display: block; color: var(--ink); animation: fade-in 150ms;
   background: color-mix(in srgb, var(--cat) 6%, var(--surface));
-  outline: 1.5px dashed color-mix(in srgb, var(--cat) 70%, transparent); outline-offset: -1.5px;
+  border: 1.5px dashed color-mix(in srgb, var(--cat) 70%, transparent);
+  transition: background-color 120ms;
 }
-.tt-ghost:hover { background: color-mix(in srgb, var(--cat) 16%, var(--surface)); }
-.tt-ghost-conflict { outline-color: var(--gold); color: var(--ink-2); }
-.tt-ghost-current { outline: 1.5px solid var(--blue); }
+.tt-ghost:hover { background: color-mix(in srgb, var(--cat) 18%, var(--surface)); }
+.tt-ghost-conflict { border-color: var(--gold); color: var(--ink-2); }
+.tt-ghost-current { border: 1.5px solid var(--blue); }
+.tt-cell { transition: background-color 120ms; }
 .tt-cell:hover, .tt-cell.is-active { background: color-mix(in srgb, var(--blue) 8%, transparent); }
-.tt-cell.is-active { outline: 1.5px solid var(--blue); outline-offset: -1.5px; }
-.tray-icon { width: 12px; text-align: center; font-weight: 600; }
-[data-state="done"] .tray-icon { color: var(--green); }
-[data-state="conflict"] .tray-icon { color: var(--gold); }
-[data-state="todo"] .tray-icon, [data-state="none"] .tray-icon { color: var(--ink-2); }
-[data-state="conflict"].tray-chip { border-color: color-mix(in srgb, var(--gold) 60%, transparent); }
-[data-group].is-flash { background: color-mix(in srgb, var(--blue) 10%, transparent); }
+.tt-cell.is-active { box-shadow: inset 0 0 0 1.5px var(--blue); }
+.tt-weekend { background: color-mix(in srgb, var(--ink) 2.5%, transparent); }
+
+/* 课表侧栏：宽屏在左边；窄屏变成底部抽屉，收起时露出一条把手 */
+.tt-sheet-caret { transition: transform 200ms; }
+.tt-side[data-open="true"] .tt-sheet-caret { transform: rotate(180deg); }
+@media (max-width: 1023px) {
+  .tt-side {
+    position: fixed; inset: auto 0 0 0; z-index: 40; max-height: 72dvh; display: flex; flex-direction: column;
+    background: var(--surface); border-top: 1px solid var(--line); border-radius: 12px 12px 0 0;
+    box-shadow: 0 -8px 32px rgb(0 0 0 / .12); transition: transform 240ms cubic-bezier(.2, .8, .2, 1);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .tt-side[data-open="false"] { transform: translateY(calc(100% - 56px - env(safe-area-inset-bottom))); }
+  .tt-side-body { overflow-y: auto; overscroll-behavior: contain; padding: 0 16px 24px; }
+  .tt-side .tt-course.is-open { background: var(--bg); }
+}
+/* 课程条目：展开时箭头翻转，挑班内容轻轻浮现 */
+.tt-course-caret { transition: transform 200ms; }
+.tt-course.is-open .tt-course-caret { transform: rotate(180deg); }
+.tt-pick { animation: rise-in 180ms cubic-bezier(.2, .8, .2, 1); }
+.tt-check { display: none; }
+label:has(> :checked) > .tt-check { display: block; }
+.is-settled .tt-pick, .is-settled .tt-ghost { animation: none; }
+/* 刚加入 / 定位到的课：短暂高亮 */
+.is-flash { animation: flash 1200ms ease-out; }
+@keyframes flash { 0%, 40% { background-color: color-mix(in srgb, var(--blue) 14%, transparent); } }

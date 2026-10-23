@@ -1,17 +1,18 @@
 {% from "components/timetable.html" import hidden_fields %}
+{% from "components/ui.html" import icon, button_class %}
 {# 找课结果。finder: models.timetable.Finder #}
 {% set COURSE_LIMIT = 30 %}{% set SECTION_LIMIT = 3 %}
 {% if not table.semester %}
 <p class="mt-4 text-xs text-ink-2">没有开课数据。</p>
 {% elif not finder.day and not finder.q %}
-<p class="mt-4 text-xs text-ink-2">输入课程名开始搜索。</p>
+<p class="mt-6 flex flex-col items-center gap-2 text-center text-xs text-ink-2">{{ icon('calendar-plus', 24) }}输入课程名开始搜索，<br>或者点课表上的空格看那个时间能上的课。</p>
 {% elif not finder.groups %}
-<p class="mt-4 text-xs text-ink-2">{% if finder.q %}没有找到「{{ finder.q }}」里和已选课程不冲突的班。{% else %}这个时间没有和已选课程不冲突的课。{% endif %}</p>
+<p class="mt-6 flex flex-col items-center gap-2 text-center text-xs text-ink-2">{{ icon('circle-dashed', 24) }}{% if finder.q %}没有找到「{{ finder.q }}」里和已选课程不冲突的班。{% else %}这个时间没有和已选课程不冲突的课。{% endif %}</p>
 {% else %}
 {% for kind, courses in finder.groups %}
-<details class="placed mt-4" data-kind="{{ kind }}" {% if kind == '培养方案' or finder.q or finder.groups|length == 1 %}open{% endif %}>
-  <summary class="flex cursor-pointer list-none items-baseline justify-between gap-2 border-b border-line pb-1 text-xs">
-    <span class="font-medium text-ink"><span class="caret" aria-hidden="true"></span>{{ kind }}</span>
+<details class="disclosure mt-4" data-kind="{{ kind }}" {% if kind == '培养方案' or finder.q or finder.groups|length == 1 %}open{% endif %}>
+  <summary class="flex cursor-pointer list-none items-center justify-between gap-2 rounded-sm border-b border-line px-1 pb-1 text-xs transition-colors hover:text-ink">
+    <span class="flex items-center gap-1 font-medium text-ink">{{ icon('chevron-right', 14, 'caret text-ink-2') }}{{ kind }}</span>
     <span class="num text-ink-2">{{ courses|length }} 门</span>
   </summary>
   <ul>
@@ -30,7 +31,7 @@
           <span class="num min-w-0 flex-1 truncate text-xs" title="{{ s.option_label }}">{{ s.teacher_label }} · {{ s.meetings|map(attribute='short')|join('；') }}</span>
           <form method="post" action="{{ url_for('timetable.add') }}" data-fragment class="shrink-0">
             {{ hidden_fields(table) }}<input type="hidden" name="code" value="{{ c.code }}"><input type="hidden" name="seq" value="{{ s.seq }}">
-            <button class="rounded-md border border-line px-2 py-0.5 text-xs text-blue hover:border-blue">加入本学期</button>
+            <button class="{{ button_class('secondary', 'sm') }} h-6 px-1.5 text-blue hover:border-blue" title="把「{{ c.name }}」（{{ s.teacher_label }}）加入本学期">{{ icon('plus', 12) }}加入</button>
           </form>
         </li>
         {% endfor %}

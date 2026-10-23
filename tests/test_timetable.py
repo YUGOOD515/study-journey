@@ -145,7 +145,7 @@ def test_plan_add_search_remove():
     app.extensions["offerings"] = OfferingStore([memory_loader(offering_files())])
     c = app.test_client()
     r = c.get("/")
-    assert "课程库" in r.text and "排课表 →" in r.text and "已完成" in r.text
+    assert "课程库" in r.text and "排课表" in r.text and "已完成" in r.text
     assert c.get("/courses/search?q=").text.strip() == ""
     r = c.post("/plan/add", json={"code": "NOPE", "term": 6})
     assert r.status_code == 404

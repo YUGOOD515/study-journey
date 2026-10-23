@@ -107,12 +107,13 @@ def context(term: int, week: int | None, pick: str | None = None, finder: dict |
     }
 
 
-def respond(term: int, week: int | None, error: str | None = None):
+def respond(term: int, week: int | None, error: str | None = None, pick: str | None = None):
+    """操作完成后的课表。pick：继续展开这门课的挑班面板（比如刚换了教学班）。"""
     if request.headers.get("X-Fragment"):
-        return render_template("_timetable.html", error=error, slot=None, **context(term, week)), 409 if error else 200
+        return render_template("_timetable.html", error=error, slot=None, **context(term, week, pick)), 409 if error else 200
     if error:
         flash(error, "error")
-    return redirect(url_for("timetable.show", term=term, week=week))
+    return redirect(url_for("timetable.show", term=term, week=week, pick=pick))
 
 
 @bp.get("/timetable")
@@ -145,7 +146,7 @@ def save_choice(term: int, code: str, seq: str | None) -> None:
 def choose():
     term, week = term_arg(request.form), week_arg(request.form)
     save_choice(term, request.form.get("code", ""), request.form.get("seq") or None)
-    return respond(term, week)
+    return respond(term, week, pick=request.form.get("pick") or None)
 
 
 @bp.post("/timetable/add")

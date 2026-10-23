@@ -47,29 +47,8 @@ class Timeline:
     columns: list[TermColumn]
 
     @property
-    def past(self) -> list[TermColumn]:
-        return [c for c in self.columns if c.is_past]
-
-    @property
-    def past_credits(self) -> float:
-        return sum(c.credits for c in self.past)
-
-    @property
-    def past_count(self) -> int:
-        return sum(len(c.cards) for c in self.past)
-
-    @property
     def upcoming(self) -> list[TermColumn]:
         return [c for c in self.columns if not c.is_past]
-
-    @property
-    def past_names(self) -> str:
-        """'大一、大二'；只过了半年时是 '大一上'。"""
-        n = len(self.past)
-        names = [YEAR_NAMES[i] for i in range(n // 2)]
-        if n % 2:
-            names.append(stage_name(n))
-        return "、".join(names)
 
 
 def sort_key(item: PlanItem):

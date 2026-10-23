@@ -1,17 +1,22 @@
-{# 找课面板：外框 + 搜索框；结果在 _finder.html 里，搜索时只替换结果 #}
-<div class="border-t-2 border-blue pt-3" data-finder-panel>
-  <div class="flex items-start justify-between gap-4">
-    <h2 id="panel-title" class="font-serif text-lg font-semibold">{{ finder.title }}</h2>
-    <a href="{{ here }}" data-nav class="-mr-2 -mt-1 rounded-md px-2 py-1 text-ink-2 hover:bg-fill" aria-label="关闭"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></a>
-  </div>
-  <p class="mt-1 text-xs text-ink-2">{% if finder.day %}只列出这个时间上课、而且和已选教学班不冲突的班。{% else %}搜课程名，列出和已选教学班不冲突的班；也可以直接点课表上的空格。{% endif %}</p>
-  <form method="get" action="{{ url_for('timetable.show') }}" class="mt-3" data-finder-form>
+{% from "components/ui.html" import icon %}
+{# 找课：搜索框 + 结果；结果在 _finder.html 里，搜索时只替换结果 #}
+<div data-finder-panel class="mt-3">
+  {% if finder.day %}
+  <p class="flex items-center gap-2 rounded-md border border-blue/40 bg-blue/5 py-1 pl-2.5 pr-1 text-xs">
+    {{ icon('clock', 14, 'text-blue') }}<span id="finder-title" class="min-w-0 flex-1 font-medium text-ink">{{ finder.title }}</span>
+    <a href="{{ url_for('timetable.show', term=table.term, week=table.week, find=1) }}" data-nav aria-label="不限时间"
+       class="inline-flex size-6 items-center justify-center rounded-sm text-ink-2 transition-colors hover:bg-fill hover:text-ink">{{ icon('x', 14) }}</a>
+  </p>
+  {% endif %}
+  <p class="mt-2 text-xs text-ink-2">{% if finder.day %}只列出这个时间上课、而且和已选教学班不冲突的班。{% else %}搜课程名，列出和已选教学班不冲突的班；也可以直接点课表上的空格。{% endif %}</p>
+  <form method="get" action="{{ url_for('timetable.show') }}" class="mt-2" data-finder-form>
     <input type="hidden" name="term" value="{{ table.term }}">
     {% if table.week %}<input type="hidden" name="week" value="{{ table.week }}">{% endif %}
     {% if finder.day %}<input type="hidden" name="slot" value="{{ finder.day }}-{{ finder.period }}">{% else %}<input type="hidden" name="find" value="1">{% endif %}
-    <label><span class="sr-only">搜课程名</span>
+    <label class="relative block"><span class="sr-only">搜课程名</span>
+      <span class="pointer-events-none absolute inset-y-0 left-3 flex items-center text-ink-2">{{ icon('search') }}</span>
       <input type="search" name="q" value="{{ finder.q }}" placeholder="搜课程名或课程号" autocomplete="off" data-finder-q
-             class="w-full rounded-md border border-line bg-surface px-3 py-2 text-sm placeholder:text-ink-2 focus:border-blue focus:outline-none"></label>
+             class="h-9 w-full rounded-md border border-line bg-surface pl-9 pr-3 text-sm transition-colors placeholder:text-ink-2 focus:border-blue focus:outline-none"></label>
   </form>
   <div data-finder-results aria-live="polite">{% include "_finder.html" %}</div>
 </div>

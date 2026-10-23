@@ -374,7 +374,7 @@ def build(
                 for oc, os_ in chosen.items() if oc != code for other in os_.meetings
             )
             by_day.setdefault(m.day, []).append(Block(code, item.course.name, item.course.category, s, m, clash))
-    days = [d for d in range(1, 8) if d <= 5 or by_day.get(d)]
+    days = list(range(1, 8))  # 周六、周日也一直显示：有的课（和找课时的空格）在周末
     return Timetable(
         term=term,
         label=label,

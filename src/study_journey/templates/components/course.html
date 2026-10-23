@@ -1,6 +1,5 @@
-{# 课程卡。card: models.timeline.Card
-   show_offered: 显示建议学期（课程库里待安排的课）
-   drag: 能不能拖（课程库里已经排好的课只显示一行，点开再调） #}
+{# 课程卡。card: models.timeline.Card；show_offered: 显示建议学期（课程库里待安排的课） #}
+{% from "components/ui.html" import icon %}
 {% macro course_attrs(card) %}
 {% set item = card.item %}{% set c = item.course %}{% set allowed = c.allowed_terms %}
 data-card data-cat="{{ c.category }}" data-code="{{ c.code }}"
@@ -15,9 +14,9 @@ data-card data-cat="{{ c.category }}" data-code="{{ c.code }}"
 {% macro course_card(card, show_offered=false) %}
 {% set item = card.item %}{% set c = item.course %}{% set allowed = c.allowed_terms %}
 <button type="button"
-  class="group flex w-full items-start gap-2 rounded-md border border-line bg-surface px-3 py-2 text-left transition-colors
-         {{ 'cursor-pointer hover:border-ink-2' if not item.locked else 'cursor-default' }}"
-  {{ course_attrs(card) }} {% if not item.locked %}data-drag{% endif %}
+  class="course-card group flex w-full items-start gap-2 rounded-md border border-line bg-surface px-3 py-2 text-left
+         {{ 'is-movable' if not item.locked else 'is-locked' }}"
+  {{ course_attrs(card) }} {% if not item.locked %}data-drag style="view-transition-name: c-{{ c.code }}"{% endif %}
   aria-label="{{ c.name }}，{{ c.credits|credits }} 学分，{{ item.status }}">
   <span class="dot {{ 'dot-required' if c.is_required else 'dot-elective' }}" aria-hidden="true"></span>
   <span class="min-w-0 flex-1">
@@ -27,8 +26,9 @@ data-card data-cat="{{ c.category }}" data-code="{{ c.code }}"
       {% if c.nature != '必修' %}<span>{{ c.nature }}</span>{% endif %}
       {% if not c.in_program %}<span>自选</span>{% endif %}
       {% if show_offered and allowed|length < 8 %}<span>建议第 {{ allowed[0] }}{% if allowed|length > 1 %}–{{ allowed[-1] }}{% endif %} 学期</span>{% endif %}
-      {% if card.warning %}<span class="font-medium text-gold" title="{{ card.warning }}">需留意</span>{% endif %}
-      {% if item.score is not none %}<span class="num ml-auto text-ink">{{ item.score|round(1)|credits }}</span>{% endif %}
+      {% if card.warning %}<span class="inline-flex items-center gap-1 font-medium text-gold" title="{{ card.warning }}">{{ icon('triangle-alert', 12) }}需留意</span>{% endif %}
+      {% if item.score is not none %}<span class="num ml-auto text-ink">{{ item.score|round(1)|credits }}</span>
+      {% elif item.status == '正在修读' %}<span class="ml-auto text-blue">在修</span>{% endif %}
     </span>
   </span>
 </button>
@@ -38,11 +38,11 @@ data-card data-cat="{{ c.category }}" data-code="{{ c.code }}"
 {% macro course_row(card) %}
 {% set item = card.item %}{% set c = item.course %}
 <button type="button" data-lib-row {{ course_attrs(card) }}
-  class="flex w-full items-baseline gap-2 rounded-sm px-1 py-1 text-left text-xs text-ink-2 hover:bg-fill"
+  class="flex w-full items-center gap-2 rounded-sm px-1 py-1 text-left text-xs text-ink-2 transition-colors duration-150 hover:bg-fill hover:text-ink"
   aria-label="{{ c.name }}，{{ item.term|stage }}，{{ item.status }}">
-  <span class="dot {{ 'dot-required' if c.is_required else 'dot-elective' }} mt-0 self-center" aria-hidden="true"></span>
+  {% if item.status == '已修读' %}{{ icon('circle-check', 14, 'text-green') }}{% elif item.status == '正在修读' %}{{ icon('circle-dashed', 14, 'text-blue') }}{% else %}{{ icon('calendar-range', 14) }}{% endif %}
   <span class="min-w-0 flex-1 truncate">{{ c.name }}</span>
   <span class="num shrink-0">{{ c.credits|credits }}</span>
-  <span class="w-10 shrink-0 text-right {{ 'text-ink' if item.status == '计划修读' else '' }}">{{ item.term|stage }}</span>
+  <span class="w-10 shrink-0 text-right">{{ item.term|stage }}</span>
 </button>
 {% endmacro %}

@@ -1,3 +1,4 @@
+{% from "components/ui.html" import icon %}
 {# 开课表里、培养方案以外的课程（课程库搜索时附带） #}
 {% if q %}
 <section class="mb-8" data-offer-results>
@@ -15,7 +16,7 @@
     <button type="button" data-card data-add data-cat="{{ c.category }}" data-code="{{ c.code }}" data-name="{{ c.name }}"
             data-credits="{{ c.credits|credits }}" data-nature="{{ c.nature }}{% if c.subcategory %} · {{ c.subcategory }}{% endif %}"
             data-status="未加入规划" data-offered="不限"
-            class="flex w-full items-start gap-2 rounded-md border border-dashed border-line bg-surface px-3 py-2 text-left hover:border-ink-2"
+            class="flex w-full items-start gap-2 rounded-md border border-dashed border-line bg-surface px-3 py-2 text-left transition-colors duration-150 hover:border-blue"
             aria-label="{{ c.name }}，{{ c.credits|credits }} 学分，加入规划">
       <span class="dot dot-elective" aria-hidden="true"></span>
       <span class="min-w-0 flex-1">
@@ -24,7 +25,7 @@
           <span class="num">{{ c.credits|credits }} 学分</span><span>{{ c.subcategory or c.nature }}</span>
         </span>
       </span>
-      <span class="shrink-0 text-xs font-medium text-blue">+ 加入</span>
+      <span class="flex shrink-0 items-center gap-1 text-xs font-medium text-blue">{{ icon('plus', 14) }}加入</span>
     </button>
     {% endfor %}
   </div>

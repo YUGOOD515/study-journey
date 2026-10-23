@@ -85,7 +85,6 @@ def test_timeline_past_and_library(catalog):
     items = repo.items()
     t = timeline.build(items, repo.calendar)
     assert [c.term for c in t.upcoming] == list(range(repo.calendar.current_term, 9))
-    assert t.past_names == "大一、大二" and t.past_count == sum(len(c.cards) for c in t.past)
     assert timeline.stage_name(5) == "大三上" and timeline.stage_name(8) == "大四下"
     lib = timeline.library(progress.compute(items, catalog))
     assert [s.name for s in lib] == ["通识教育", "大类平台", "专业教育", "素质教育", "实践教育"]

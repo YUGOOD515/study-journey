@@ -1,10 +1,10 @@
-// 四年规划的交互：拖拽排课（SortableJS）、课程库搜索与筛选、点击课程打开详情。
-// 页面由服务器渲染；每次改动后服务器返回新的 #workspace 片段，这里整块替换，并恢复搜索、筛选、滚动位置。
+// 四年规划的交互：拖拽排课（drag.js）、课程库搜索与筛选、点击课程打开详情、学期横向滚动。
+// 页面由服务器渲染；每次改动后服务器返回新的 #workspace 片段，这里整块替换（支持的浏览器用 View Transitions 过渡），
+// 并恢复搜索、筛选、展开状态和滚动位置。
 (() => {
   const { terms, stages, urls } = window.PLAN;
   const dialog = document.getElementById("course-dialog");
-  const PAST_KEY = "sj.showPast";
-  let sortables = [];
+  const reduced = matchMedia("(prefers-reduced-motion: reduce)");
   let filter = "all";
   let query = "";
   const openPlaced = new Set(); // 用户手动展开的“已安排”列表
@@ -14,53 +14,28 @@
 
   // ---------- 和服务器通信：发出改动，换上新的工作区 ----------
   async function post(url, body) {
-    const library = $("#library");
-    const scroll = library ? library.scrollTop : 0;
     const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-Fragment": "1" },
       body: JSON.stringify(body),
     });
-    $("#workspace").outerHTML = await res.text();
-    init();
-    $("#library").scrollTop = scroll;
+    const html = await res.text();
+    const keep = { library: $("#library")?.scrollTop || 0, board: $("[data-board]")?.scrollLeft || 0 };
+    const apply = () => {
+      $("#workspace").outerHTML = html;
+      init();
+      $("#library").scrollTop = keep.library;
+      $("[data-board]").scrollLeft = keep.board;
+    };
+    if (document.startViewTransition && !reduced.matches) await document.startViewTransition(apply).updateCallbackDone;
+    else apply();
     if (query) searchOfferings(query);
   }
   const move = (code, term) => post(urls.move, { code, term });
   const add = (code, term) => post(urls.add, { code, term });
   const remove = (code) => post(urls.remove, { code });
 
-  // ---------- 拖拽 ----------
-  function initSortable() {
-    sortables.forEach((s) => s.destroy());
-    sortables = $$("[data-dropzone]").map((zone) =>
-      Sortable.create(zone, {
-        group: {
-          name: "plan",
-          // 待安排的课在课程库里各组之间挪没有意义，只接受从学期里拖回来的
-          put: (to, from) => zone.dataset.accept === "true" && !(to.el.dataset.term === "pending" && from.el.dataset.term === "pending"),
-        },
-        sort: false,
-        draggable: "[data-drag]",
-        animation: 150,
-        forceFallback: true, // 用指针事件模拟拖拽：触屏可用，各浏览器表现一致
-        fallbackOnBody: true,
-        delay: 120,
-        delayOnTouchOnly: true, // 触屏上长按才开始拖，轻扫还能滚动页面
-        onStart: () => document.body.classList.add("is-dragging"),
-        onMove: (e) => {
-          $$(".is-target").forEach((z) => z.classList.remove("is-target"));
-          e.to.classList.add("is-target");
-        },
-        onEnd: (e) => {
-          document.body.classList.remove("is-dragging");
-          $$(".is-target").forEach((z) => z.classList.remove("is-target"));
-          const from = e.from.dataset.term, to = e.to.dataset.term;
-          if (from !== to) move(e.item.dataset.code, to);
-        },
-      })
-    );
-  }
+  document.addEventListener("plan:drop", (e) => move(e.detail.code, e.detail.term));
 
   // ---------- 课程库：搜索、筛选 ----------
   function applyFilter() {
@@ -80,13 +55,13 @@
           groupHit ||= hit;
         }
         group.hidden = Boolean(q) && !groupHit;
+        sectionHit ||= groupHit;
         // 搜索时自动展开有匹配的“已安排”列表，清空搜索后恢复用户自己的展开状态
         const placed = $("[data-placed]", group);
         if (placed) {
           const hitInside = Boolean(q) && $$("[data-card]", placed).some((c) => !c.hidden);
           placed.open = q ? hitInside : openPlaced.has(placed.dataset.key);
         }
-        sectionHit ||= groupHit;
       }
       section.hidden = Boolean(q) && !sectionHit;
       any ||= sectionHit;
@@ -119,15 +94,26 @@
     searchTimer = setTimeout(() => searchOfferings(query), 250);
   });
 
-  // ---------- 已完成的学期：折叠 / 展开 ----------
-  function applyPast() {
-    const toggle = $("[data-past-toggle]");
-    if (!toggle) return;
-    const open = localStorage.getItem(PAST_KEY) === "1";
-    toggle.setAttribute("aria-expanded", String(open));
-    $("[data-past-label]").textContent = open ? "收起" : "展开";
-    $("[data-past]").hidden = !open;
+  // ---------- 学期横向滚动 ----------
+  function board() { return $("[data-board]"); }
+  function columnWidth() {
+    const col = $("[data-column]", board());
+    return col ? col.getBoundingClientRect().width + 16 : 240;
   }
+  function jumpToCurrent(smooth) {
+    const b = board(), cur = $("[data-current]", b);
+    if (!b || !cur) return;
+    b.scrollTo({ left: cur.offsetLeft - b.offsetLeft - parseFloat(getComputedStyle(b).paddingLeft || 0), behavior: smooth && !reduced.matches ? "smooth" : "instant" });
+  }
+  function updateEdges() {
+    const b = board();
+    if (!b) return;
+    b.dataset.start = String(b.scrollLeft <= 4);
+    b.dataset.end = String(b.scrollLeft + b.clientWidth >= b.scrollWidth - 4);
+    $("[data-board-scroll='-1']").disabled = b.dataset.start === "true";
+    $("[data-board-scroll='1']").disabled = b.dataset.end === "true";
+  }
+  document.addEventListener("scroll", (e) => { if (e.target.matches?.("[data-board]")) updateEdges(); }, true);
 
   // ---------- 课程详情弹窗 ----------
   const field = (name) => dialog.querySelector(`[data-field="${name}"]`);
@@ -155,7 +141,8 @@
     btn.type = "button";
     btn.textContent = label;
     btn.disabled = active;
-    btn.className = "rounded-md border px-2 py-2 text-xs " + (active ? "border-blue font-medium text-blue" : "border-line hover:border-ink-2");
+    btn.className = "h-9 rounded-md border text-xs transition-colors duration-150 " +
+      (active ? "border-blue bg-blue/10 font-medium text-blue" : "border-line hover:border-ink-2");
     btn.addEventListener("click", async () => {
       dialog.close();
       await onClick();
@@ -190,36 +177,38 @@
   document.addEventListener("click", (e) => {
     const chip = e.target.closest("[data-filter-chip]");
     if (chip) { filter = chip.dataset.filterChip; applyFilter(); return; }
-    if (e.target.closest("[data-past-toggle]")) {
-      localStorage.setItem(PAST_KEY, localStorage.getItem(PAST_KEY) === "1" ? "0" : "1");
-      applyPast();
+    const scroll = e.target.closest("[data-board-scroll]");
+    if (scroll) {
+      board().scrollBy({ left: Number(scroll.dataset.boardScroll) * columnWidth() * 2, behavior: reduced.matches ? "instant" : "smooth" });
       return;
     }
+    if (e.target.closest("[data-board-jump]")) return jumpToCurrent(true);
     const card = e.target.closest("[data-card]");
     if (card && !dialog.contains(card)) open(card);
   });
   dialog.querySelector("[data-remove]").addEventListener("click", async () => {
-    const code = dialog.dataset.code;
     dialog.close();
-    await remove(code);
+    await remove(dialog.dataset.code);
   });
   dialog.addEventListener("click", (e) => {
     if (e.target === dialog) dialog.close(); // 点遮罩关闭
   });
 
-  function init() {
-    initSortable();
-    const input = $("[data-search]");
-    if (input) input.value = query;
-    applyFilter();
-    applyPast();
+  function measure() {
     const summary = $("[data-summary]");
     if (summary) document.documentElement.style.setProperty("--summary-h", `${summary.offsetHeight}px`);
   }
 
+  function init() {
+    const input = $("[data-search]");
+    if (input) input.value = query;
+    applyFilter();
+    measure();
+    updateEdges();
+  }
+
   init();
-  addEventListener("resize", () => {
-    const summary = $("[data-summary]");
-    if (summary) document.documentElement.style.setProperty("--summary-h", `${summary.offsetHeight}px`);
-  });
+  jumpToCurrent(false);
+  updateEdges();
+  addEventListener("resize", () => { measure(); updateEdges(); });
 })();

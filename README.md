@@ -8,7 +8,7 @@
 ## 技术栈
 
 - 后端：Flask，按 MVC 组织：`models/` 数据与业务规则，`controllers/` 路由，`templates/` 视图
-- 前端：Jinja 服务端渲染 + Tailwind CSS v4 + SortableJS（拖拽排课）
+- 前端：Jinja 服务端渲染 + Tailwind CSS v4 + 少量原生 JS（拖拽、搜索、片段替换）；图标用 Lucide（`scripts/build_icons.py` 生成 `public/static/icons.svg`），界面组件在 `templates/components/`
 - 数据：本地版用 SQLite；演示版用内置示例数据，改动只存在访客自己的浏览器会话里
 - 项目管理：uv；演示部署：Cloudflare Python Workers
 - 不需要账号，大家在自己电脑上运行
