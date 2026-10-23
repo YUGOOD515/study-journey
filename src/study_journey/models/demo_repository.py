@@ -3,10 +3,11 @@ from __future__ import annotations
 
 import json
 from collections.abc import MutableMapping
+from dataclasses import replace
 from datetime import date
 
 from .catalog import DATA_DIR, Catalog, Course
-from .plan import Calendar, MoveError, PlanItem, check_add, check_move
+from .plan import Calendar, MoveError, PlanItem, check_add, check_move, check_record
 
 SESSION_KEY = "demo_moves"
 SECTIONS_KEY = "demo_sections"
@@ -54,16 +55,30 @@ class DemoRepository:
         for code, fields in self.session.get(CUSTOM_KEY, {}).items():
             if code not in items:
                 items[code] = PlanItem(Course(code=code, in_program=False, **fields), None, "未修读")
-        for code, term in self.session.get(SESSION_KEY, {}).items():
-            if code in items and not items[code].locked:
-                items[code] = items[code].moved_to(term)
+        # 访客的改动：{课程号: {"term", "status", "score"}}（旧版只存了学期号）
+        for code, saved in self.session.get(SESSION_KEY, {}).items():
+            if code not in items:
+                continue
+            if isinstance(saved, dict):
+                items[code] = replace(items[code], term=saved["term"], status=saved["status"], score=saved.get("score"))
+            elif not items[code].locked:
+                items[code] = items[code].moved_to(saved, self.calendar.current_term)
         return list(items.values())
 
     def move(self, code: str, term: int | None) -> None:
-        current = {i.course.code: i for i in self.items()}
-        check_move(current.get(code), term, self.calendar)
+        item = {i.course.code: i for i in self.items()}.get(code)
+        check_move(item, term)
+        moved = item.moved_to(term, self.calendar.current_term)
+        self._write(code, moved.term, moved.status, moved.score)
+
+    def record(self, code: str, term: int | None, status: str, score: float | None) -> None:
+        item = {i.course.code: i for i in self.items()}.get(code)
+        check_record(item, term, status, score, self.calendar)
+        self._write(code, term, status, score)
+
+    def _write(self, code: str, term: int | None, status: str, score: float | None) -> None:
         moves = dict(self.session.get(SESSION_KEY, {}))
-        moves[code] = term
+        moves[code] = {"term": term, "status": status, "score": score}
         self.session[SESSION_KEY] = moves
 
     def reset(self) -> None:

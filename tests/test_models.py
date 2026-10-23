@@ -36,12 +36,27 @@ def test_demo_progress_and_locks(catalog):
     p = progress.compute(repo.items(), catalog)
     assert p.total("earned") == 107
     assert p.total("earned") + p.total("in_progress") + p.total("planned") == 160
-    with pytest.raises(MoveError):
-        repo.move("B0200193", 6)  # 微观经济学已修读
-    with pytest.raises(MoveError):
-        repo.move("B0300350", 3)  # 不能排到过去的学期
     repo.move("B0300350", 6)
     assert {i.course.code: i.term for i in repo.items()}["B0300350"] == 6
+    # 编辑模式：已修读的课可以换到另一个过去的学期，成绩保留
+    before = {i.course.code: i for i in repo.items()}["B0200193"]  # 微观经济学
+    repo.move("B0200193", 2)
+    after = {i.course.code: i for i in repo.items()}["B0200193"]
+    assert (after.term, after.status, after.score) == (2, "已修读", before.score)
+    # 计划的课挪进过去的学期 = 补记成已修读；挪回以后的学期 = 计划修读、没有成绩
+    repo.move("B0300350", 3)
+    assert {i.course.code: i.status for i in repo.items()}["B0300350"] == "已修读"
+    repo.move("B0200193", 7)
+    after = {i.course.code: i for i in repo.items()}["B0200193"]
+    assert (after.status, after.score) == ("计划修读", None)
+    # 撤销：原样写回
+    repo.record("B0200193", before.term, before.status, before.score)
+    after = {i.course.code: i for i in repo.items()}["B0200193"]
+    assert (after.term, after.status, after.score) == (before.term, before.status, before.score)
+    with pytest.raises(MoveError):
+        repo.record("B0200193", 7, "已修读", 90)  # 以后的学期不能是已修读
+    with pytest.raises(MoveError):
+        repo.record("B0200193", 1, "已修读", 120)
     repo.reset()
     assert {i.course.code: i.term for i in repo.items()}["B0300350"] is None
 
@@ -78,6 +93,10 @@ def test_sqlite_repository_defaults_and_move(catalog, tmp_path):
     repo.move("B0300633", 4)
     repo2 = SqliteRepository(catalog, tmp_path / "t.sqlite3", Calendar(2024, 1))
     assert {i.course.code: i.term for i in repo2.items()}["B0300633"] == 4
+    repo3 = SqliteRepository(catalog, tmp_path / "t.sqlite3", Calendar(2024, 5))
+    repo3.record("B0300633", 4, "已修读", 88.5)
+    item = {i.course.code: i for i in repo3.items()}["B0300633"]
+    assert (item.term, item.status, item.score) == (4, "已修读", 88.5)
 
 
 def test_timeline_past_and_library(catalog):

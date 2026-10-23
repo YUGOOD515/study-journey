@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 from .catalog import CATEGORY_ORDER, TERMS
 from .offerings import Semester
-from .plan import Calendar, PlanItem
+from .plan import Calendar, PlanItem, stage
 
 NATURE_ORDER = {"必修": 0, "选修": 1, "经法管融通": 2, "跨专业": 3}
 
@@ -16,12 +16,17 @@ class Card:
     warning: str | None = None
 
 
-YEAR_NAMES = ("大一", "大二", "大三", "大四")
-
-
 def stage_name(term: int) -> str:
-    """第 5 学期 → '大三上'。"""
-    return YEAR_NAMES[(term - 1) // 2] + ("上" if term % 2 else "下")
+    """第 5 学期 → '大三上'。界面上学期一律这样称呼，副信息才写「2026 秋」。"""
+    return stage(term)
+
+
+def stage_range(terms) -> str:
+    """建议学期：[5] → '大三上'，[5, 6] → '大三上–大三下'，全部 8 个 → '不限'。"""
+    terms = list(terms)
+    if len(terms) >= 8:
+        return "不限"
+    return stage(terms[0]) if len(terms) == 1 else f"{stage(terms[0])}–{stage(terms[-1])}"
 
 
 @dataclass(frozen=True)
@@ -71,7 +76,7 @@ def warning_for(
         notes.append(f"{semester.label}的开课表里没有找到这门课")
     allowed = item.course.allowed_terms
     if item.term not in allowed:
-        notes.append(f"培养方案建议在第 {allowed[0]}{'–' + str(allowed[-1]) if len(allowed) > 1 else ''} 学期修读")
+        notes.append(f"培养方案建议在{stage_range(allowed)}修读")
     pre = item.course.prerequisite_code
     if pre and pre in terms:
         pre_term = terms[pre]

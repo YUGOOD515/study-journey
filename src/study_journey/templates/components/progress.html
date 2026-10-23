@@ -1,4 +1,5 @@
-{# 顶部吸顶的学分摘要：一行数字 + 一条细学分条（每类宽度按毕业要求学分占比，已修 / 在修 / 计划分三层） #}
+{# 顶部吸顶的学分摘要：一行总数 + 一条分段学分条。每段就是一类毕业要求，段上直接写类别名和进度，
+   兼作课程卡颜色的图例。已修实色、在修半透明、计划斜线。 #}
 {% from "components/ui.html" import icon %}
 {% macro summary_bar(progress) %}
 {% set earned = progress.total('earned') %}{% set doing = progress.total('in_progress') %}{% set plan = progress.total('planned') %}
@@ -7,6 +8,7 @@
   <div class="flex flex-wrap items-center gap-x-6 gap-y-1">
     <p class="flex items-center gap-2 text-base">{{ icon('graduation-cap', 18, 'text-ink-2') }}已修 <span class="num font-semibold">{{ earned|credits }}</span><span class="num text-ink-2"> / {{ progress.required|credits }} 学分</span></p>
     <p class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-ink-2" style="--cat: var(--ink-2)">
+      <span class="flex items-center gap-1"><span class="h-2 w-3 rounded-sm bg-cat" aria-hidden="true"></span>已修</span>
       <span class="flex items-center gap-1"><span class="bar-in-progress h-2 w-3 rounded-sm" aria-hidden="true"></span>在修 <span class="num text-ink">{{ doing|credits }}</span></span>
       <span class="flex items-center gap-1"><span class="bar-planned h-2 w-3 rounded-sm" aria-hidden="true"></span>计划 <span class="num text-ink">{{ plan|credits }}</span></span>
       {% if gap > 0 %}
@@ -16,14 +18,21 @@
       {% endif %}
     </p>
   </div>
-  <div class="mt-2 flex h-1.5 w-full gap-1" role="img"
+  <div class="mt-2 flex w-full gap-1" role="img"
        aria-label="毕业要求 {{ progress.required|credits }} 学分，已修 {{ earned|credits }}，在修 {{ doing|credits }}，计划 {{ plan|credits }}">
     {% for cat in progress.categories %}
-    <div class="flex h-full overflow-hidden rounded-sm bg-fill" data-cat="{{ cat.code }}" style="flex: {{ cat.required }} 1 0"
+    {% set counted = cat.earned + cat.in_progress + cat.planned %}
+    <div class="min-w-0" data-cat="{{ cat.code }}" style="flex: {{ cat.required }} 1 0"
          title="{{ cat.name }}：已修 {{ cat.earned|credits }}，在修 {{ cat.in_progress|credits }}，计划 {{ cat.planned|credits }}，要求 {{ cat.required|credits }}">
-      <div class="h-full bg-cat transition-[width] duration-300" style="width: {{ cat.earned / cat.required * 100 }}%"></div>
-      <div class="bar-in-progress h-full transition-[width] duration-300" style="width: {{ cat.in_progress / cat.required * 100 }}%"></div>
-      <div class="bar-planned h-full transition-[width] duration-300" style="width: {{ cat.planned / cat.required * 100 }}%"></div>
+      <p class="mb-1 flex items-baseline gap-1.5 truncate text-xs">
+        <span class="font-medium text-cat">{{ cat.name }}</span>
+        <span class="num {{ 'font-medium text-gold' if counted < cat.required else 'text-ink-2' }}">{% if counted < cat.required %}差 {{ (cat.required - counted)|credits }}{% else %}{{ cat.required|credits }}{% endif %}</span>
+      </p>
+      <div class="flex h-1.5 overflow-hidden rounded-sm bg-fill">
+        <div class="h-full bg-cat transition-[width] duration-300" style="width: {{ cat.earned / cat.required * 100 }}%"></div>
+        <div class="bar-in-progress h-full transition-[width] duration-300" style="width: {{ cat.in_progress / cat.required * 100 }}%"></div>
+        <div class="bar-planned h-full transition-[width] duration-300" style="width: {{ cat.planned / cat.required * 100 }}%"></div>
+      </div>
     </div>
     {% endfor %}
   </div>

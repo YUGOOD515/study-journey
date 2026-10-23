@@ -5,7 +5,7 @@ import sqlite3
 from pathlib import Path
 
 from .catalog import Catalog, Course
-from .plan import Calendar, MoveError, PlanItem, check_add, check_move
+from .plan import Calendar, MoveError, PlanItem, check_add, check_move, check_record
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS plan_items (
@@ -71,15 +71,23 @@ class SqliteRepository:
         return items
 
     def move(self, code: str, term: int | None) -> None:
-        current = {i.course.code: i for i in self.items()}
-        check_move(current.get(code), term, self.calendar)
-        status = "计划修读" if term else "未修读"
+        item = {i.course.code: i for i in self.items()}.get(code)
+        check_move(item, term)
+        moved = item.moved_to(term, self.calendar.current_term)
+        self._write(code, moved.term, moved.status, moved.score)
+
+    def record(self, code: str, term: int | None, status: str, score: float | None) -> None:
+        item = {i.course.code: i for i in self.items()}.get(code)
+        check_record(item, term, status, score, self.calendar)
+        self._write(code, term, status, score)
+
+    def _write(self, code: str, term: int | None, status: str, score: float | None) -> None:
         with self.db:
             self.db.execute(
-                """INSERT INTO plan_items(code, term, status) VALUES (?, ?, ?)
+                """INSERT INTO plan_items(code, term, status, score) VALUES (?, ?, ?, ?)
                    ON CONFLICT(code) DO UPDATE SET term = excluded.term, status = excluded.status,
-                   updated_at = datetime('now')""",
-                (code, term, status),
+                   score = excluded.score, updated_at = datetime('now')""",
+                (code, term, status, score),
             )
 
     def reset(self) -> None:

@@ -8,16 +8,15 @@
   {% endif %}
 
   <div class="mt-8 grid items-start gap-12 lg:grid-cols-[320px_minmax(0,1fr)] lg:gap-8 xl:grid-cols-[340px_minmax(0,1fr)]">
-    {# ---------- 课程库：按毕业要求分组；整个侧栏也是“待安排”的放置区 ---------- #}
+    {# ---------- 课程库：大类 › 待安排的课；已安排的课每个大类折叠成一行。整个侧栏也是“待安排”的放置区 ---------- #}
     <aside id="library" aria-labelledby="library-title" data-filter="all"
            data-dropzone data-term="pending" data-accept="true" data-drop-label="松开，移回待安排"
            class="library order-2 rounded-md lg:sticky lg:order-1 lg:top-[calc(var(--summary-h,64px)+16px)] lg:max-h-[calc(100dvh-var(--summary-h,64px)-32px)] lg:overflow-y-auto lg:overscroll-contain lg:pr-2">
       <div class="z-10 bg-bg pb-3 lg:sticky lg:top-0">
-        <div class="flex items-baseline justify-between gap-4 border-t-2 border-ink pt-3">
+        <div class="flex h-11 items-center border-t-2 border-ink">
           <h2 id="library-title" class="font-serif text-lg font-semibold">课程库</h2>
-          <span class="text-xs text-ink-2">按毕业要求分组</span>
         </div>
-        <label class="relative mt-3 block">
+        <label class="relative block">
           <span class="sr-only">搜索课程</span>
           <span class="pointer-events-none absolute inset-y-0 left-3 flex items-center text-ink-2">{{ icon('search') }}</span>
           <input type="search" data-search placeholder="搜课程名或课程号" autocomplete="off"
@@ -33,43 +32,48 @@
 
       <div data-search-results aria-live="polite"></div>
 
-      <div class="flex flex-col gap-8" data-library>
+      <div class="flex flex-col gap-6" data-library>
         {% for section in library %}
         {% set section_pending = section.groups|map(attribute='pending')|select|list %}
+        {% set multi = section.groups|length > 1 %}
         <section data-lib-section data-cat="{{ section.category }}"{% if section_pending %} data-has-pending{% endif %}>
-          <h3 class="flex items-baseline justify-between gap-2 border-b border-line pb-2">
-            <span class="flex items-center gap-2 text-sm font-semibold"><span class="dot dot-required mt-0" aria-hidden="true"></span>{{ section.name }}</span>
+          <h3 class="flex items-center justify-between gap-2 border-b border-line pb-2">
+            <span class="flex items-center gap-2 text-sm font-semibold"><span class="size-2.5 rounded-sm bg-cat" aria-hidden="true"></span>{{ section.name }}</span>
             {% if section.missing %}
             <span class="num text-xs font-medium text-gold">还差 {{ section.missing|credits }} 学分</span>
             {% else %}
-            <span class="num flex items-center gap-1 text-xs text-ink-2">{{ icon('circle-check', 14, 'text-green') }}{{ section.counted|credits }} / {{ section.required|credits }}</span>
+            <span class="num flex items-center gap-1 text-xs text-ink-2">{{ icon('circle-check', 14, 'text-green') }}{{ section.required|credits }} 学分已够</span>
             {% endif %}
           </h3>
-          {% for g in section.groups %}
+          {% for g in section.groups if g.pending or g.missing or not g.cards %}
           <div class="mt-3" data-lib-group data-nature="{{ g.name }}"{% if g.pending %} data-has-pending{% endif %}>
+            {% if multi %}
             <div class="flex items-baseline justify-between gap-2 text-xs">
               <span class="font-medium text-ink">{{ g.name }}{% if g.name == '经法管融通' %}<span class="ml-1 font-normal text-ink-2">最多计 6 学分</span>{% endif %}</span>
-              <span class="num {{ 'font-medium text-gold' if g.missing else 'text-ink-2' }}">{% if g.missing %}还差 {{ g.missing|credits }}{% else %}{{ g.counted|credits }} / {{ g.required|credits }}{% endif %}</span>
+              <span class="num {{ 'font-medium text-gold' if g.missing else 'text-ink-2' }}">{% if g.missing %}还差 {{ g.missing|credits }}{% else %}已够{% endif %}</span>
             </div>
+            {% endif %}
             {% if g.pending %}
             <div class="mt-2 grid gap-2" data-list>
               {% for card in g.pending %}{{ course_card(card, show_offered=true) }}{% endfor %}
             </div>
+            {% elif g.missing %}
+            <p class="mt-1 text-xs text-ink-2" data-lib-empty>{% if g.name == '经法管融通' or (g.name == '选修' and section.category in ('general_education', 'quality_education')) %}在上方搜索开课表里的课程来补{% else %}培养方案里没有这类课程{% endif %}</p>
             {% endif %}
-            {% set placed = g.cards|rejectattr('item.term', 'none')|list %}
-            {% if placed %}
-            <details class="disclosure mt-1" data-placed data-key="{{ section.category }}-{{ g.name }}">
-              <summary class="flex cursor-pointer list-none items-center gap-1 rounded-sm px-1 py-1 text-xs text-ink-2 transition-colors hover:bg-fill hover:text-ink">
-                {{ icon('chevron-right', 14, 'caret') }}已安排 <span class="num">{{ placed|length }}</span> 门
-              </summary>
-              <div class="flex flex-col">
-                {% for card in placed %}{{ course_row(card) }}{% endfor %}
-              </div>
-            </details>
-            {% endif %}
-            {% if not g.cards %}<p class="mt-1 text-xs text-ink-2" data-lib-empty>{% if g.name == '经法管融通' or (g.name == '选修' and section.category in ('general_education', 'quality_education')) %}在上方搜索开课表里的课程来补{% else %}培养方案里没有这类课程{% endif %}</p>{% endif %}
           </div>
           {% endfor %}
+          {% set placed = [] %}
+          {% for g in section.groups %}{% for card in g.cards if card.item.term is not none %}{% set _ = placed.append((card, g.name)) %}{% endfor %}{% endfor %}
+          {% if placed %}
+          <details class="disclosure mt-2" data-placed data-key="{{ section.category }}">
+            <summary class="flex cursor-pointer list-none items-center gap-1 rounded-sm px-1 py-1 text-xs text-ink-2 transition-colors hover:bg-fill hover:text-ink">
+              {{ icon('chevron-right', 14, 'caret') }}已安排 <span class="num">{{ placed|length }}</span> 门
+            </summary>
+            <div class="flex flex-col">
+              {% for card, group in placed %}{{ course_row(card, group) }}{% endfor %}
+            </div>
+          </details>
+          {% endif %}
         </section>
         {% endfor %}
         <p class="hidden text-xs text-ink-2" data-no-match>课程库里没有匹配的课程。</p>
@@ -77,34 +81,60 @@
       </div>
     </aside>
 
-    {# ---------- 八个学期：一行横向排开，打开时滚到本学期 ---------- #}
+    {# ---------- 八个学期：一行横向排开，可以左右滑到已完成的学期；打开时停在本学期 ---------- #}
     <section class="order-1 min-w-0 lg:order-2" aria-labelledby="board-title">
-      <div class="flex items-center justify-between gap-4 border-t-2 border-ink pt-3">
-        <h2 id="board-title" class="font-serif text-lg font-semibold">八个学期</h2>
+      <h2 id="board-title" class="sr-only">八个学期</h2>
+      <div class="flex h-11 items-center justify-between gap-2 border-t-2 border-ink" data-toolbar>
+        <div class="flex min-w-0 items-center gap-2">
+          <button type="button" data-edit-toggle aria-pressed="false" class="edit-toggle {{ button_class('secondary') }}">
+            <span class="when-viewing contents">{{ icon('pencil', 14) }}编辑</span>
+            <span class="when-editing contents">{{ icon('check', 14) }}完成</span>
+          </button>
+          <span class="when-editing hidden min-w-0 truncate text-xs text-ink-2 sm:inline">拖动课程换学期，已完成的学期也能改</span>
+        </div>
         <div class="flex items-center gap-1">
+          <span class="when-editing contents">
+            <button type="button" data-undo class="{{ button_class('ghost', 'sm') }}" disabled>{{ icon('undo-2', 14) }}撤销</button>
+            <details class="menu relative" data-history>
+              <summary class="{{ button_class('ghost', 'sm') }} list-none" aria-label="改动记录">{{ icon('history', 14) }}<span class="num" data-history-count>0</span></summary>
+              <div class="menu-panel right-0 w-72">
+                <p class="px-3 pb-2 pt-3 text-xs font-medium">这次的改动</p>
+                <ol class="max-h-72 overflow-y-auto pb-2" data-history-list></ol>
+              </div>
+            </details>
+          </span>
+          <details class="menu relative" data-display>
+            <summary class="{{ button_class('ghost', 'sm') }} list-none">{{ icon('sliders-horizontal', 14) }}显示</summary>
+            <div class="menu-panel right-0 w-48 py-2">
+              <p class="px-3 pb-1 text-xs text-ink-2">卡片上显示</p>
+              <label class="flex items-center gap-2 px-3 py-1.5 text-sm text-ink-2"><input type="checkbox" checked disabled class="accent-[var(--blue)]">课程名称</label>
+              <label class="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-sm hover:bg-fill"><input type="checkbox" data-pref="credits" class="accent-[var(--blue)]">学分</label>
+              <label class="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-sm hover:bg-fill"><input type="checkbox" data-pref="score" class="accent-[var(--blue)]">成绩</label>
+            </div>
+          </details>
           <button type="button" data-board-jump class="{{ button_class('ghost', 'sm') }}">{{ icon('locate-fixed', 14) }}本学期</button>
           <button type="button" data-board-scroll="-1" class="{{ icon_button_class() }}" aria-label="往前看">{{ icon('chevron-left') }}</button>
           <button type="button" data-board-scroll="1" class="{{ icon_button_class() }}" aria-label="往后看">{{ icon('chevron-right') }}</button>
         </div>
       </div>
-      <div class="board mt-4" data-board tabindex="0" aria-label="八个学期，可以横向滚动">
+      <div class="board" data-board tabindex="0" aria-label="八个学期，可以横向滚动">
         {% for col in timeline.columns %}
-        <div class="column flex min-w-0 flex-col" data-column data-term="{{ col.term }}"{% if col.is_current %} data-current{% endif %}
-             data-dropzone data-accept="{{ 'false' if col.is_past else 'true' }}" data-drop-label="松开，排进{{ col.stage }}">
+        <div class="column flex min-w-0 flex-col" data-column data-term="{{ col.term }}"{% if col.is_current %} data-current{% endif %}{% if col.is_past %} data-past{% endif %}
+             data-dropzone data-accept="true" data-drop-label="松开，排进{{ col.stage }}">
           <div class="border-t-2 {{ 'border-blue' if col.is_current else 'border-line' }} pt-3">
             <div class="flex items-baseline justify-between gap-2">
               <h3 class="font-serif text-lg font-semibold {{ 'text-ink-2' if col.is_past }}">{{ col.stage }}</h3>
-              <span class="num text-xs text-ink-2">{{ col.credits|credits }} 学分</span>
+              <span class="num text-xs text-ink-2" data-meta="credits">{{ col.credits|credits }} 学分</span>
             </div>
             <div class="mt-1 flex h-5 items-center justify-between gap-2 text-xs text-ink-2">
               <span class="num flex items-center gap-1">{{ col.label }}
-                {% if col.is_current %}<span class="font-medium text-blue">· 本学期</span>{% elif col.is_past %}<span class="flex items-center gap-1">{{ icon('lock', 12) }}已完成</span>{% endif %}</span>
-              {% if not col.is_past %}<a href="{{ url_for('timetable.show', term=col.term) }}" class="flex items-center gap-1 whitespace-nowrap font-medium text-blue underline-offset-4 hover:underline">排课表{{ icon('arrow-right', 12) }}</a>{% endif %}
+                {% if col.is_current %}<span class="font-medium text-blue">· 本学期</span>{% elif col.is_past %}<span>· 已完成</span>{% endif %}</span>
+              {% if not col.is_past %}<a href="{{ url_for('timetable.show', term=col.term) }}" class="column-link flex items-center gap-1 whitespace-nowrap font-medium text-blue underline-offset-4 hover:underline">排课表{{ icon('arrow-right', 12) }}</a>{% endif %}
             </div>
           </div>
           <div class="drop-area mt-3 flex flex-1 flex-col gap-2 rounded-md" data-list>
             {% for card in col.cards %}{{ course_card(card) }}{% endfor %}
-            {% if not col.cards and not col.is_past %}<p class="flex flex-col items-center gap-2 rounded-md border border-dashed border-line px-3 py-8 text-center text-xs text-ink-2" data-empty>{{ icon('calendar-plus', 20) }}把左边的课拖到这里</p>{% endif %}
+            {% if not col.cards %}<p class="flex flex-col items-center gap-2 rounded-md border border-dashed border-line px-3 py-8 text-center text-xs text-ink-2" data-empty>{{ icon('calendar-plus', 20) }}<span class="when-viewing">还没有安排课程</span><span class="when-editing">把课程拖到这里</span></p>{% endif %}
           </div>
         </div>
         {% endfor %}

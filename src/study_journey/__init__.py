@@ -18,13 +18,14 @@ def create_app(overrides: dict | None = None) -> Flask:
     app.config.update(overrides or {})
 
     from .controllers import offerings, timeline, timetable
-    from .models.timeline import stage_name
+    from .models.timeline import stage_name, stage_range
 
     app.register_blueprint(timeline.bp)
     app.register_blueprint(offerings.bp)
     app.register_blueprint(timetable.bp)
     app.jinja_env.filters["credits"] = format_credits
     app.jinja_env.filters["stage"] = stage_name
+    app.jinja_env.filters["stage_range"] = stage_range
     return app
 
 

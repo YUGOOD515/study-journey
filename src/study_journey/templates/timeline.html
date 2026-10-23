@@ -29,11 +29,30 @@
     <p class="mt-4 flex items-start gap-2 rounded-md bg-gold/10 px-3 py-2 text-xs text-gold" data-show="warning">{{ icon('triangle-alert', 14, 'mt-0.5') }}<span data-field="warning"></span></p>
     <div data-show="move" class="mt-6">
       <p class="text-xs text-ink-2" data-field="move-title">安排到</p>
-      <div class="mt-2 grid grid-cols-3 gap-2 sm:grid-cols-4" data-field="terms"></div>
+      <div class="mt-2 grid grid-cols-4 gap-2" data-field="terms"></div>
       <button type="button" data-show="remove" data-remove class="{{ button_class('danger', 'sm') }} -ml-2 mt-3">{{ icon('trash-2', 14) }}从规划里移除这门自选课</button>
     </div>
-    <p data-show="locked" class="mt-6 flex items-center gap-2 text-xs text-ink-2">{{ icon('lock', 14) }}这门课已有修读记录，学期不能调整。</p>
+    <fieldset data-show="record" class="mt-6 border-t border-line pt-4">
+      <legend class="sr-only">修读记录</legend>
+      <p class="text-xs text-ink-2">修读记录</p>
+      <div class="mt-2 flex flex-wrap items-center gap-3">
+        <div class="flex gap-1 rounded-md bg-fill p-1" role="radiogroup" aria-label="修读结果">
+          <label class="seg-label"><input type="radio" name="record-status" value="已修读" class="sr-only">已修读</label>
+          <label class="seg-label"><input type="radio" name="record-status" value="未通过" class="sr-only">未通过</label>
+        </div>
+        <label class="flex items-center gap-2 text-sm">成绩
+          <input type="number" min="0" max="100" step="0.1" inputmode="decimal" data-field="record-score" placeholder="—"
+                 class="num h-8 w-20 rounded-md border border-line bg-surface px-2 text-sm focus:border-blue focus:outline-none">
+        </label>
+        <button type="button" data-save-record class="{{ button_class('primary') }} ml-auto">保存</button>
+      </div>
+    </fieldset>
+    <div data-show="view-hint" class="mt-6 flex items-center justify-between gap-3 rounded-md bg-fill px-3 py-2 text-xs text-ink-2">
+      <span class="flex items-center gap-2">{{ icon('lock', 14) }}进入编辑模式后，可以调整学期和修读记录。</span>
+      <button type="button" data-edit-from-dialog class="{{ button_class('secondary', 'sm') }}">{{ icon('pencil', 14) }}编辑</button>
+    </div>
     <dl class="mt-6 grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 border-t border-line pt-4 text-sm">
+      <dt class="text-ink-2">所在学期</dt><dd data-field="where"></dd>
       <dt class="text-ink-2">建议学期</dt><dd data-field="offered"></dd>
       <dt class="text-ink-2" data-show="score">成绩</dt><dd class="num" data-show="score" data-field="score"></dd>
     </dl>
@@ -43,10 +62,12 @@
 {% endblock %}
 {% block scripts %}
 <script>window.PLAN = {
-  terms: {{ timeline.upcoming|map(attribute='term')|list|tojson }},
+  terms: {{ timeline.columns|map(attribute='term')|list|tojson }},
   stages: {{ timeline.columns|map(attribute='stage')|list|tojson }},
+  labels: {{ timeline.columns|map(attribute='label')|list|tojson }},
+  current: {{ calendar.current_term }},
   urls: {
-    move: "{{ url_for('timeline.move') }}", add: "{{ url_for('timeline.add') }}", remove: "{{ url_for('timeline.remove') }}",
+    move: "{{ url_for('timeline.move') }}", record: "{{ url_for('timeline.record') }}", add: "{{ url_for('timeline.add') }}", remove: "{{ url_for('timeline.remove') }}",
     search: "{{ url_for('timeline.search') }}", sections: "{{ url_for('offerings.sections', code='__CODE__') }}"
   }
 };</script>

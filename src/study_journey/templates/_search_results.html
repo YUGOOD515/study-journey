@@ -16,13 +16,12 @@
     <button type="button" data-card data-add data-cat="{{ c.category }}" data-code="{{ c.code }}" data-name="{{ c.name }}"
             data-credits="{{ c.credits|credits }}" data-nature="{{ c.nature }}{% if c.subcategory %} · {{ c.subcategory }}{% endif %}"
             data-status="未加入规划" data-offered="不限"
-            class="flex w-full items-start gap-2 rounded-md border border-dashed border-line bg-surface px-3 py-2 text-left transition-colors duration-150 hover:border-blue"
+            class="course-card is-offer flex w-full items-start gap-2 rounded-md border border-dashed px-3 py-2 text-left"
             aria-label="{{ c.name }}，{{ c.credits|credits }} 学分，加入规划">
-      <span class="dot dot-elective" aria-hidden="true"></span>
       <span class="min-w-0 flex-1">
         <span class="line-clamp-2 text-sm">{{ c.name }}</span>
-        <span class="mt-1 flex flex-wrap gap-x-2 text-xs text-ink-2 [&>span]:whitespace-nowrap">
-          <span class="num">{{ c.credits|credits }} 学分</span><span>{{ c.subcategory or c.nature }}</span>
+        <span class="card-meta mt-1 flex flex-wrap gap-x-1.5 text-xs text-ink-2 [&>span]:whitespace-nowrap">
+          <span class="num" data-meta="credits">{{ c.credits|credits }} 学分</span><span data-meta="extra">{{ c.subcategory or c.nature }}</span>
         </span>
       </span>
       <span class="flex shrink-0 items-center gap-1 text-xs font-medium text-blue">{{ icon('plus', 14) }}加入</span>

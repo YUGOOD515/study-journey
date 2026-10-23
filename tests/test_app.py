@@ -12,8 +12,12 @@ def test_demo_page_and_move(tmp_path):
     assert r.status_code == 200 and "这是演示数据" in r.text and "已修" in r.text
     r = c.post("/plan/move", json={"code": "B0300350", "term": 6})
     assert r.status_code == 200 and 'id="workspace"' in r.text
-    r = c.post("/plan/move", json={"code": "B0200193", "term": 6})
-    assert r.status_code == 409 and "不能调整学期" in r.text
+    r = c.post("/plan/move", json={"code": "B0200193", "term": 2})  # 编辑模式可以改历史学期
+    assert r.status_code == 200
+    r = c.post("/plan/record", json={"code": "B0200193", "term": 2, "status": "已修读", "score": "abc"})
+    assert r.status_code == 409 and "0–100" in r.text
+    r = c.post("/plan/record", json={"code": "B0200193", "term": 2, "status": "未通过", "score": 52})
+    assert r.status_code == 200
 
 
 def test_local_page(tmp_path):

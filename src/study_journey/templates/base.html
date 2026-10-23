@@ -6,6 +6,18 @@
   <title>{% block title %}学旅{% endblock %}</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22%3E%3Ccircle cx=%228%22 cy=%228%22 r=%226%22 fill=%22%233E5C76%22/%3E%3C/svg%3E">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+  <script>
+    // 卡片显示偏好（学分 / 成绩）和编辑模式在渲染前就加到 <html> 上，避免闪一下
+    (() => {
+      const root = document.documentElement;
+      try {
+        const prefs = JSON.parse(localStorage.getItem("sj-card-prefs") || "{}");
+        if (prefs.credits === false) root.classList.add("hide-credits");
+        if (prefs.score === false) root.classList.add("hide-score");
+        root.dataset.editing = sessionStorage.getItem("sj-editing") === "true" ? "true" : "false";
+      } catch { root.dataset.editing = "false"; }
+    })();
+  </script>
 </head>
 <body class="min-h-screen">
   <script>document.documentElement.classList.add("js")</script>

@@ -59,6 +59,22 @@ def move():
     return workspace()
 
 
+@bp.post("/plan/record")
+def record():
+    """编辑模式：直接写入学期 + 状态 + 成绩（修正历史记录、撤销上一步）。"""
+    data = request.get_json(silent=True) or request.form
+    raw_score = data.get("score")
+    try:
+        score = None if raw_score in (None, "") else float(raw_score)
+    except (TypeError, ValueError):
+        return workspace("成绩要填 0–100 的数字。", 409)
+    try:
+        repository().record(str(data.get("code", "")), term_value(data.get("term")), str(data.get("status", "")), score)
+    except MoveError as e:
+        return workspace(str(e), 409)
+    return workspace()
+
+
 def find_offered(code: str):
     """在开课数据里找这门课（从最新的学期往前找）。"""
     store = offering_store()

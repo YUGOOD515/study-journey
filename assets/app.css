@@ -66,7 +66,7 @@
   background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--cat) 30%, transparent) 0 2px, transparent 2px 6px);
 }
 
-/* 课程卡：必修实心色点，选修空心圆环 */
+/* 课表里的类别色点：必修实心，选修空心 */
 .dot { width: 8px; height: 8px; border-radius: 9999px; flex: none; margin-top: 6px; }
 .dot-required { background: var(--cat); }
 .dot-elective { box-shadow: inset 0 0 0 1.5px var(--cat); }
@@ -80,30 +80,68 @@
 @keyframes rise-in { from { opacity: 0; transform: translateY(4px) scale(.98); } }
 @keyframes sheet-in { from { transform: translateY(100%); } }
 
-/* 八个学期：一行横向排开，可以横向滚动，滚动时按列对齐 */
+/* 八个学期：一行横向排开，可以横向滚动（已完成的学期也在里面），滚动时按列对齐。
+   左右各留 24px 内边距给渐隐遮罩用，遮罩只盖在边距上，不压住第一列的字。 */
 .board {
-  display: grid; grid-auto-flow: column; grid-auto-columns: min(78vw, 248px); gap: 16px;
+  display: grid; grid-auto-flow: column; grid-auto-columns: min(80vw, 248px); gap: 16px;
   overflow-x: auto; overscroll-behavior-x: contain; scroll-snap-type: x proximity;
-  margin-inline: -24px; padding: 0 24px 12px; scroll-padding-inline: 24px;
+  margin-inline: -24px; padding: 16px 24px 12px; scroll-padding-inline: 24px;
   min-height: calc(100dvh - var(--summary-h, 64px) - 160px);
   scrollbar-width: thin; scrollbar-color: var(--line) transparent;
 }
-/* 宽屏正好放下四列（本学期起的一学年半 / 两学年），其余横向滚动 */
+/* 宽屏正好放下四列，其余横向滚动 */
 @media (min-width: 1024px) {
-  .board { margin-inline: 0; padding-inline: 0; scroll-padding-inline: 0; grid-auto-columns: max(216px, calc((100% - 48px) / 4)); }
+  .board { grid-auto-columns: max(216px, calc((100% - 48px) / 4)); }
 }
 .board > [data-column] { scroll-snap-align: start; }
-.board:focus-visible { outline-offset: 4px; }
+.board:focus-visible { outline-offset: -2px; }
 /* 滚动边缘渐隐，提示还能往哪边滚 */
 .board[data-start="false"][data-end="false"] { mask-image: linear-gradient(90deg, transparent, #000 24px, #000 calc(100% - 24px), transparent); }
 .board[data-start="false"][data-end="true"] { mask-image: linear-gradient(90deg, transparent, #000 24px); }
 .board[data-start="true"][data-end="false"] { mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent); }
+/* 「排课表 →」：本学期一直显示，其他学期鼠标移上去才出现（触屏一直显示） */
+@media (hover: hover) {
+  [data-column]:not([data-current]) .column-link { opacity: 0; transition: opacity 150ms; }
+  [data-column]:hover .column-link, [data-column]:focus-within .column-link { opacity: 1; }
+}
 
-/* 课程卡 */
-.course-card { transition: border-color 120ms, box-shadow 120ms, opacity 120ms; -webkit-touch-callout: none; user-select: none; }
-.course-card.is-movable { cursor: grab; }
-.course-card.is-movable:hover { border-color: var(--ink-2); }
-.course-card.is-locked { cursor: pointer; }
+/* 课程卡：类别色描边 + 淡底色区分归类 */
+.course-card {
+  border-color: color-mix(in srgb, var(--cat) 32%, var(--line));
+  background: color-mix(in srgb, var(--cat) 7%, var(--surface));
+  transition: border-color 120ms, background-color 120ms, box-shadow 120ms, opacity 120ms;
+  -webkit-touch-callout: none; user-select: none; cursor: pointer;
+}
+.course-card:hover { border-color: color-mix(in srgb, var(--cat) 60%, var(--line)); }
+.course-card.is-offer { background: var(--surface); }
+.course-card.is-offer:hover { background: color-mix(in srgb, var(--cat) 7%, var(--surface)); }
+@media (prefers-color-scheme: dark) {
+  .course-card { background: color-mix(in srgb, var(--cat) 10%, var(--surface)); border-color: color-mix(in srgb, var(--cat) 38%, var(--line)); }
+}
+/* 卡片信息之间用「·」隔开；成绩靠右，不加点 */
+.card-meta > span:not([data-meta="score"]) + span:not([data-meta="score"])::before { content: "·"; margin-right: 6px; color: var(--ink-2); }
+/* 显示偏好：名称一定显示，学分 / 成绩可以关掉 */
+.hide-credits [data-meta="credits"], .hide-score [data-meta="score"] { display: none; }
+html.hide-credits .card-meta > span[data-meta="credits"] + span:not([data-meta="score"])::before { content: none; }
+.hide-credits .card-meta:not(:has(> [data-meta="extra"], > [data-meta="score"])),
+.hide-credits.hide-score .card-meta:not(:has(> [data-meta="extra"])) { display: none; }
+/* 编辑模式：只有这时卡片才能拖；学期列显示可放置的虚线边 */
+[data-editing="true"] .course-card[data-drag] { cursor: grab; }
+[data-editing="true"] [data-column] .drop-area { outline: 1px dashed var(--line); outline-offset: 4px; }
+[data-editing="false"] .when-editing, [data-editing="true"] .when-viewing { display: none !important; }
+[data-editing="true"] #course-dialog [data-show="score"] { display: none !important; } /* 编辑时成绩在修读记录里改，不重复显示 */
+.edit-toggle[aria-pressed="true"] { background: var(--blue); border-color: var(--blue); color: var(--surface); }
+/* 下拉菜单（显示偏好、改动记录） */
+.menu > summary::-webkit-details-marker { display: none; }
+.menu-panel {
+  position: absolute; top: calc(100% + 4px); z-index: 30; border: 1px solid var(--line); border-radius: var(--radius-md);
+  background: var(--surface); box-shadow: 0 8px 24px rgb(0 0 0 / .08); animation: rise-in 120ms;
+}
+.menu[open] > summary { background: var(--fill); color: var(--ink); }
+/* 弹窗里的分段单选 */
+.seg-label { cursor: pointer; border-radius: var(--radius-sm); padding: 2px 12px; font-size: 12px; line-height: 20px; color: var(--ink-2); }
+.seg-label:has(:checked) { background: var(--surface); color: var(--ink); font-weight: 500; box-shadow: 0 1px 2px rgb(0 0 0 / .06); }
+.seg-label:has(:focus-visible) { outline: 2px solid var(--blue); outline-offset: 1px; }
 ::view-transition-group(*) { animation-duration: 200ms; animation-timing-function: cubic-bezier(.2, .8, .2, 1); }
 ::view-transition-old(root), ::view-transition-new(root) { animation: none; }
 
@@ -117,7 +155,8 @@
 .drag-ghost.is-vanishing { transition: opacity 160ms, transform 160ms; opacity: 0; }
 .is-drag-source { opacity: .35; }
 .is-dragging, .is-dragging * { cursor: grabbing !important; user-select: none; }
-[data-dropzone] { position: relative; transition: background-color 150ms; }
+/* 放在 layer 里，让 Tailwind 的 lg:sticky 等工具类能覆盖它（课程库要吸顶） */
+@layer components { [data-dropzone] { position: relative; transition: background-color 150ms; } }
 .is-dragging [data-column][data-accept="true"] .drop-area { background: color-mix(in srgb, var(--ink) 2%, transparent); }
 [data-dropzone].is-target .drop-area, #library.is-target { background: color-mix(in srgb, var(--blue) 8%, transparent); }
 [data-dropzone].is-target::after {

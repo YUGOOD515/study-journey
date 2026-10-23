@@ -18,6 +18,7 @@ search x plus check circle-check circle-dashed triangle-alert circle-minus
 chevron-left chevron-right chevron-down chevron-up calendar-range arrow-right
 lock undo-2 trash-2 wand-sparkles eraser users user-round map-pin clock layers
 graduation-cap rotate-ccw refresh-cw info locate-fixed calendar-plus list-checks
+pencil history sliders-horizontal grip-vertical
 """.split()
 
 OUT = Path(__file__).resolve().parents[1] / "public" / "static" / "icons.svg"

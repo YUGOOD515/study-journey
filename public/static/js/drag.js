@@ -1,4 +1,4 @@
-// 拖拽排课：指针事件实现，鼠标、触屏都能用（触屏长按 200ms 开始拖，轻扫照常滚动页面）。
+// 拖拽排课（只在编辑模式里生效：<html data-editing="true">）：指针事件实现，鼠标、触屏都能用（触屏长按 200ms 开始拖，轻扫照常滚动页面）。
 // 拖动时只移动一个浮起的副本，页面布局不变；只有松手时指针正下方是可以放的区域才算数，
 // 否则副本飞回原处，课程留在原来的位置。
 //   <x data-dropzone data-term="5" data-accept="true">  放置区（学期列、课程库）
@@ -11,11 +11,11 @@
   let drag = null;
   let suppressClick = false;
 
-  function zoneAt(x, y) {
+  function zoneAt(x, y, d = drag) {
     const el = document.elementFromPoint(x, y);
     const zone = el && el.closest("[data-dropzone]");
     if (!zone || zone.dataset.accept !== "true") return null;
-    return zone.dataset.term === drag.from.dataset.term ? null : zone;
+    return zone.dataset.term === d.from.dataset.term ? null : zone;
   }
 
   function start() {
@@ -92,7 +92,8 @@
     setTimeout(() => (suppressClick = false), 0);
     document.body.classList.remove("is-dragging");
     d.zone?.classList.remove("is-target");
-    const zone = commit ? d.zone : null;
+    // 以松手那一刻指针下的区域为准（动画帧可能还没来得及更新）
+    const zone = commit ? zoneAt(d.x, d.y, d) : null;
     let landed = false;
     const cleanup = () => {
       if (landed) return;
@@ -101,7 +102,8 @@
       d.card.classList.remove("is-drag-source");
     };
     if (!zone) return flyTo(d.ghost, d.card.getBoundingClientRect(), cleanup); // 没放到可以放的地方：回到原处
-    const notify = () => document.dispatchEvent(new CustomEvent("plan:drop", { detail: { code: d.card.dataset.code, term: zone.dataset.term } }));
+    const before = { ...d.card.dataset }; // 改动前的学期、状态、成绩（给撤销用）
+    const notify = () => document.dispatchEvent(new CustomEvent("plan:drop", { detail: { code: before.code, term: zone.dataset.term, before } }));
     if (!zone.querySelector("[data-list]") || zone.dataset.term === "pending") {
       // 放回课程库：副本淡出，课程在服务器返回的新片段里回到它的分组
       d.card.hidden = true;
@@ -119,7 +121,7 @@
 
   document.addEventListener("pointerdown", (e) => {
     const card = e.target.closest("[data-drag]");
-    if (!card || e.button !== 0 || drag) return;
+    if (!card || e.button !== 0 || drag || document.documentElement.dataset.editing !== "true") return;
     const from = card.closest("[data-dropzone]");
     if (!from) return;
     const touch = e.pointerType !== "mouse";
