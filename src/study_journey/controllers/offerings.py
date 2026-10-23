@@ -6,14 +6,9 @@ from flask import Blueprint, abort, current_app, flash, redirect, render_templat
 
 from ..models.catalog import load_catalog
 from ..models.plan import TERMS
-from . import offering_store, repository
+from . import module_version, offering_store, repository
 
 bp = Blueprint("offerings", __name__)
-
-
-def module_version() -> str:
-    """2024 级起用 2024 版培养方案的模块划分。"""
-    return "2024" if current_app.config["ENROLLMENT_YEAR"] >= 2024 else "2022"
 
 
 @bp.get("/courses/<code>/sections")

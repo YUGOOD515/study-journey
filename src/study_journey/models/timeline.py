@@ -16,6 +16,14 @@ class Card:
     warning: str | None = None
 
 
+YEAR_NAMES = ("大一", "大二", "大三", "大四")
+
+
+def stage_name(term: int) -> str:
+    """第 5 学期 → '大三上'。"""
+    return YEAR_NAMES[(term - 1) // 2] + ("上" if term % 2 else "下")
+
+
 @dataclass(frozen=True)
 class TermColumn:
     term: int
@@ -25,14 +33,43 @@ class TermColumn:
     is_past: bool
 
     @property
+    def stage(self) -> str:
+        """'大三上'、'大三下'。"""
+        return stage_name(self.term)
+
+    @property
     def credits(self) -> float:
         return sum(c.item.course.credits for c in self.cards if c.item.status != "未通过")
 
 
 @dataclass(frozen=True)
 class Timeline:
-    years: list[list[TermColumn]]  # 每学年两列
-    pending: dict[str, list[Card]]  # 按类别分组的待安排课程
+    columns: list[TermColumn]
+
+    @property
+    def past(self) -> list[TermColumn]:
+        return [c for c in self.columns if c.is_past]
+
+    @property
+    def past_credits(self) -> float:
+        return sum(c.credits for c in self.past)
+
+    @property
+    def past_count(self) -> int:
+        return sum(len(c.cards) for c in self.past)
+
+    @property
+    def upcoming(self) -> list[TermColumn]:
+        return [c for c in self.columns if not c.is_past]
+
+    @property
+    def past_names(self) -> str:
+        """'大一、大二'；只过了半年时是 '大一上'。"""
+        n = len(self.past)
+        names = [YEAR_NAMES[i] for i in range(n // 2)]
+        if n % 2:
+            names.append(stage_name(n))
+        return "、".join(names)
 
 
 def sort_key(item: PlanItem):
@@ -81,7 +118,55 @@ def build(items: list[PlanItem], calendar: Calendar, offerings: dict[int, Semest
         )
         for t in TERMS
     ]
-    pending: dict[str, list[Card]] = {}
-    for card in by_term.get(None, []):
-        pending.setdefault(card.item.course.category, []).append(card)
-    return Timeline(years=[columns[i : i + 2] for i in range(0, 8, 2)], pending=pending)
+    return Timeline(columns=columns)
+
+
+# ---------- 左栏：按毕业要求分组的课程库 ----------
+
+@dataclass(frozen=True)
+class LibraryGroup:
+    """一项毕业要求（如「通识教育·选修」）：进度 + 这一组的课程。"""
+
+    category: str
+    name: str  # 必修 / 选修 / 经法管融通
+    required: float
+    counted: float  # 已修 + 在修 + 计划（按要求截断）
+    cards: list[Card]  # 待安排的在前
+
+    @property
+    def missing(self) -> float:
+        return max(self.required - self.counted, 0)
+
+    @property
+    def pending(self) -> list[Card]:
+        return [c for c in self.cards if c.item.term is None]
+
+
+@dataclass(frozen=True)
+class LibrarySection:
+    category: str
+    name: str
+    required: float
+    counted: float
+    groups: list[LibraryGroup]
+
+    @property
+    def missing(self) -> float:
+        return max(self.required - self.counted, 0)
+
+
+def library(progress) -> list[LibrarySection]:
+    """把学分进度的各个桶变成左栏：每类毕业要求一节，节里按必修 / 选修 / 经法管融通分组。"""
+    sections = []
+    for cat in progress.categories:
+        groups = []
+        for b in cat.buckets:
+            seen, cards = set(), []
+            for item in sorted(b.items, key=lambda i: (i.term is not None, sort_key(i))):
+                if item.course.code in seen:
+                    continue
+                seen.add(item.course.code)
+                cards.append(Card(item))
+            groups.append(LibraryGroup(cat.code, b.name, b.required, sum(b.layers()), cards))
+        sections.append(LibrarySection(cat.code, cat.name, cat.required, cat.earned + cat.in_progress + cat.planned, groups))
+    return sections

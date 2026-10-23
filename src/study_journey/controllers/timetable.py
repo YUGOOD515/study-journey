@@ -1,13 +1,14 @@
 """学期课表：选教学班、自动排课、按周查看。"""
 from __future__ import annotations
 
-from flask import Blueprint, abort, current_app, redirect, render_template, request, url_for
+from flask import Blueprint, abort, current_app, flash, redirect, render_template, request, url_for
 
 from ..models import timetable
-from ..models.catalog import TERMS, load_catalog
+from ..models.catalog import TERMS, course_from_offering, load_catalog
 from ..models.offerings import semester_label
-from ..models.timetable import auto_arrange, in_class, shift_class
-from . import offering_store, repository
+from ..models.plan import MoveError
+from ..models.timetable import auto_arrange, find_courses, in_class, shift_class
+from . import module_version, offering_store, repository
 
 bp = Blueprint("timetable", __name__)
 
@@ -52,16 +53,51 @@ def default_choices(items, semester, cls) -> dict[str, str]:
     return picks
 
 
-def context(term: int, week: int | None) -> dict:
+def slot_arg(source) -> tuple[int, int] | None:
+    """'3-6' → 周三第 6 节。"""
+    raw = str(source.get("slot") or "")
+    day, _, period = raw.partition("-")
+    if day.isdigit() and period.isdigit() and 1 <= int(day) <= 7 and int(period) in timetable.PERIODS:
+        return int(day), int(period)
+    return None
+
+
+def candidates(term: int, semester) -> dict:
+    """本学期还能加进来的课：开课表里有、没修过、也不在本学期的课。"""
+    repo = repository()
+    catalog = load_catalog()
+    items = {i.course.code: i for i in repo.items()}
+    version = module_version()
+    result = {}
+    for code, offered in semester.courses.items():
+        item = items.get(code)
+        if item is not None:
+            if item.locked or item.term == term or item.course.category == "practice_education":
+                continue
+            note = f"原计划在{repo.calendar.label(item.term)}" if item.term else "待安排"
+            result[code] = (item.course, note)
+        elif code not in catalog.courses:
+            result[code] = (course_from_offering(offered, version), None)
+    return result
+
+
+def context(term: int, week: int | None, pick: str | None = None, finder: dict | None = None) -> dict:
+    """finder：{'slot': (星期, 节次) 或 None, 'q': 搜索词}，打开找课面板时传。"""
     repo = repository()
     items = [i for i in repo.items() if i.term == term]
     semester, is_reference, cls = semester_for(term)
     choices = repo.choices(term)
     if choices is None:
         choices = default_choices(items, semester, cls)
-    table = timetable.build(term, repo.calendar.label(term), items, semester, is_reference, choices, cls, week)
+    table = timetable.build(term, repo.calendar.label(term), items, semester, is_reference, choices, cls, week, pick)
+    found = None
+    if finder is not None:
+        day, period = finder["slot"] or (None, None)
+        found = find_courses(semester, candidates(term, semester) if semester else {}, table.chosen, day, period, finder["q"])
     return {
         "table": table,
+        "finder": found,
+        "can_edit": term >= repo.calendar.current_term,
         "calendar": repo.calendar,
         "is_demo": current_app.config["MODE"] == "demo",
         "periods": timetable.PERIODS,
@@ -71,17 +107,25 @@ def context(term: int, week: int | None) -> dict:
     }
 
 
-def respond(term: int, week: int | None):
+def respond(term: int, week: int | None, error: str | None = None):
     if request.headers.get("X-Fragment"):
-        return render_template("_timetable.html", **context(term, week))
+        return render_template("_timetable.html", error=error, slot=None, **context(term, week)), 409 if error else 200
+    if error:
+        flash(error, "error")
     return redirect(url_for("timetable.show", term=term, week=week))
 
 
 @bp.get("/timetable")
 def show():
-    term, week = term_arg(request.args), week_arg(request.args)
+    args = request.args
+    term, week = term_arg(args), week_arg(args)
+    slot = slot_arg(args)
+    finder = {"slot": slot, "q": args.get("q", "")} if slot or "find" in args or args.get("q") else None
+    pick = None if finder else args.get("pick")
     template = "_timetable.html" if request.headers.get("X-Fragment") else "timetable.html"
-    return render_template(template, catalog=load_catalog(), **context(term, week))
+    if request.headers.get("X-Fragment") == "finder" and finder is not None:
+        template = "_finder.html"
+    return render_template(template, catalog=load_catalog(), slot=slot, **context(term, week, pick, finder))
 
 
 def current_choices(term: int) -> dict[str, str]:
@@ -89,15 +133,51 @@ def current_choices(term: int) -> dict[str, str]:
     return {r.item.course.code: r.chosen.seq for r in context(term, None)["table"].rows if r.chosen}
 
 
-@bp.post("/timetable/choose")
-def choose():
-    term, week = term_arg(request.form), week_arg(request.form)
-    code, seq = request.form.get("code", ""), request.form.get("seq") or None
+def save_choice(term: int, code: str, seq: str | None) -> None:
     repo = repository()
     picks = current_choices(term)
     picks[code] = seq
     repo.clear_choices(term)
     repo.choose(term, {k: v for k, v in picks.items() if v})
+
+
+@bp.post("/timetable/choose")
+def choose():
+    term, week = term_arg(request.form), week_arg(request.form)
+    save_choice(term, request.form.get("code", ""), request.form.get("seq") or None)
+    return respond(term, week)
+
+
+@bp.post("/timetable/add")
+def add():
+    """从找课面板把一门课加进本学期，并选上指定的教学班。培养方案以外的课作为自选课程加入规划。"""
+    term, week = term_arg(request.form), week_arg(request.form)
+    code, seq = request.form.get("code", ""), request.form.get("seq") or None
+    semester, _, _ = semester_for(term)
+    found = candidates(term, semester).get(code) if semester else None
+    if found is None:
+        abort(404)
+    repo = repository()
+    course = found[0]
+    try:
+        if any(i.course.code == code for i in repo.items()):
+            repo.move(code, term)
+        else:
+            repo.add(course, term)
+    except MoveError as e:
+        return respond(term, week, str(e))
+    save_choice(term, code, seq)
+    return respond(term, week)
+
+
+@bp.post("/timetable/remove")
+def remove():
+    """把课移出本学期：培养方案里的课回到待安排，自选课程从规划里删掉。"""
+    term, week = term_arg(request.form), week_arg(request.form)
+    try:
+        repository().remove(request.form.get("code", ""))
+    except MoveError as e:
+        return respond(term, week, str(e))
     return respond(term, week)
 
 

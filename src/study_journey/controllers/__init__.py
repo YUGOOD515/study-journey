@@ -46,3 +46,8 @@ def published_offerings(calendar) -> dict:
         if semester := store.get(calendar.semester_id(term)):
             found[term] = semester
     return found
+
+
+def module_version() -> str:
+    """2024 级起用 2024 版培养方案的模块划分。"""
+    return "2024" if current_app.config["ENROLLMENT_YEAR"] >= 2024 else "2022"

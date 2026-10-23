@@ -66,7 +66,7 @@ def test_timeline_warns_on_prerequisite_order(catalog):
         PlanItem(catalog.courses["B0300883"], 6),  # 证券投资学，先修货币金融学
     ]
     t = timeline.build(items, Calendar(2024, 5))
-    cards = {c.item.course.code: c for c in t.years[2][1].cards}
+    cards = {c.item.course.code: c for c in t.columns[5].cards}
     assert "先修课「货币金融学」" in cards["B0300883"].warning
 
 
@@ -78,3 +78,41 @@ def test_sqlite_repository_defaults_and_move(catalog, tmp_path):
     repo.move("B0300633", 4)
     repo2 = SqliteRepository(catalog, tmp_path / "t.sqlite3", Calendar(2024, 1))
     assert {i.course.code: i.term for i in repo2.items()}["B0300633"] == 4
+
+
+def test_timeline_past_and_library(catalog):
+    repo = DemoRepository(catalog, {})
+    items = repo.items()
+    t = timeline.build(items, repo.calendar)
+    assert [c.term for c in t.upcoming] == list(range(repo.calendar.current_term, 9))
+    assert t.past_names == "大一、大二" and t.past_count == sum(len(c.cards) for c in t.past)
+    assert timeline.stage_name(5) == "大三上" and timeline.stage_name(8) == "大四下"
+    lib = timeline.library(progress.compute(items, catalog))
+    assert [s.name for s in lib] == ["通识教育", "大类平台", "专业教育", "素质教育", "实践教育"]
+    for section in lib:
+        for g in section.groups:
+            terms = [c.item.term is None for c in g.cards]
+            assert terms == sorted(terms, reverse=True)  # 待安排的在前
+
+
+def test_add_and_remove_custom_course(catalog, tmp_path):
+    from study_journey.models.catalog import course_from_offering
+    from study_journey.models.offerings import OfferedCourse
+
+    offered = OfferedCourse("X0000001", "电影赏析", 2, category="通识教育课程", modules=(("v", "人文素养"),))
+    course = course_from_offering(offered, "v")
+    assert (course.category, course.nature, course.in_program) == ("general_education", "选修", False)
+    jfg = course_from_offering(OfferedCourse("X0000002", "法律与金融", 2, modules=(("v", "经法管融通"),)), "v")
+    assert jfg.nature == "经法管融通"
+    for repo in (SqliteRepository(catalog, tmp_path / "t.sqlite3", Calendar(2024, 5)), DemoRepository(catalog, {})):
+        repo.add(course, 6)
+        assert {i.course.code: i.term for i in repo.items()}["X0000001"] == 6
+        with pytest.raises(MoveError):
+            repo.add(course, 7)  # 已经安排过
+        repo.remove("X0000001")
+        assert "X0000001" not in {i.course.code for i in repo.items()}
+        pending = next(i.course for i in repo.items() if i.term is None)
+        repo.add(pending, 6)  # 培养方案里的课 = 挪学期
+        assert {i.course.code: i.term for i in repo.items()}[pending.code] == 6
+        repo.remove(pending.code)
+        assert {i.course.code: i.term for i in repo.items()}[pending.code] is None

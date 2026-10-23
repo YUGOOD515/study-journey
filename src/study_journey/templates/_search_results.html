@@ -1,0 +1,34 @@
+{# 开课表里、培养方案以外的课程（课程库搜索时附带） #}
+{% if q %}
+<section class="mb-8" data-offer-results>
+  <h3 class="flex items-baseline justify-between gap-2 border-b border-line pb-2 text-sm font-semibold">
+    开课表里的其他课程
+    <span class="text-xs font-normal text-ink-2">{% if semester %}{{ semester.label }}{% if total > results|length %} · 前 {{ results|length }} 门{% endif %}{% endif %}</span>
+  </h3>
+  {% if not semester %}
+  <p class="mt-2 text-xs text-ink-2">还没有开课数据。</p>
+  {% elif not results %}
+  <p class="mt-2 text-xs text-ink-2">{{ semester.label }}的开课表里没有找到「{{ q }}」。</p>
+  {% else %}
+  <div class="mt-2 grid gap-2">
+    {% for c in results %}
+    <button type="button" data-card data-add data-cat="{{ c.category }}" data-code="{{ c.code }}" data-name="{{ c.name }}"
+            data-credits="{{ c.credits|credits }}" data-nature="{{ c.nature }}{% if c.subcategory %} · {{ c.subcategory }}{% endif %}"
+            data-status="未加入规划" data-offered="不限"
+            class="flex w-full items-start gap-2 rounded-md border border-dashed border-line bg-surface px-3 py-2 text-left hover:border-ink-2"
+            aria-label="{{ c.name }}，{{ c.credits|credits }} 学分，加入规划">
+      <span class="dot dot-elective" aria-hidden="true"></span>
+      <span class="min-w-0 flex-1">
+        <span class="line-clamp-2 text-sm">{{ c.name }}</span>
+        <span class="mt-1 flex flex-wrap gap-x-2 text-xs text-ink-2 [&>span]:whitespace-nowrap">
+          <span class="num">{{ c.credits|credits }} 学分</span><span>{{ c.subcategory or c.nature }}</span>
+        </span>
+      </span>
+      <span class="shrink-0 text-xs font-medium text-blue">+ 加入</span>
+    </button>
+    {% endfor %}
+  </div>
+  {% endif %}
+  {% if is_reference %}<p class="mt-2 text-xs text-ink-2">本学期的开课表还没发布，先参考{{ semester.label }}。</p>{% endif %}
+</section>
+{% endif %}

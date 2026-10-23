@@ -6,10 +6,11 @@ from collections.abc import MutableMapping
 from datetime import date
 
 from .catalog import DATA_DIR, Catalog, Course
-from .plan import Calendar, PlanItem, check_move
+from .plan import Calendar, MoveError, PlanItem, check_add, check_move
 
 SESSION_KEY = "demo_moves"
 SECTIONS_KEY = "demo_sections"
+CUSTOM_KEY = "demo_custom"  # 访客自己加的课程 {课程号: 课程字段}
 
 
 def demo_calendar(today: date | None = None) -> Calendar:
@@ -50,6 +51,9 @@ class DemoRepository:
 
     def items(self) -> list[PlanItem]:
         items = self._base()
+        for code, fields in self.session.get(CUSTOM_KEY, {}).items():
+            if code not in items:
+                items[code] = PlanItem(Course(code=code, in_program=False, **fields), None, "未修读")
         for code, term in self.session.get(SESSION_KEY, {}).items():
             if code in items and not items[code].locked:
                 items[code] = items[code].moved_to(term)
@@ -65,6 +69,32 @@ class DemoRepository:
     def reset(self) -> None:
         self.session.pop(SESSION_KEY, None)
         self.session.pop(SECTIONS_KEY, None)
+        self.session.pop(CUSTOM_KEY, None)
+
+    def add(self, course: Course, term: int) -> None:
+        current = {i.course.code: i for i in self.items()}
+        check_add(current.get(course.code), course, term, self.calendar)
+        if course.code not in current:
+            custom = dict(self.session.get(CUSTOM_KEY, {}))
+            custom[course.code] = {
+                "name": course.name, "category": course.category, "nature": course.nature,
+                "credits": course.credits, "subcategory": course.subcategory,
+            }
+            self.session[CUSTOM_KEY] = custom
+        self.move(course.code, term)
+
+    def remove(self, code: str) -> None:
+        custom = dict(self.session.get(CUSTOM_KEY, {}))
+        if code not in custom:
+            return self.move(code, None)  # 培养方案里的课程（或演示自带的课程）移回待安排
+        current = {i.course.code: i for i in self.items()}
+        if current[code].locked:
+            raise MoveError(f"「{current[code].course.name}」{current[code].status}，不能移除。")
+        custom.pop(code)
+        self.session[CUSTOM_KEY] = custom
+        moves = dict(self.session.get(SESSION_KEY, {}))
+        moves.pop(code, None)
+        self.session[SESSION_KEY] = moves
 
     def choices(self, term: int) -> dict[str, str] | None:
         found = self.session.get(SECTIONS_KEY, {}).get(str(term))

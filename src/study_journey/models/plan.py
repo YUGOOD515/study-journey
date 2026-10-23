@@ -77,6 +77,21 @@ class PlanRepository(Protocol):
 
     def clear_choices(self, term: int) -> None: ...
 
+    def add(self, course: Course, term: int) -> None:
+        """加入培养方案以外的课程（自选课程）。"""
+        ...
+
+    def remove(self, code: str) -> None:
+        """移除自选课程；培养方案里的课程只能移回待安排。"""
+        ...
+
+
+def check_add(existing: PlanItem | None, course: Course, term: int, calendar: Calendar) -> None:
+    if existing is not None and existing.term is not None:
+        raise MoveError(f"「{course.name}」已经安排在第 {existing.term} 学期。")
+    if term not in TERMS or term < calendar.current_term:
+        raise MoveError(f"只能安排到第 {calendar.current_term}–8 学期。")
+
 
 def check_move(item: PlanItem | None, term: int | None, calendar: Calendar) -> None:
     """规划规则：只能安排未锁定的课程，且只能排到本学期及以后。"""

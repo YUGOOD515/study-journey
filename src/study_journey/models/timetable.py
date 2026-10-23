@@ -5,6 +5,7 @@ import re
 from dataclasses import dataclass, field
 from itertools import combinations
 
+from .catalog import Course
 from .offerings import DAY_NAMES, Meeting, Section, Semester, compress
 from .plan import PlanItem
 from .timeline import sort_key
@@ -157,6 +158,53 @@ class CourseRow:
 
 
 @dataclass(frozen=True)
+class SectionOption:
+    section: Section
+    conflicts: tuple[str, ...]  # 和已选的哪些课冲突（课程名）
+    mine: bool
+    chosen: bool
+
+
+@dataclass(frozen=True)
+class SectionGroup:
+    """上课时间完全相同的一组教学班（大课常常同一时间开好几个班）。"""
+
+    key: str
+    meetings: tuple[Meeting, ...]
+    options: tuple[SectionOption, ...]
+
+    @property
+    def conflicts(self) -> tuple[str, ...]:
+        return self.options[0].conflicts
+
+    @property
+    def chosen(self) -> bool:
+        return any(o.chosen for o in self.options)
+
+    @property
+    def mine(self) -> bool:
+        return any(o.mine for o in self.options)
+
+    @property
+    def label(self) -> str:
+        """'周一 1–2（3–6 周）；周三 3–4'。满 16 周的不写周次。"""
+        parts = [m.short + ("" if len(m.weeks) >= 16 else f"（{m.weeks_label}）") for m in self.meetings]
+        return "；".join(parts) or "线上课程或时间待定"
+
+
+@dataclass(frozen=True)
+class Pick:
+    """正在给某门课挑教学班：课表上显示它所有可选的时间。"""
+
+    row: "CourseRow"
+    groups: list[SectionGroup]
+
+    @property
+    def count(self) -> int:
+        return sum(len(g.options) for g in self.groups)
+
+
+@dataclass(frozen=True)
 class Block:
     code: str
     name: str
@@ -166,6 +214,25 @@ class Block:
     conflict: bool
     lane: int = 0
     lanes: int = 1
+    # 挑教学班时的候选时间（虚线块）：同一天同样节次的各组教学班合成一块（它们可能周次不同）
+    groups: tuple[SectionGroup, ...] = ()
+
+    @property
+    def ghost(self) -> bool:
+        return bool(self.groups)
+
+    @property
+    def options(self) -> list[SectionOption]:
+        return [o for g in self.groups for o in g.options]
+
+    @property
+    def target(self) -> SectionGroup:
+        """点虚线块时在面板里定位到的那组：优先不冲突的。"""
+        return next((g for g in self.groups if not g.conflicts), self.groups[0])
+
+    @property
+    def partly_conflicting(self) -> bool:
+        return any(g.conflicts for g in self.groups) and not self.conflict
 
     @property
     def start(self) -> int:
@@ -190,6 +257,8 @@ class Timetable:
     week: int | None  # None = 全部周
     max_week: int
     names: dict[str, str] = field(default_factory=dict)
+    pick: Pick | None = None
+    chosen: dict[str, Section] = field(default_factory=dict)
 
     @property
     def unplaced(self) -> list[CourseRow]:
@@ -242,19 +311,23 @@ def build(
     choices: dict[str, str],
     my_class: str | None = None,
     week: int | None = None,
+    pick: str | None = None,
 ) -> Timetable:
-    """choices：{课程号: 课序号}。课序号在开课数据里找不到（比如数据更新了）就当没选。"""
+    """choices：{课程号: 课序号}。课序号在开课数据里找不到（比如数据更新了）就当没选。
+
+    pick：正在挑教学班的课程号。它已选的课块换成所有候选时间（虚线块）。
+    """
     in_term = sorted((i for i in items if i.term == term), key=sort_key)
     chosen: dict[str, Section] = {}
     rows_raw = []
     for item in in_term:
         code = item.course.code
         sections = semester.sections.get(code, ()) if semester else ()
-        pick = next((s for s in sections if s.seq == choices.get(code)), None)
-        if pick:
-            chosen[code] = pick
+        sel = next((s for s in sections if s.seq == choices.get(code)), None)
+        if sel:
+            chosen[code] = sel
         mine = tuple(s.seq for s in sections if in_class(s.classes, my_class))
-        rows_raw.append((item, sections, pick, mine))
+        rows_raw.append((item, sections, sel, mine))
 
     conflicts = find_conflicts(chosen)
     names = {i.course.code: i.course.name for i in in_term}
@@ -263,14 +336,35 @@ def build(
         clash_with.setdefault(c.first, set()).add(names[c.second])
         clash_with.setdefault(c.second, set()).add(names[c.first])
     rows = [
-        CourseRow(item, sections, pick, mine, tuple(sorted(clash_with.get(item.course.code, ()))))
-        for item, sections, pick, mine in rows_raw
+        CourseRow(item, sections, sel, mine, tuple(sorted(clash_with.get(item.course.code, ()))))
+        for item, sections, sel, mine in rows_raw
     ]
     rows.sort(key=lambda r: (not r.sections, r.item.course.category == "practice_education"))
 
     max_week = max((w for s in chosen.values() for m in s.meetings for w in m.weeks), default=16)
+    picked = next((r for r in rows if r.item.course.code == pick), None)
     by_day: dict[int, list[Block]] = {}
+    if picked:
+        others = {c: s for c, s in chosen.items() if c != pick}
+        groups = group_sections(picked, others, names)
+        course = picked.item.course
+        slots: dict[tuple, list[tuple[SectionGroup, Meeting]]] = {}
+        for g in groups:
+            for m in g.meetings:
+                if week is None or week in m.weeks:
+                    slots.setdefault((m.day, m.periods), []).append((g, m))
+        for (day, _), found in slots.items():
+            gs = tuple(dict.fromkeys(g for g, _ in found))
+            by_day.setdefault(day, []).append(
+                Block(course.code, course.name, course.category, gs[0].options[0].section, found[0][1],
+                      all(g.conflicts for g in gs), groups=gs)
+            )
+        max_week = max([max_week] + [w for s in picked.sections for m in s.meetings for w in m.weeks])
+    else:
+        groups = []
     for code, s in chosen.items():
+        if picked and code == pick:
+            continue
         item = next(i for i in in_term if i.course.code == code)
         for m in s.meetings:
             if week is not None and week not in m.weeks:
@@ -294,4 +388,109 @@ def build(
         week=week,
         max_week=max(max_week, 16),
         names=names,
+        pick=Pick(picked, groups) if picked else None,
+        chosen=chosen,
     )
+
+
+def clashes(section: Section, others: dict[str, Section], names: dict[str, str]) -> tuple[str, ...]:
+    """这个教学班和已选的哪些课冲突（课程名）。"""
+    return tuple(
+        sorted({names.get(code, code) for code, o in others.items() if any(overlap(a, b) for a in section.meetings for b in o.meetings)})
+    )
+
+
+def group_sections(row: CourseRow, others: dict[str, Section], names: dict[str, str]) -> list[SectionGroup]:
+    """把一门课的教学班按上课时间分组：不冲突的在前，本班所在的组最前。"""
+    groups: dict[tuple, list[SectionOption]] = {}
+    meetings: dict[tuple, tuple[Meeting, ...]] = {}
+    for s in row.sections:
+        key = tuple(sorted((m.day, m.periods, m.weeks) for m in s.meetings))
+        meetings.setdefault(key, tuple(sorted(s.meetings, key=lambda m: (m.day, m.periods))))
+        groups.setdefault(key, []).append(
+            SectionOption(s, clashes(s, others, names), s.seq in row.mine, row.chosen is not None and row.chosen.seq == s.seq)
+        )
+    result = [
+        SectionGroup(f"g{i}", meetings[key], tuple(sorted(opts, key=lambda o: (not o.mine, o.section.closed, o.section.seq))))
+        for i, (key, opts) in enumerate(groups.items())
+    ]
+    result.sort(key=lambda g: (bool(g.conflicts), not g.mine, not g.meetings, g.meetings and (g.meetings[0].day, g.meetings[0].periods)))
+    return result
+
+
+# ---------- 找课：某个空闲时间能上哪些课 ----------
+
+FINDER_KINDS = ("培养方案", "通识选修", "经法管融通", "素质教育", "其他专业课")
+
+
+def finder_kind(course: Course) -> str:
+    if course.in_program:
+        return "培养方案"
+    if course.nature == "经法管融通":
+        return "经法管融通"
+    if course.category == "quality_education":
+        return "素质教育"
+    if course.nature == "选修" and course.category == "general_education":
+        return "通识选修"
+    return "其他专业课"
+
+
+@dataclass(frozen=True)
+class FinderCourse:
+    course: Course
+    sections: tuple[Section, ...]  # 在这个时间、和已选课程不冲突的教学班
+    note: str | None = None  # 如「原计划在第 7 学期」
+
+    @property
+    def kind(self) -> str:
+        return finder_kind(self.course)
+
+
+@dataclass(frozen=True)
+class Finder:
+    day: int | None
+    period: int | None
+    q: str
+    groups: list[tuple[str, list[FinderCourse]]]
+
+    @property
+    def title(self) -> str:
+        if self.day is None:
+            return "加课"
+        return f"周{DAY_NAMES[self.day - 1]}第 {self.period} 节能上的课"
+
+    @property
+    def total(self) -> int:
+        return sum(len(cs) for _, cs in self.groups)
+
+
+def find_courses(
+    semester: Semester | None,
+    candidates: dict[str, tuple[Course, str | None]],
+    chosen: dict[str, Section],
+    day: int | None = None,
+    period: int | None = None,
+    q: str = "",
+) -> Finder:
+    """candidates：{课程号: (课程, 备注)}，可以加进本学期的课。
+
+    有时间时：找在这个时间上课、且和已选教学班不冲突的教学班；只有搜索词时：按课程名找，列出不冲突的教学班。
+    """
+    found: dict[str, list[FinderCourse]] = {k: [] for k in FINDER_KINDS}
+    q = q.strip()
+    if semester and (day is not None or q):
+        for code, (course, note) in candidates.items():
+            if q and q.lower() not in course.name.lower() and q.upper() not in code:
+                continue
+            fitting = tuple(
+                s
+                for s in semester.sections.get(code, ())
+                if s.meetings
+                and (day is None or any(m.day == day and period in m.periods for m in s.meetings))
+                and not any(overlap(a, b) for o in chosen.values() for a in s.meetings for b in o.meetings)
+            )
+            if fitting:
+                found[finder_kind(course)].append(FinderCourse(course, fitting, note))
+    for courses in found.values():
+        courses.sort(key=lambda c: (q and not c.course.name.startswith(q), -len(c.sections), c.course.name))
+    return Finder(day, period, q, [(k, v) for k, v in found.items() if v])

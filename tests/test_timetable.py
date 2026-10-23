@@ -101,3 +101,51 @@ def test_timetable_pages():
     assert c.get("/timetable?term=5&week=3", headers={"X-Fragment": "1"}).text.startswith("{#") is False
     assert c.get("/timetable?term=9").status_code == 400
     assert "四年规划" in c.get("/").text
+
+
+def test_pick_finder_add_remove():
+    files = offering_files()
+    data = json.loads(files["a.json"])
+    data["courses"] = {
+        "B0390090": {"name": "课甲", "credits": 2},
+        "B0301870": {"name": "课乙", "credits": 2},
+        "X0000001": {"name": "电影赏析", "credits": 2, "category": "通识教育课程"},
+    }
+    data["sections"].append({"code": "X0000001", "seq": "1", "teachers": ["丁"], "classes": [],
+                             "meetings": [{"weeks": list(range(1, 17)), "day": 3, "periods": [6, 7]}]})
+    data["sections"].append({"code": "X0000001", "seq": "2", "teachers": ["戊"], "classes": [],
+                             "meetings": [{"weeks": list(range(1, 17)), "day": 2, "periods": [3, 4]}]})
+    files["a.json"] = json.dumps(data)
+    app = create_app({"MODE": "demo", "TESTING": True})
+    app.extensions["offerings"] = OfferingStore([memory_loader(files)])
+    c = app.test_client()
+
+    # 挑班：两个教学班两种时间，周二那组和已选的课乙冲突
+    c.post("/timetable/choose", data={"term": 5, "code": "B0301870", "seq": "1"})
+    r = c.get("/timetable?term=5&pick=B0390090")
+    assert 'data-pick-panel' in r.text and r.text.count("tt-ghost ") == 2 and "tt-ghost-conflict" in r.text
+
+    # 找课：周三第 6 节能上电影赏析；周二第 3 节的班和已选的课冲突，不列出
+    r = c.get("/timetable?term=5&slot=3-6")
+    assert "周三第 6 节能上的课" in r.text and "电影赏析" in r.text and "通识选修" in r.text
+    assert "电影赏析" not in c.get("/timetable?term=5&slot=2-3", headers={"X-Fragment": "finder"}).text
+    assert "电影赏析" in c.get("/timetable?term=5&find=1&q=电影", headers={"X-Fragment": "finder"}).text
+
+    # 加入本学期：成为自选课程，并选上那个教学班；在四年规划里也能看到
+    r = c.post("/timetable/add", data={"term": 5, "code": "X0000001", "seq": "1"}, headers={"X-Fragment": "1"})
+    assert r.status_code == 200 and "电影赏析" in r.text and r.text.count("tt-block ") >= 2
+    assert "电影赏析" in c.get("/").text
+    r = c.post("/timetable/remove", data={"term": 5, "code": "X0000001"}, headers={"X-Fragment": "1"})
+    assert "电影赏析" not in r.text
+    assert c.post("/timetable/add", data={"term": 5, "code": "NOPE"}).status_code == 404
+
+
+def test_plan_add_search_remove():
+    app = create_app({"MODE": "demo", "TESTING": True})
+    app.extensions["offerings"] = OfferingStore([memory_loader(offering_files())])
+    c = app.test_client()
+    r = c.get("/")
+    assert "课程库" in r.text and "排课表 →" in r.text and "已完成" in r.text
+    assert c.get("/courses/search?q=").text.strip() == ""
+    r = c.post("/plan/add", json={"code": "NOPE", "term": 6})
+    assert r.status_code == 404

@@ -1,0 +1,2 @@
+{# 课表表单共用的隐藏字段 #}
+{% macro hidden_fields(table) %}<input type="hidden" name="term" value="{{ table.term }}"><input type="hidden" name="week" value="{{ table.week or '' }}">{% endmacro %}

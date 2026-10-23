@@ -85,3 +85,31 @@ def load_catalog(path: Path = DATA_DIR / "program.json") -> Catalog:
         requirements=tuple(Requirement(**r) for r in raw["requirements"]),
         courses=courses,
     )
+
+
+def course_from_offering(offered, module_version: str) -> Course:
+    """把开课表里、培养方案以外的课程变成自选课程，并按学分规则归类（docs/16 §2）。
+
+    - 所属模块是「经法管融通」→ 大类平台·经法管融通（上限 6 学分，超出计入通识选修）
+    - 通识教育课程、MOOC 通识选修 → 通识教育·选修
+    - 素质教育课程 → 素质教育·选修
+    - 其他专业的专业课 → 跨专业（计入通识选修）
+    """
+    module = offered.module(module_version)
+    if module and "经法管融通" in module:
+        category, nature = "major_platform", "经法管融通"
+    elif offered.category == "素质教育课程":
+        category, nature = "quality_education", "选修"
+    elif offered.category == "通识教育课程" or (module and offered.category is None):
+        category, nature = "general_education", "选修"
+    else:
+        category, nature = "general_education", "跨专业"
+    return Course(
+        code=offered.code,
+        name=offered.name,
+        category=category,
+        nature=nature,
+        credits=float(offered.credits or 0),
+        subcategory=module,
+        in_program=False,
+    )

@@ -71,8 +71,33 @@
 .dot-required { background: var(--cat); }
 .dot-elective { box-shadow: inset 0 0 0 1.5px var(--cat); }
 
-.board { scroll-snap-type: x proximity; scroll-padding-inline: 24px; }
-.board [data-year] { scroll-snap-align: start; }
+/* 学期列：手机上横向滑动；平板两列；宽屏一行排开（列多时横向滚动） */
+.board {
+  display: grid; gap: 16px; grid-auto-flow: column; grid-auto-columns: min(78vw, 280px);
+  overflow-x: auto; margin-inline: -24px; padding: 0 24px 8px;
+  scroll-snap-type: x proximity; scroll-padding-inline: 24px;
+}
+.board > [data-column] { scroll-snap-align: start; }
+@media (min-width: 640px) {
+  .board { grid-auto-flow: row; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 40px 24px; overflow: visible; margin: 0; padding: 0; }
+}
+@media (min-width: 1280px) {
+  .board { grid-auto-flow: column; grid-template-columns: none; grid-auto-columns: minmax(200px, 1fr); gap: 16px; overflow-x: auto; padding-bottom: 8px; }
+}
+
+/* 课程库 */
+.chip[aria-pressed="true"] { border-color: var(--ink); color: var(--ink); font-weight: 500; }
+.unschedule { display: none; }
+.is-dragging .unschedule { display: block; }
+.placed > summary::-webkit-details-marker { display: none; }
+.caret { display: inline-block; width: 0; height: 0; margin-right: 6px; vertical-align: 1px;
+  border-left: 4px solid currentColor; border-block: 3px solid transparent; transition: transform .15s; }
+.placed[open] .caret { transform: rotate(90deg); }
+#library[data-filter="pending"] [data-placed],
+#library[data-filter="pending"] [data-lib-group]:not([data-has-pending]),
+#library[data-filter="pending"] [data-lib-section]:not([data-has-pending]),
+#library[data-filter="required"] [data-lib-group]:not([data-nature="必修"]) { display: none; }
+#library[data-filter="pending"] [data-library]:not(:has([data-has-pending])) [data-all-placed] { display: block; }
 
 /* 拖拽状态（SortableJS） */
 .sortable-ghost { opacity: .35; }
@@ -88,3 +113,21 @@ dialog::backdrop { background: rgb(0 0 0 / .32); }
   box-shadow: inset 3px 0 0 var(--cat);
 }
 .tt-conflict { outline: 1.5px solid var(--gold); outline-offset: -1.5px; }
+
+/* 挑教学班时的候选时间：虚线框；会冲突的用金色，已选的用蓝色实线 */
+.tt-ghost {
+  display: block; color: var(--ink);
+  background: color-mix(in srgb, var(--cat) 6%, var(--surface));
+  outline: 1.5px dashed color-mix(in srgb, var(--cat) 70%, transparent); outline-offset: -1.5px;
+}
+.tt-ghost:hover { background: color-mix(in srgb, var(--cat) 16%, var(--surface)); }
+.tt-ghost-conflict { outline-color: var(--gold); color: var(--ink-2); }
+.tt-ghost-current { outline: 1.5px solid var(--blue); }
+.tt-cell:hover, .tt-cell.is-active { background: color-mix(in srgb, var(--blue) 8%, transparent); }
+.tt-cell.is-active { outline: 1.5px solid var(--blue); outline-offset: -1.5px; }
+.tray-icon { width: 12px; text-align: center; font-weight: 600; }
+[data-state="done"] .tray-icon { color: var(--green); }
+[data-state="conflict"] .tray-icon { color: var(--gold); }
+[data-state="todo"] .tray-icon, [data-state="none"] .tray-icon { color: var(--ink-2); }
+[data-state="conflict"].tray-chip { border-color: color-mix(in srgb, var(--gold) 60%, transparent); }
+[data-group].is-flash { background: color-mix(in srgb, var(--blue) 10%, transparent); }
