@@ -1,15 +1,19 @@
 {# 通用界面组件（沿用旧版 components/ui 的命名：Icon / Button / IconButton / Badge）。
-   图标来自 Lucide（public/static/icons.svg，由 scripts/build_icons.py 生成），线宽 1.6。 #}
+   图标来自 Lucide（public/static/icons.svg，由 scripts/build_icons.py 生成），线宽 2。 #}
 {% macro icon(name, size=16, cls='') -%}
 <svg class="icon {{ cls }}" width="{{ size }}" height="{{ size }}" aria-hidden="true" focusable="false"><use href="{{ url_for('static', filename='icons.svg') }}#{{ name }}"/></svg>
 {%- endmacro %}
 
-{# variant: primary（蓝底白字）/ secondary（描边）/ ghost（无边框）/ danger #}
+{# 按钮只有三级，一个区域里最多一个 primary：
+   primary（蓝底白字，当前最主要的一步：完成编辑、保存、自动排课）
+   secondary（白底描边，普通操作）
+   ghost（无边框，次要操作：撤销、清空、取消）；danger 是红字的 ghost。
+   图标只放意思一看就懂的（铅笔、撤销箭头、勾、叉、箭头），而且总和文字一起出现。 #}
 {% macro button_class(variant='secondary', size='md') -%}
 inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-md font-medium transition-colors duration-150 disabled:pointer-events-none disabled:opacity-40
-{{ {'sm': 'h-7 px-2 text-xs', 'md': 'h-8 px-3 text-xs'}[size] }}
+{{ {'sm': 'h-7 px-2.5 text-xs', 'md': 'h-8 px-3 text-sm'}[size] }}
 {{ {'primary': 'bg-blue text-surface hover:bg-blue/90',
-    'secondary': 'border border-line bg-surface text-ink hover:border-ink-2',
+    'secondary': 'border border-line bg-surface text-ink hover:border-ink-2/50 hover:bg-fill',
     'ghost': 'text-ink-2 hover:bg-fill hover:text-ink',
     'danger': 'text-danger hover:bg-danger/10'}[variant] }}
 {%- endmacro %}
@@ -22,5 +26,5 @@ inline-flex size-8 items-center justify-center rounded-md text-ink-2 transition-
 {% macro badge(text, tone='neutral', icon_name=none) -%}
 <span class="inline-flex items-center gap-1 whitespace-nowrap rounded-sm px-1.5 text-xs leading-5
   {{ {'neutral': 'bg-fill text-ink-2', 'blue': 'bg-blue/10 text-blue', 'gold': 'bg-gold/12 text-gold', 'green': 'bg-green/10 text-green'}[tone] }}">
-  {%- if icon_name %}{{ icon(icon_name, 12) }}{% endif %}{{ text }}</span>
+  {{ text }}</span>
 {%- endmacro %}

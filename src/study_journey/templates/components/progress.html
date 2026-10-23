@@ -1,40 +1,49 @@
-{# 顶部吸顶的学分摘要：一行总数 + 一条分段学分条。每段就是一类毕业要求，段上直接写类别名和进度，
-   兼作课程卡颜色的图例。已修实色、在修半透明、计划斜线。 #}
+{# 学分摘要：左边是总数（一条总进度条），右边五类毕业要求各一格（类别名 + 状态 + 细进度条），
+   五格的颜色就是课程卡的类别色，兼作图例。已修实色、在修半透明、计划斜线。 #}
 {% from "components/ui.html" import icon %}
+{% macro bar(earned, doing, plan, required, cls='h-1.5') %}
+<div class="flex {{ cls }} overflow-hidden rounded-full bg-fill">
+  <div class="h-full bg-cat transition-[width] duration-300" style="width: {{ earned / required * 100 }}%"></div>
+  <div class="bar-in-progress h-full transition-[width] duration-300" style="width: {{ doing / required * 100 }}%"></div>
+  <div class="bar-planned h-full transition-[width] duration-300" style="width: {{ plan / required * 100 }}%"></div>
+</div>
+{% endmacro %}
 {% macro summary_bar(progress) %}
 {% set earned = progress.total('earned') %}{% set doing = progress.total('in_progress') %}{% set plan = progress.total('planned') %}
 {% set gap = progress.required - earned - doing - plan %}
-<div class="summary z-20 -mx-6 border-b border-line bg-bg/90 px-6 py-3 backdrop-blur sm:sticky sm:top-0 lg:-mx-12 lg:px-12" data-summary>
-  <div class="flex flex-wrap items-center gap-x-6 gap-y-1">
-    <p class="flex items-center gap-2 text-base">{{ icon('graduation-cap', 18, 'text-ink-2') }}已修 <span class="num font-semibold">{{ earned|credits }}</span><span class="num text-ink-2"> / {{ progress.required|credits }} 学分</span></p>
-    <p class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-ink-2" style="--cat: var(--ink-2)">
-      <span class="flex items-center gap-1"><span class="h-2 w-3 rounded-sm bg-cat" aria-hidden="true"></span>已修</span>
-      <span class="flex items-center gap-1"><span class="bar-in-progress h-2 w-3 rounded-sm" aria-hidden="true"></span>在修 <span class="num text-ink">{{ doing|credits }}</span></span>
-      <span class="flex items-center gap-1"><span class="bar-planned h-2 w-3 rounded-sm" aria-hidden="true"></span>计划 <span class="num text-ink">{{ plan|credits }}</span></span>
-      {% if gap > 0 %}
-      <span class="flex items-center gap-1 font-medium text-gold">{{ icon('triangle-alert', 14) }}还有 <span class="num">{{ gap|credits }}</span> 学分没有着落</span>
-      {% else %}
-      <span class="flex items-center gap-1">{{ icon('circle-check', 14, 'text-green') }}按现在的安排可以达到毕业要求</span>
-      {% endif %}
+<section class="summary mt-6 grid gap-x-8 gap-y-5 rounded-lg border border-line bg-surface p-5 lg:grid-cols-[260px_minmax(0,1fr)]" data-summary aria-label="学分进度">
+  <div style="--cat: var(--ink)">
+    <p class="text-xs text-ink-2">已修学分</p>
+    <p class="mt-0.5 flex items-baseline gap-1.5"><span class="num text-xl font-semibold">{{ earned|credits }}</span><span class="num text-sm text-ink-2">/ {{ progress.required|credits }}</span></p>
+    <div class="mt-2" role="img" aria-label="毕业要求 {{ progress.required|credits }} 学分，已修 {{ earned|credits }}，在修 {{ doing|credits }}，计划 {{ plan|credits }}">
+      {{ bar(earned, doing, plan, progress.required, 'h-2') }}
+    </div>
+    <p class="num mt-2 flex flex-wrap gap-x-3 text-xs text-ink-2">
+      <span class="flex items-center gap-1"><span class="bar-in-progress h-2 w-3 rounded-sm" aria-hidden="true"></span>在修 {{ doing|credits }}</span>
+      <span class="flex items-center gap-1"><span class="bar-planned h-2 w-3 rounded-sm" aria-hidden="true"></span>计划 {{ plan|credits }}</span>
     </p>
+    {% if gap > 0 %}
+    <p class="mt-2 flex items-center gap-1.5 text-xs font-medium text-gold">{{ icon('triangle-alert', 14) }}还有 <span class="num">{{ gap|credits }}</span> 学分没有安排</p>
+    {% else %}
+    <p class="mt-2 flex items-center gap-1.5 text-xs text-green">{{ icon('check', 14) }}按现在的安排能修满</p>
+    {% endif %}
   </div>
-  <div class="mt-2 flex w-full gap-1" role="img"
-       aria-label="毕业要求 {{ progress.required|credits }} 学分，已修 {{ earned|credits }}，在修 {{ doing|credits }}，计划 {{ plan|credits }}">
+  {# 窄屏每类一行：名称 | 进度条 | 数字；宽屏每类一格 #}
+  <ul class="grid gap-y-2.5 lg:grid-cols-5 lg:gap-x-6 lg:border-l lg:border-line lg:pl-8">
     {% for cat in progress.categories %}
     {% set counted = cat.earned + cat.in_progress + cat.planned %}
-    <div class="min-w-0" data-cat="{{ cat.code }}" style="flex: {{ cat.required }} 1 0"
-         title="{{ cat.name }}：已修 {{ cat.earned|credits }}，在修 {{ cat.in_progress|credits }}，计划 {{ cat.planned|credits }}，要求 {{ cat.required|credits }}">
-      <p class="mb-1 flex items-baseline gap-1.5 truncate text-xs">
-        <span class="font-medium text-cat">{{ cat.name }}</span>
-        <span class="num {{ 'font-medium text-gold' if counted < cat.required else 'text-ink-2' }}">{% if counted < cat.required %}差 {{ (cat.required - counted)|credits }}{% else %}{{ cat.required|credits }}{% endif %}</span>
+    {% set short = cat.required - counted %}
+    <li class="grid min-w-0 grid-cols-[80px_minmax(0,1fr)_auto] items-center gap-x-3 lg:flex lg:flex-col lg:items-stretch" data-cat="{{ cat.code }}"
+        title="{{ cat.name }}：已修 {{ cat.earned|credits }}，在修 {{ cat.in_progress|credits }}，计划 {{ cat.planned|credits }}，要求 {{ cat.required|credits }}">
+      <p class="order-1 flex min-w-0 items-center gap-1.5 text-xs">
+        <span class="size-2 shrink-0 rounded-sm bg-cat" aria-hidden="true"></span>
+        <span class="truncate font-medium text-ink">{{ cat.name }}</span>
       </p>
-      <div class="flex h-1.5 overflow-hidden rounded-sm bg-fill">
-        <div class="h-full bg-cat transition-[width] duration-300" style="width: {{ cat.earned / cat.required * 100 }}%"></div>
-        <div class="bar-in-progress h-full transition-[width] duration-300" style="width: {{ cat.in_progress / cat.required * 100 }}%"></div>
-        <div class="bar-planned h-full transition-[width] duration-300" style="width: {{ cat.planned / cat.required * 100 }}%"></div>
-      </div>
-    </div>
+      <div class="order-2 lg:order-3 lg:mt-1.5">{{ bar(cat.earned, cat.in_progress, cat.planned, cat.required) }}</div>
+      <p class="num order-3 text-xs lg:order-2 lg:mt-1 lg:text-sm"><span class="font-semibold">{{ cat.earned|credits }}</span><span class="text-ink-2"> / {{ cat.required|credits }}</span>{% if short > 0 %}<span class="font-medium text-gold lg:hidden"> · 差 {{ short|credits }}</span>{% endif %}</p>
+      <p class="num order-4 mt-1.5 text-xs max-lg:hidden {{ 'font-medium text-gold' if short > 0 else 'text-ink-2' }}">{% if short > 0 %}还差 {{ short|credits }}{% else %}已排够{% endif %}</p>
+    </li>
     {% endfor %}
-  </div>
-</div>
+  </ul>
+</section>
 {% endmacro %}

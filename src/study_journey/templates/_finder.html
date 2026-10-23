@@ -5,9 +5,9 @@
 {% if not table.semester %}
 <p class="mt-4 text-xs text-ink-2">没有开课数据。</p>
 {% elif not finder.day and not finder.q %}
-<p class="mt-6 flex flex-col items-center gap-2 text-center text-xs text-ink-2">{{ icon('calendar-plus', 24) }}输入课程名开始搜索，<br>或者点课表上的空格看那个时间能上的课。</p>
+<p class="mt-6 flex flex-col items-center gap-2 text-center text-xs text-ink-2">输入课程名开始搜索，<br>或者点课表上的空格看那个时间能上的课。</p>
 {% elif not finder.groups %}
-<p class="mt-6 flex flex-col items-center gap-2 text-center text-xs text-ink-2">{{ icon('circle-dashed', 24) }}{% if finder.q %}没有找到「{{ finder.q }}」里和已选课程不冲突的班。{% else %}这个时间没有和已选课程不冲突的课。{% endif %}</p>
+<p class="mt-6 flex flex-col items-center gap-2 text-center text-xs text-ink-2">{% if finder.q %}没有找到「{{ finder.q }}」里和已选课程不冲突的班。{% else %}这个时间没有和已选课程不冲突的课。{% endif %}</p>
 {% else %}
 {% for kind, courses in finder.groups %}
 <details class="disclosure mt-4" data-kind="{{ kind }}" {% if kind == '培养方案' or finder.q or finder.groups|length == 1 %}open{% endif %}>
@@ -18,26 +18,25 @@
   <ul>
     {% for fc in courses[:COURSE_LIMIT] %}
     {% set c = fc.course %}
-    <li class="border-b border-line py-2 last:border-b-0" data-cat="{{ c.category }}">
+    <li class="flex gap-2.5 border-b border-line py-2 last:border-b-0" data-cat="{{ c.category }}"><span class="cat-bar" aria-hidden="true"></span><div class="min-w-0 flex-1">
       <p class="flex items-start gap-2">
-        <span class="dot {{ 'dot-required' if c.is_required else 'dot-elective' }}" aria-hidden="true"></span>
         <span class="min-w-0 flex-1 text-sm">{{ c.name }}</span>
         <span class="num shrink-0 text-xs text-ink-2">{{ c.credits|credits }} 学分</span>
       </p>
-      <p class="ml-4 text-xs text-ink-2">{{ c.subcategory if not c.in_program and c.subcategory else c.nature }}{% if fc.note %} · {{ fc.note }}{% endif %}</p>
-      <ul class="ml-4 mt-1">
+      <p class="text-xs text-ink-2">{{ c.subcategory if not c.in_program and c.subcategory else c.nature }}{% if fc.note %} · {{ fc.note }}{% endif %}</p>
+      <ul class="mt-1">
         {% for s in fc.sections[:SECTION_LIMIT] %}
         <li class="flex items-center gap-2 py-0.5">
           <span class="num min-w-0 flex-1 truncate text-xs" title="{{ s.option_label }}">{{ s.teacher_label }} · {{ s.meetings|map(attribute='short')|join('；') }}</span>
           <form method="post" action="{{ url_for('timetable.add') }}" data-fragment class="shrink-0">
             {{ hidden_fields(table) }}<input type="hidden" name="code" value="{{ c.code }}"><input type="hidden" name="seq" value="{{ s.seq }}">
-            <button class="{{ button_class('secondary', 'sm') }} h-6 px-1.5 text-blue hover:border-blue" title="把「{{ c.name }}」（{{ s.teacher_label }}）加入本学期">{{ icon('plus', 12) }}加入</button>
+            <button class="{{ button_class('secondary', 'sm') }} h-6 px-2" title="把「{{ c.name }}」（{{ s.teacher_label }}）加入本学期">加入</button>
           </form>
         </li>
         {% endfor %}
         {% if fc.sections|length > SECTION_LIMIT %}<li class="text-xs text-ink-2">还有 {{ fc.sections|length - SECTION_LIMIT }} 个班，加入后可以再换</li>{% endif %}
       </ul>
-    </li>
+    </div></li>
     {% endfor %}
   </ul>
   {% if courses|length > COURSE_LIMIT %}<p class="py-2 text-xs text-ink-2">还有 {{ courses|length - COURSE_LIMIT }} 门，搜课程名缩小范围。</p>{% endif %}

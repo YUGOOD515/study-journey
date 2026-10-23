@@ -66,13 +66,24 @@
   background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--cat) 30%, transparent) 0 2px, transparent 2px 6px);
 }
 
-/* 课表里的类别色点：必修实心，选修空心 */
-.dot { width: 8px; height: 8px; border-radius: 9999px; flex: none; margin-top: 6px; }
-.dot-required { background: var(--cat); }
-.dot-elective { box-shadow: inset 0 0 0 1.5px var(--cat); }
+/* 列表里的类别色条（课表侧栏、找课结果）：左边一条竖线，比小圆点好认 */
+.cat-bar { width: 3px; align-self: stretch; flex: none; border-radius: 9999px; background: var(--cat); }
 
-/* 图标（Lucide）：线宽统一 1.6 */
-.icon { flex: none; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+/* 图标（Lucide）：小尺寸下线宽 2 才不发虚 */
+.icon { flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+/* 顶栏页面标签：当前页下面一条 2px 的线，和顶栏底边对齐 */
+.nav-tab { position: relative; transition: color 150ms; }
+.nav-tab::after { content: ""; position: absolute; inset: auto 12px -1px; height: 2px; border-radius: 2px; background: transparent; transition: background-color 150ms; }
+.nav-tab.is-current::after { background: var(--ink); }
+.nav-tab:not(.is-current):hover::after { background: var(--line); }
+
+/* 按钮组（‹ 本学期 ›、‹ 周次 ›）：一个描边框里几个按钮，中间细线隔开 */
+.btn-group { height: 32px; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface); overflow: hidden; }
+.btn-group-item { display: inline-flex; height: 100%; align-items: center; justify-content: center; font-size: 13px; color: var(--ink-2); transition: background-color 150ms, color 150ms; }
+.btn-group-item + .btn-group-item { border-left: 1px solid var(--line); }
+.btn-group-item:hover { background: var(--fill); color: var(--ink); }
+.btn-group-item:disabled, .btn-group-item[aria-disabled="true"] { opacity: .35; pointer-events: none; }
 
 /* ---------- 动效：只做功能性的短过渡（120–200ms），尊重 prefers-reduced-motion ---------- */
 :root { interpolate-size: allow-keywords; }
@@ -86,7 +97,7 @@
   display: grid; grid-auto-flow: column; grid-auto-columns: min(80vw, 248px); gap: 16px;
   overflow-x: auto; overscroll-behavior-x: contain; scroll-snap-type: x proximity;
   margin-inline: -24px; padding: 16px 24px 12px; scroll-padding-inline: 24px;
-  min-height: calc(100dvh - var(--summary-h, 64px) - 160px);
+  min-height: calc(100dvh - 200px);
   scrollbar-width: thin; scrollbar-color: var(--line) transparent;
 }
 /* 宽屏正好放下四列，其余横向滚动 */
@@ -118,19 +129,27 @@
 @media (prefers-color-scheme: dark) {
   .course-card { background: color-mix(in srgb, var(--cat) 10%, var(--surface)); border-color: color-mix(in srgb, var(--cat) 38%, var(--line)); }
 }
-/* 卡片信息之间用「·」隔开；成绩靠右，不加点 */
-.card-meta > span:not([data-meta="score"]) + span:not([data-meta="score"])::before { content: "·"; margin-right: 6px; color: var(--ink-2); }
+/* 课程库里已经排好的课：去掉类别色，整张变灰，只留名字和学期 */
+.course-card.is-placed { background: transparent; border-color: var(--line); color: var(--ink-2); padding-block: 6px; }
+.course-card.is-placed:hover { background: var(--surface); border-color: color-mix(in srgb, var(--ink-2) 40%, var(--line)); color: var(--ink); }
+/* 卡片信息之间用「·」隔开。每项左边留 13px、点画在这段空白里，整行再往左挪 13px 并裁掉——
+   于是每一行开头那项的点正好被裁掉，换行、隐藏学分后都不会出现行首的点。成绩靠右，不加点。 */
+.card-meta-row { margin-left: -13px; row-gap: 0; }
+.card-meta-row > span { position: relative; padding-left: 13px; white-space: nowrap; }
+.card-meta-row > span::before { content: "·"; position: absolute; left: 0; width: 13px; text-align: center; color: var(--ink-2); }
+.card-meta-row > [data-meta="score"]::before { content: none; }
 /* 显示偏好：名称一定显示，学分 / 成绩可以关掉 */
 .hide-credits [data-meta="credits"], .hide-score [data-meta="score"] { display: none; }
-html.hide-credits .card-meta > span[data-meta="credits"] + span:not([data-meta="score"])::before { content: none; }
-.hide-credits .card-meta:not(:has(> [data-meta="extra"], > [data-meta="score"])),
-.hide-credits.hide-score .card-meta:not(:has(> [data-meta="extra"])) { display: none; }
+.hide-credits .card-meta:not(:has([data-meta="extra"], [data-meta="score"])),
+.hide-credits.hide-score .card-meta:not(:has([data-meta="extra"])) { display: none; }
 /* 编辑模式：只有这时卡片才能拖；学期列显示可放置的虚线边 */
 [data-editing="true"] .course-card[data-drag] { cursor: grab; }
 [data-editing="true"] [data-column] .drop-area { outline: 1px dashed var(--line); outline-offset: 4px; }
 [data-editing="false"] .when-editing, [data-editing="true"] .when-viewing { display: none !important; }
 [data-editing="true"] #course-dialog [data-show="score"] { display: none !important; } /* 编辑时成绩在修读记录里改，不重复显示 */
-.edit-toggle[aria-pressed="true"] { background: var(--blue); border-color: var(--blue); color: var(--surface); }
+/* 编辑时工具栏变成淡蓝底的编辑栏，一眼看出现在能改 */
+.toolbar { transition: background-color 150ms; }
+[data-editing="true"] .toolbar { background: color-mix(in srgb, var(--blue) 9%, transparent); }
 /* 下拉菜单（显示偏好、改动记录） */
 .menu > summary::-webkit-details-marker { display: none; }
 .menu-panel {
@@ -176,12 +195,28 @@ html.hide-credits .card-meta > span[data-meta="credits"] + span:not([data-meta="
 .disclosure::details-content { height: 0; overflow: clip; transition: height 200ms, content-visibility 200ms allow-discrete; }
 .disclosure[open]::details-content { height: auto; }
 
-/* 课程库筛选 */
+/* 课程库筛选：「全部」都显示（排好的变灰）；「未安排」只剩没排的；「必修」只看必修 */
 #library[data-filter="pending"] [data-placed],
 #library[data-filter="pending"] [data-lib-group]:not([data-has-pending]),
 #library[data-filter="pending"] [data-lib-section]:not([data-has-pending]),
-#library[data-filter="required"] [data-lib-group]:not([data-nature="必修"]) { display: none; }
-#library[data-filter="pending"] [data-library]:not(:has([data-has-pending])) [data-all-placed] { display: flex; }
+#library[data-filter="required"] [data-lib-group]:not([data-nature="必修"]),
+#library[data-filter="required"] [data-lib-section]:not(:has([data-nature="必修"])) { display: none; }
+#library[data-filter="pending"] [data-library]:not(:has([data-has-pending])) [data-all-placed] { display: block; }
+
+/* 课程库：宽屏是左侧栏；窄屏变成底部抽屉，收起时露出一条把手（和学期课表一样） */
+.library-caret { transition: transform 200ms; }
+#library[data-open="true"] .library-caret { transform: rotate(180deg); }
+@media (max-width: 1023px) {
+  #library {
+    position: fixed; inset: auto 0 0 0; z-index: 40; max-height: 72dvh; display: flex; flex-direction: column;
+    background: var(--surface); border-top: 1px solid var(--line); border-radius: 12px 12px 0 0;
+    box-shadow: 0 -8px 32px rgb(0 0 0 / .12); transition: transform 240ms cubic-bezier(.2, .8, .2, 1);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  #library[data-open="false"] { transform: translateY(calc(100% - 56px - env(safe-area-inset-bottom))); }
+  #library .library-body { overflow-y: auto; overscroll-behavior: contain; padding: 0 16px 24px; }
+  #library .library-body > :first-child { background: var(--surface); position: sticky; top: 0; }
+}
 
 /* 弹窗：桌面居中淡入；手机从底部滑出 */
 dialog[open] { animation: rise-in 160ms cubic-bezier(.2, .8, .2, 1); }

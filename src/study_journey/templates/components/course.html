@@ -12,34 +12,32 @@ data-card data-cat="{{ c.category }}" data-code="{{ c.code }}"
   {% if card.warning %}data-warning="{{ card.warning }}"{% endif %}
 {% endmacro %}
 
-{% macro course_card(card, show_offered=false) %}
+{# where: board（学期列）/ library（课程库里待安排的课，显示建议学期）/ placed（课程库里已经排好的课，整张卡变灰，写上在哪个学期） #}
+{% macro course_card(card, where='board') %}
 {% set item = card.item %}{% set c = item.course %}{% set allowed = c.allowed_terms %}
-<button type="button" class="course-card w-full rounded-md border px-3 py-2 text-left"
-  {{ course_attrs(card) }} data-drag style="view-transition-name: c-{{ c.code }}"
-  aria-label="{{ c.name }}，{{ c.credits|credits }} 学分，{{ item.status }}{% if item.score is not none %}，成绩 {{ item.score|round(1)|credits }}{% endif %}">
-  <span class="line-clamp-2 block text-sm text-ink">{{ c.name }}</span>
-  <span class="card-meta mt-1 flex flex-wrap items-center gap-x-1.5 text-xs text-ink-2 [&>span]:whitespace-nowrap">
-    <span class="num" data-meta="credits">{{ c.credits|credits }} 学分</span>
-    {% if c.nature != '必修' %}<span data-meta="extra">{{ c.nature }}</span>{% endif %}
-    {% if not c.in_program %}<span data-meta="extra">自选</span>{% endif %}
-    {% if show_offered and allowed|length < 8 %}<span data-meta="extra">建议{{ allowed|stage_range }}</span>{% endif %}
-    {% if card.warning %}<span data-meta="extra" class="inline-flex items-center gap-1 font-medium text-gold" title="{{ card.warning }}">{{ icon('triangle-alert', 12) }}需留意</span>{% endif %}
-    {% if item.status == '正在修读' %}<span data-meta="extra" class="font-medium text-blue">在修</span>{% endif %}
-    {% if item.status == '未通过' %}<span data-meta="extra" class="font-medium text-danger">未通过</span>{% endif %}
-    {% if item.score is not none %}<span data-meta="score" class="num ml-auto text-ink-2">成绩 <b class="font-medium text-ink">{{ item.score|round(1)|credits }}</b></span>{% endif %}
+{% set placed = where == 'placed' %}
+<button type="button" class="course-card w-full rounded-md border px-3 py-2 text-left{{ ' is-placed' if placed }}"
+  {{ course_attrs(card) }} data-drag{% if placed %} data-placed{% else %} style="view-transition-name: c-{{ c.code }}"{% endif %}
+  aria-label="{{ c.name }}，{{ c.credits|credits }} 学分，{% if placed %}{{ item.term|stage }}，{% endif %}{{ item.status }}{% if item.score is not none %}，成绩 {{ item.score|round(1)|credits }}{% endif %}">
+  {% if placed %}
+  <span class="flex items-baseline gap-2">
+    <span class="min-w-0 flex-1 truncate text-sm">{{ c.name }}</span>
+    <span class="shrink-0 text-xs">{{ item.term|stage }} · {{ {'已修读': '已修', '正在修读': '在修', '未通过': '未通过'}.get(item.status, '计划') }}</span>
   </span>
-</button>
-{% endmacro %}
-
-{# 课程库里已经排进某学期的课：一行，名字 + 学分 + 学期 #}
-{% macro course_row(card, group) %}
-{% set item = card.item %}{% set c = item.course %}
-<button type="button" data-lib-row data-group="{{ group }}" {{ course_attrs(card) }}
-  class="flex w-full items-center gap-2 rounded-sm px-1 py-1 text-left text-xs text-ink-2 transition-colors duration-150 hover:bg-fill hover:text-ink"
-  aria-label="{{ c.name }}，{{ item.term|stage }}，{{ item.status }}">
-  {% if item.status == '已修读' %}{{ icon('circle-check', 14, 'text-green') }}{% elif item.status == '正在修读' %}{{ icon('circle-dashed', 14, 'text-blue') }}{% else %}{{ icon('calendar-range', 14) }}{% endif %}
-  <span class="min-w-0 flex-1 truncate">{{ c.name }}</span>
-  <span class="num shrink-0" data-meta="credits">{{ c.credits|credits }} 学分</span>
-  <span class="w-10 shrink-0 text-right">{{ item.term|stage }}</span>
+  {% else %}
+  <span class="line-clamp-2 block text-sm text-ink">{{ c.name }}</span>
+  {# 信息之间用「·」隔开；换行时行首的点被裁掉（见 app.css .card-meta） #}
+  <span class="card-meta mt-1 block overflow-hidden text-xs text-ink-2">
+    <span class="card-meta-row flex flex-wrap items-center">
+      <span class="num" data-meta="credits">{{ c.credits|credits }} 学分</span>
+      {% if c.nature != '必修' %}<span data-meta="extra">{{ c.nature }}</span>{% endif %}
+      {% if not c.in_program %}<span data-meta="extra">自选</span>{% endif %}
+      {% if where == 'library' and allowed|length < 8 %}<span data-meta="extra">建议{{ allowed|stage_range }}</span>{% endif %}
+      {% if item.status == '未通过' %}<span data-meta="extra" class="font-medium text-danger">未通过</span>{% endif %}
+      {% if card.warning %}<span data-meta="extra" class="font-medium text-gold" title="{{ card.warning }}">需留意</span>{% endif %}
+      {% if item.score is not none %}<span data-meta="score" class="num ml-auto">成绩 <b class="font-medium text-ink">{{ item.score|round(1)|credits }}</b></span>{% endif %}
+    </span>
+  </span>
+  {% endif %}
 </button>
 {% endmacro %}

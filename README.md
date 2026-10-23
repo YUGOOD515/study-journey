@@ -13,34 +13,37 @@
 - 项目管理：uv；演示部署：Cloudflare Python Workers
 - 不需要账号，大家在自己电脑上运行
 
-## 本地运行（PowerShell）
+## 本地运行（Git Bash）
 
-```powershell
-uv sync                                             # 安装依赖（含开发工具）
-uv run flask --app study_journey --debug run        # 本地版：http://127.0.0.1:5000
-$env:STUDY_JOURNEY_MODE = "demo"                    # 切到演示数据后再运行上一条
-uv run pytest                                       # 测试
+```bash
+uv sync                                                      # 安装依赖（含开发工具）
+uv run flask --app study_journey --debug run                 # 本地版：http://127.0.0.1:5000
+STUDY_JOURNEY_MODE=demo uv run flask --app study_journey --debug run   # 演示数据
+uv run pytest                                                # 测试
 ```
 
 本地版的数据保存在 `instance/study_journey.sqlite3`（不进 Git）。入学年份默认 2024，可用环境变量 `ENROLLMENT_YEAR` 修改；
-设置 `CLASS_NAME`（如 `$env:CLASS_NAME = "数金2401班"`）后，学期课表会优先选本班的教学班。
+设置 `CLASS_NAME`（如 `export CLASS_NAME=数金2401班`）后，学期课表会优先选本班的教学班。
 
 ## 四年规划
 
-首页左边是**课程库**：按毕业要求分组（通识教育、大类平台、专业教育……），每组显示还差多少学分，待安排的课在前，已安排的折叠成一行。右边是八个学期（大一上 … 大四下），横向滚动，打开时停在本学期；已完成的学期也照常显示。
+顶部是学分摘要：左边是总学分和整体进度，右边五类要求各自的进度和「还差 X」。
 
-- 课程卡用边框和淡底色区分类别；卡片上一定显示课程名，学分、成绩可以在「显示」里关掉（记在浏览器里）
+下面左边是**课程库**：按毕业要求分组（通识教育、大类平台、专业教育……），每组显示还差多少学分。「全部」列出所有课，已经排进学期的变灰并标出学期；「未安排」只看还没排的；「必修」只看必修。手机上课程库是底部抽屉，点一下展开。右边是八个学期（大一上 … 大四下），横向滚动，打开时停在本学期；已完成的学期也照常显示。
+
+- 工具栏：「‹ 本学期 ›」左右翻学期、回到本学期；「卡片显示」里可以关掉学分、成绩（记在浏览器里）
+- 课程卡用边框和淡底色区分类别；卡片上一定显示课程名
 - 平时只看不改：点「编辑」进入编辑模式后才能拖课程换学期（包括已完成的学期），点课程也能选学期、改修读记录（已修读 / 未通过、成绩）
 - 拖到过去的学期算已修读，拖到本学期算正在修读，拖到以后的学期算计划修读，拖回课程库就是待安排
-- 「撤销」（Ctrl / ⌘ + Z）一步步退回；时钟图标列出这次打开以来的改动
+- 编辑时工具栏变成编辑栏：「撤销」（Ctrl / ⌘ + Z）一步步退回，「改动 N」列出这次打开以来的改动，「完成」退出编辑
 - 搜课程名或课程号：同时会搜开课表里培养方案以外的课（通识选修、经法管融通、素质教育、其他专业的课），点一下就能加进某个学期，学分按规则计入对应要求
-- 筛选「未安排」「必修」；每个学期都有「排课表 →」直达那学期的课表
+- 每个学期都有「排课表 →」直达那学期的课表
 
 ## 学期课表
 
 「学期课表」页（`/timetable`）给某学期排进来的每门课选一个教学班，按周一到周日、第 1–12 节排出课表：
 
-- 顶部列出本学期的课：✓ 已选教学班、○ 还没选、! 有冲突、— 开课表里没有
+- 左边列出这学期的课，标签表示状态：「已选」选好了教学班、「未选」还没选、「冲突」时间冲突、「无开课」开课表里没有
 - 点一门课：课表上用虚线框显示它所有可选的上课时间（同一时间的几个班合成一个框），右侧列出教学班，可以只看不冲突的、只看本班的、按教师搜
 - 点课表上的空格：列出那个时间能上、而且和已选的课不冲突的课，按培养方案 / 通识选修 / 经法管融通 / 素质教育 / 其他专业课分组，「加入本学期」会同步加进四年规划
 - 检查时间冲突（同一天、节次重叠、周次重叠才算冲突，前八周 / 后八周的课不算）
@@ -53,13 +56,13 @@ uv run pytest                                       # 测试
 
 样式源文件是 `assets/app.css`（设计 tokens 也在这里），改完重新生成：
 
-```powershell
+```bash
 uv run tailwindcss -i assets/app.css -o public/static/css/app.css --minify   # 开发时加 --watch
 ```
 
 ## 更新培养方案数据
 
-```powershell
+```bash
 uv run --group importers python -m study_journey.services.importers.program_xlsx src_data/培养方案.xlsx src/study_journey/data/program.json
 ```
 
@@ -80,7 +83,7 @@ uv run --group importers python -m study_journey.services.importers.program_xlsx
 
 **维护者：每学期导入一次并提交**
 
-```powershell
+```bash
 # 把新学期的 Excel 放进 src_data/，文件名保留学校原来的（要含「2026-2027学年第1学期」这样的学期信息）
 uv run --group importers flask --app study_journey offerings import src_data --out public/static/data/offerings
 git add public/static/data/offerings
@@ -97,7 +100,7 @@ git commit -m "data: 2026-2027-1 开课数据"
 
 ## Cloudflare 演示部署
 
-```powershell
+```bash
 uv run --group worker pywrangler dev                                             # 用 Cloudflare 本地运行时预览
 uv run --group worker pywrangler versions upload --preview-alias flask-rewrite   # 上传预览版本，不影响线上
 uv run --group worker pywrangler deploy                                          # 合并到主干后正式发布

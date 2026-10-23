@@ -8,7 +8,7 @@
   const reduced = matchMedia("(prefers-reduced-motion: reduce)");
   let filter = "all";
   let query = "";
-  const openPlaced = new Set(); // 用户手动展开的“已安排”列表
+  let libraryOpen = false; // 窄屏：课程库抽屉是否展开
 
   const $ = (sel, el = document) => el.querySelector(sel);
   const $$ = (sel, el = document) => [...el.querySelectorAll(sel)];
@@ -102,10 +102,7 @@
     syncEditing();
   }
   function syncEditing() {
-    const on = root.dataset.editing === "true";
-    const btn = $("[data-edit-toggle]");
-    if (btn) btn.setAttribute("aria-pressed", String(on));
-    if (!on) $$("[data-history]").forEach((d) => (d.open = false));
+    if (root.dataset.editing !== "true") $$("[data-history]").forEach((d) => (d.open = false));
   }
 
   // ---------- 卡片显示偏好（存在 localStorage，名称一定显示） ----------
@@ -142,13 +139,6 @@
       for (const group of $$("[data-lib-group]", section)) {
         group.hidden = Boolean(q) && !$$("[data-card]", group).some((c) => !c.hidden);
       }
-      // 搜索时自动展开有匹配的“已安排”列表，清空搜索后恢复用户自己的展开状态
-      const placed = $("[data-placed]", section);
-      if (placed) {
-        const hitInside = $$("[data-card]", placed).some((c) => !c.hidden);
-        placed.hidden = Boolean(q) && !hitInside;
-        placed.open = q ? hitInside : openPlaced.has(placed.dataset.key);
-      }
       section.hidden = Boolean(q) && !sectionHit;
       any ||= sectionHit;
     }
@@ -166,11 +156,14 @@
     } catch { /* 搜不到开课表就只显示课程库里的结果 */ }
   }
 
-  document.addEventListener("toggle", (e) => {
-    const el = e.target;
-    if (!el.matches?.("[data-placed]") || query) return;
-    if (el.open) openPlaced.add(el.dataset.key); else openPlaced.delete(el.dataset.key);
-  }, true);
+  // ---------- 窄屏：课程库是底部抽屉 ----------
+  function setLibrary(open) {
+    libraryOpen = open;
+    const lib = $("#library");
+    if (!lib) return;
+    lib.dataset.open = String(open);
+    $("[data-library-toggle]", lib)?.setAttribute("aria-expanded", String(open));
+  }
 
   document.addEventListener("input", (e) => {
     if (!e.target.matches("[data-search]")) return;
@@ -305,6 +298,7 @@
     // 点菜单外面关掉菜单
     $$("details.menu[open]").forEach((m) => { if (!m.contains(e.target)) m.open = false; });
     if (e.target.closest("[data-edit-toggle]")) return setEditing(root.dataset.editing !== "true");
+    if (e.target.closest("[data-library-toggle]")) return setLibrary(!libraryOpen);
     if (e.target.closest("[data-undo]")) return undo();
     const chip = e.target.closest("[data-filter-chip]");
     if (chip) { filter = chip.dataset.filterChip; applyFilter(); return; }
@@ -327,11 +321,6 @@
     if (e.key === "Escape") $$("details.menu[open]").forEach((m) => (m.open = false));
   });
 
-  function measure() {
-    const summary = $("[data-summary]");
-    if (summary) root.style.setProperty("--summary-h", `${summary.offsetHeight}px`);
-  }
-
   function init() {
     const input = $("[data-search]");
     if (input) input.value = query;
@@ -339,12 +328,12 @@
     syncEditing();
     syncPrefs();
     renderHistory();
-    measure();
+    setLibrary(libraryOpen);
     updateEdges();
   }
 
   init();
   jumpToCurrent(false);
   updateEdges();
-  addEventListener("resize", () => { measure(); updateEdges(); });
+  addEventListener("resize", updateEdges);
 })();

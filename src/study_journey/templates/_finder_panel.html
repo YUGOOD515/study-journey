@@ -3,7 +3,7 @@
 <div data-finder-panel class="mt-3">
   {% if finder.day %}
   <p class="flex items-center gap-2 rounded-md border border-blue/40 bg-blue/5 py-1 pl-2.5 pr-1 text-xs">
-    {{ icon('clock', 14, 'text-blue') }}<span id="finder-title" class="min-w-0 flex-1 font-medium text-ink">{{ finder.title }}</span>
+    <span id="finder-title" class="min-w-0 flex-1 font-medium text-ink">{{ finder.title }}</span>
     <a href="{{ url_for('timetable.show', term=table.term, week=table.week, find=1) }}" data-nav aria-label="不限时间"
        class="inline-flex size-6 items-center justify-center rounded-sm text-ink-2 transition-colors hover:bg-fill hover:text-ink">{{ icon('x', 14) }}</a>
   </p>

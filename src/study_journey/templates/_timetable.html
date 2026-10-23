@@ -17,10 +17,10 @@
 {% set conflicted = table.rows|selectattr('conflicts')|list %}
 <div id="timetable" data-term="{{ table.term }}" data-week="{{ table.week or '' }}" data-mode="{{ mode }}"
      data-pick="{{ pick.row.item.course.code if pick else '' }}">
-  <section class="mt-12 flex flex-wrap items-end justify-between gap-6 [&>*]:min-w-0">
+  <section class="mt-8 flex flex-wrap items-end justify-between gap-6 [&>*]:min-w-0">
     <div>
-      <h1 class="font-serif text-xl font-semibold sm:text-2xl">{{ table.term|stage }}课表 <span class="num text-lg font-normal text-ink-2">{{ table.label }}</span></h1>
-      <p class="mt-2 text-sm text-ink-2">
+      <h1 class="font-serif text-xl font-semibold">{{ table.term|stage }}课表 <span class="num text-base font-normal text-ink-2">{{ table.label }}{% if table.term == calendar.current_term %} · 本学期{% endif %}</span></h1>
+      <p class="mt-1 text-sm text-ink-2">
         <span class="num text-ink">{{ table.rows|length }}</span> 门课，<span class="num text-ink">{{ table.credits|credits }}</span> 学分{% if table.my_class %}。按 {{ table.my_class }} 优先选本班的教学班{% endif %}
       </p>
     </div>
@@ -28,9 +28,10 @@
       <ol class="flex gap-1 rounded-md bg-fill p-1 text-xs">
         {% for t in range(1, 9) %}
         <li><a href="{{ url_for('timetable.show', term=t) }}" data-nav data-term-link
-               class="seg block whitespace-nowrap rounded-sm px-3 py-1.5 text-ink-2 transition-colors duration-150 hover:text-ink"
+               class="seg block whitespace-nowrap rounded-sm px-3 py-1.5 transition-colors duration-150 hover:text-ink {{ 'font-medium text-blue' if t == calendar.current_term else 'text-ink-2' }}"
+               {% if t == calendar.current_term %}title="本学期"{% endif %}
                {% if t == table.term %}aria-current="page" aria-selected="true"{% endif %}>
-          {{ t|stage }}{% if t == calendar.current_term %}<span class="ml-1 text-blue" title="本学期">·</span>{% endif %}
+          {{ t|stage }}{% if t == calendar.current_term %}<span class="sr-only">（本学期）</span>{% endif %}
         </a></li>
         {% endfor %}
       </ol>
@@ -41,9 +42,9 @@
   <p role="alert" class="mt-6 flex items-center gap-2 rounded-md border border-danger/30 bg-surface px-4 py-3 text-sm text-danger">{{ icon('triangle-alert') }}{{ error }}</p>
   {% endif %}
   {% if not table.semester %}
-  <p class="mt-6 flex items-center gap-2 rounded-md border border-line bg-surface px-4 py-3 text-sm text-ink-2">{{ icon('info') }}还没有{{ table.label }}及往年同季学期的开课数据，暂时排不了课表。</p>
+  <p class="mt-6 flex items-center gap-2 rounded-md border border-line bg-surface px-4 py-3 text-sm text-ink-2">还没有{{ table.label }}及往年同季学期的开课数据，暂时排不了课表。</p>
   {% elif table.is_reference %}
-  <p class="mt-6 flex items-center gap-2 rounded-md border border-line bg-surface px-4 py-3 text-sm text-ink-2">{{ icon('info') }}{{ table.label }}的开课表还没发布，下面按 {{ table.semester.label }} 的开课情况试排，仅供参考。</p>
+  <p class="mt-6 flex items-center gap-2 rounded-md border border-line bg-surface px-4 py-3 text-sm text-ink-2">{{ table.label }}的开课表还没发布，下面按 {{ table.semester.label }} 的开课情况试排，仅供参考。</p>
   {% endif %}
 
   <div class="mt-8 grid items-start gap-8 lg:grid-cols-[320px_minmax(0,1fr)] xl:grid-cols-[340px_minmax(0,1fr)]">
@@ -53,23 +54,23 @@
       <button type="button" data-sheet-toggle aria-controls="tt-side-body" aria-expanded="{{ 'true' if panel else 'false' }}"
               class="tt-sheet-handle relative flex h-14 w-full shrink-0 items-center gap-2 px-6 pt-2 text-left text-sm lg:hidden">
         <span class="absolute left-1/2 top-2 h-1 w-9 -translate-x-1/2 rounded-full bg-line" aria-hidden="true"></span>
-        <span class="font-medium text-ink">本学期的课</span>
+        <span class="font-semibold text-ink">这学期的课</span>
         <span class="num min-w-0 flex-1 truncate text-xs text-ink-2">{{ table.rows|length }} 门{% if table.unplaced %} · {{ table.unplaced|length }} 未选{% endif %}{% if conflicted %} · <span class="text-gold">{{ conflicted|length }} 冲突</span>{% endif %}</span>
         {{ icon('chevron-up', 18, 'tt-sheet-caret text-ink-2') }}
       </button>
 
       <div id="tt-side-body" class="tt-side-body" data-side-body>
-        <div class="flex items-baseline justify-between gap-4 border-t-2 border-ink pt-3 max-lg:hidden">
-          <h2 id="side-title" class="font-serif text-lg font-semibold">本学期的课</h2>
+        <div class="flex h-8 items-center justify-between gap-4 max-lg:hidden">
+          <h2 id="side-title" class="text-base font-semibold">这学期的课</h2>
           <span class="num text-xs text-ink-2">{{ table.rows|length }} 门 · {{ table.credits|credits }} 学分</span>
         </div>
 
         {% if can_find %}
         <div class="mt-3 flex gap-1 rounded-md bg-fill p-1 max-lg:mt-0" role="tablist" aria-label="侧栏内容">
           <a href="{{ here }}" data-nav role="tab" aria-selected="{{ 'false' if finder else 'true' }}"
-             class="seg flex flex-1 items-center justify-center gap-1.5 rounded-sm px-3 py-1 text-xs text-ink-2 transition-colors duration-150 hover:text-ink">{{ icon('list-checks', 14) }}课程</a>
+             class="seg flex h-7 flex-1 items-center justify-center rounded-sm px-3 text-xs text-ink-2 transition-colors duration-150 hover:text-ink">课程</a>
           <a href="{{ here if finder and not slot else url_for('timetable.show', term=table.term, week=table.week, find=1) }}" data-nav role="tab" aria-selected="{{ 'true' if finder else 'false' }}"
-             class="seg flex flex-1 items-center justify-center gap-1.5 rounded-sm px-3 py-1 text-xs text-ink-2 transition-colors duration-150 hover:text-ink">{{ icon('search', 14) }}找课</a>
+             class="seg flex h-7 flex-1 items-center justify-center rounded-sm px-3 text-xs text-ink-2 transition-colors duration-150 hover:text-ink">找课</a>
         </div>
         {% endif %}
 
@@ -81,13 +82,13 @@
         <div class="mt-3 flex flex-wrap items-center gap-2">
           {% if table.unplaced %}
           <form method="post" action="{{ url_for('timetable.auto') }}" data-fragment>{{ hidden_fields(table) }}
-            <button class="{{ button_class('primary', 'sm') }}" title="只给还没选的课挑教学班：先避开冲突，再尽量选本班的">{{ icon('wand-sparkles', 14) }}自动排课</button>
+            <button class="{{ button_class('primary') }}" title="只给还没选的课挑教学班：先避开冲突，再尽量选本班的">自动排课</button>
           </form>
           <span class="num text-xs text-ink-2">{{ table.unplaced|length }} 门还没选教学班</span>
           {% endif %}
           {% if table.chosen %}
           <form method="post" action="{{ url_for('timetable.clear') }}" data-fragment class="ml-auto">{{ hidden_fields(table) }}
-            <button class="{{ button_class('ghost', 'sm') }}" title="清空这个学期已选的教学班">{{ icon('eraser', 14) }}清空已选</button>
+            <button class="{{ button_class('ghost') }} -mr-2" title="清空这个学期已选的教学班">清空已选</button>
           </form>
           {% endif %}
         </div>
@@ -120,25 +121,23 @@
             <a href="{{ here if active else url_for('timetable.show', term=table.term, week=table.week, pick=c.code) }}" data-nav
                aria-expanded="{{ 'true' if active else 'false' }}"
                class="flex items-start gap-2.5 rounded-md px-2.5 py-2 transition-colors duration-150 {{ '' if active else 'hover:bg-surface' }}">
-              <span class="mt-0.5 {{ {'none': 'text-ink-2', 'conflict': 'text-gold', 'done': 'text-green', 'todo': 'text-ink-2'}[state] }}"
-                    title="{{ {'none': '开课表里没有这门课', 'conflict': '时间冲突', 'done': '已选教学班', 'todo': '还没选教学班'}[state] }}">
-                {{ icon({'none': 'circle-minus', 'conflict': 'triangle-alert', 'done': 'circle-check', 'todo': 'circle-dashed'}[state]) }}
-                <span class="sr-only">{{ {'none': '开课表里没有', 'conflict': '时间冲突', 'done': '已选教学班', 'todo': '未选教学班'}[state] }}</span>
-              </span>
+              <span class="cat-bar" aria-hidden="true"></span>
               <span class="min-w-0 flex-1">
                 <span class="flex items-baseline gap-2">
-                  <span class="dot dot-required mt-0 self-center" aria-hidden="true"></span>
                   <span class="min-w-0 flex-1 truncate font-medium {{ 'text-ink-2' if state == 'none' else 'text-ink' }}">{{ c.name }}</span>
-                  <span class="num shrink-0 text-xs text-ink-2">{{ c.credits|credits }} 学分</span>
+                  {{ badge({'none': '无开课', 'conflict': '冲突', 'done': '已选', 'todo': '未选'}[state], {'none': 'neutral', 'conflict': 'gold', 'done': 'green', 'todo': 'blue'}[state]) }}
                 </span>
-                <span class="num mt-0.5 block truncate text-xs {{ 'text-gold' if state == 'conflict' else 'text-ink-2' }}">
+                <span class="num mt-0.5 flex gap-2 text-xs {{ 'text-gold' if state == 'conflict' else 'text-ink-2' }}">
+                  <span class="min-w-0 flex-1 truncate">
                   {%- if state == 'none' %}开课表里没有{% if c.category == 'practice_education' %}（实践类）{% endif %}
                   {%- elif state == 'conflict' %}和「{{ r.conflicts|join('」「') }}」冲突
                   {%- elif state == 'done' %}{{ r.chosen.teacher_label }} · {{ times or r.chosen.platform or '不排时间' }}
                   {%- else %}{{ r.sections|length }} 个教学班可选{% if r.mine %}，有本班{% endif %}{% endif -%}
+                  </span>
+                  <span class="shrink-0 text-ink-2">{{ c.credits|credits }} 学分</span>
                 </span>
               </span>
-              {{ icon('chevron-down', 16, 'tt-course-caret mt-0.5 text-ink-2') }}
+              {{ icon('chevron-down', 16, 'tt-course-caret mt-0.5 shrink-0 text-ink-2') }}
             </a>
             {% if active %}
             <div class="tt-pick px-2.5 pb-3">{% include "_pick.html" %}</div>
@@ -153,27 +152,28 @@
     {# ---------- 周课表 ---------- #}
     <section class="min-w-0" aria-labelledby="grid-title">
       <div class="flex flex-wrap items-center justify-between gap-3">
-        <h2 id="grid-title" class="font-serif text-lg font-semibold">{{ '第 %d 周'|format(table.week) if table.week else '全部周次' }}</h2>
+        <h2 id="grid-title" class="text-base font-semibold">{{ '第 %d 周'|format(table.week) if table.week else '全部周次' }}</h2>
         <form method="get" action="{{ url_for('timetable.show') }}" class="flex items-center gap-1 text-xs" data-week-form>
           <input type="hidden" name="term" value="{{ table.term }}">
           {% if pick %}<input type="hidden" name="pick" value="{{ pick.row.item.course.code }}">{% endif %}
           {% set prev = (table.week - 1) if table.week and table.week > 1 else none %}
           {% set next = (table.week + 1) if table.week and table.week < table.max_week else (1 if not table.week else none) %}
           {% set keep = {'pick': pick.row.item.course.code} if pick else {} %}
-          <a {% if prev %}href="{{ url_for('timetable.show', term=table.term, week=prev, **keep) }}"{% else %}aria-disabled="true"{% endif %} data-nav aria-label="上一周"
-             class="{{ icon_button_class() }} {{ '' if prev else 'pointer-events-none opacity-30' }}">{{ icon('chevron-left') }}</a>
-          <label class="sr-only" for="week-select">周次</label>
-          <select id="week-select" name="week" class="num h-8 rounded-md border border-line bg-surface px-2 transition-colors hover:border-ink-2">
-            <option value="" {% if not table.week %}selected{% endif %}>全部周次</option>
-            {% for w in range(1, table.max_week + 1) %}<option value="{{ w }}" {% if table.week == w %}selected{% endif %}>第 {{ w }} 周</option>{% endfor %}
-          </select>
-          <a {% if next %}href="{{ url_for('timetable.show', term=table.term, week=next, **keep) }}"{% else %}aria-disabled="true"{% endif %} data-nav aria-label="下一周"
-             class="{{ icon_button_class() }} {{ '' if next else 'pointer-events-none opacity-30' }}">{{ icon('chevron-right') }}</a>
+          <div class="btn-group flex items-center" role="group" aria-label="周次">
+            <a {% if prev %}href="{{ url_for('timetable.show', term=table.term, week=prev, **keep) }}"{% else %}aria-disabled="true"{% endif %} data-nav aria-label="上一周"
+               class="btn-group-item w-8">{{ icon('chevron-left') }}</a>
+            <label class="sr-only" for="week-select">周次</label>
+            <select id="week-select" name="week" class="btn-group-item num h-full cursor-pointer bg-transparent px-2 text-ink">
+              <option value="" {% if not table.week %}selected{% endif %}>全部周次</option>
+              {% for w in range(1, table.max_week + 1) %}<option value="{{ w }}" {% if table.week == w %}selected{% endif %}>第 {{ w }} 周</option>{% endfor %}
+            </select>
+            <a {% if next %}href="{{ url_for('timetable.show', term=table.term, week=next, **keep) }}"{% else %}aria-disabled="true"{% endif %} data-nav aria-label="下一周"
+               class="btn-group-item w-8">{{ icon('chevron-right') }}</a>
+          </div>
           <button class="{{ button_class('secondary', 'sm') }} [.js_&]:hidden">查看</button>
         </form>
       </div>
-      <p class="mt-2 flex items-center gap-1.5 text-xs text-ink-2">
-        {{ icon('info', 14) }}
+      <p class="mt-1 text-xs text-ink-2">
         {% if pick and pick.groups %}<span>虚线框是「{{ pick.row.item.course.name }}」可选的上课时间，点一下就能选；金色虚线会和已选的课冲突。</span>
         {% elif can_find %}<span>点课块调整教学班；点空白的格子，看看那个时间还能上什么课。</span>
         {% else %}<span>点课块调整教学班。</span>{% endif %}
@@ -242,7 +242,7 @@
         </div>
       </div>
       {% if not table.blocks.values()|select|list and table.rows %}
-      <p class="mt-4 flex items-center gap-2 text-sm text-ink-2">{{ icon('calendar-range') }}{{ '这一周没有课。' if table.week else '还没有选教学班。点侧栏里的课程挑一个，或者点「自动排课」。' }}</p>
+      <p class="mt-4 text-sm text-ink-2">{{ '这一周没有课。' if table.week else '还没有选教学班。点侧栏里的课程挑一个，或者点「自动排课」。' }}</p>
       {% endif %}
     </section>
   </div>

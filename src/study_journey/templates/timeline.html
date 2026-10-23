@@ -12,7 +12,7 @@
   {% endif %}
   {% if not is_demo %}
   <form method="post" action="{{ url_for('offerings.update') }}">
-    <button class="{{ button_class('ghost', 'sm') }} text-blue">{{ icon('refresh-cw', 14) }}检查开课数据更新</button>
+    <button class="{{ button_class('secondary', 'sm') }}">检查开课数据更新</button>
   </form>
   {% endif %}
 </footer>
@@ -48,7 +48,7 @@
       </div>
     </fieldset>
     <div data-show="view-hint" class="mt-6 flex items-center justify-between gap-3 rounded-md bg-fill px-3 py-2 text-xs text-ink-2">
-      <span class="flex items-center gap-2">{{ icon('lock', 14) }}进入编辑模式后，可以调整学期和修读记录。</span>
+      <span>进入编辑模式后，可以调整学期和修读记录。</span>
       <button type="button" data-edit-from-dialog class="{{ button_class('secondary', 'sm') }}">{{ icon('pencil', 14) }}编辑</button>
     </div>
     <dl class="mt-6 grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 border-t border-line pt-4 text-sm">

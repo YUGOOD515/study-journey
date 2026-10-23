@@ -22,8 +22,8 @@
 <body class="min-h-screen">
   <script>document.documentElement.classList.add("js")</script>
   {% if is_demo %}
-  <div class="border-b border-line bg-surface">
-    <div class="mx-auto flex max-w-[1440px] flex-wrap items-center justify-between gap-x-6 gap-y-2 px-6 py-2 text-xs text-ink-2 lg:px-12">
+  <div class="bg-fill">
+    <div class="mx-auto flex max-w-[1440px] flex-wrap items-center justify-between gap-x-6 gap-y-1 px-6 py-1.5 text-xs text-ink-2 lg:px-12">
       <p>这是演示数据。你可以随意调整课程安排，改动只保存在当前浏览器里。</p>
       <form method="post" action="{{ url_for('timeline.reset') }}">
         <button class="font-medium text-blue underline-offset-4 hover:underline">恢复初始安排</button>
@@ -31,16 +31,19 @@
     </div>
   </div>
   {% endif %}
-  <header class="mx-auto flex max-w-[1440px] flex-wrap items-baseline justify-between gap-x-6 gap-y-2 px-6 pt-8 lg:px-12">
-    <div class="flex items-baseline gap-8">
-      <a href="/" class="font-serif text-lg font-semibold tracking-wide">学旅</a>
-      <nav class="flex gap-6 text-sm" aria-label="主要页面">
-        {% set here = request.endpoint or '' %}
-        <a href="{{ url_for('timeline.index') }}" class="{{ 'font-medium text-ink' if here.startswith('timeline.') else 'text-ink-2 hover:text-ink' }}"{% if here.startswith('timeline.') %} aria-current="page"{% endif %}>四年规划</a>
-        <a href="{{ url_for('timetable.show') }}" class="{{ 'font-medium text-ink' if here.startswith('timetable.') else 'text-ink-2 hover:text-ink' }}"{% if here.startswith('timetable.') %} aria-current="page"{% endif %}>学期课表</a>
+  {# 顶栏：品牌 + 两个页面标签（下划线表示当前页）+ 专业信息。整站只有这一处导航。 #}
+  {% set here = request.endpoint or '' %}
+  <header class="border-b border-line bg-surface">
+    <div class="mx-auto flex h-14 max-w-[1440px] items-stretch gap-6 px-6 lg:px-12">
+      <a href="/" class="flex items-center font-serif text-lg font-semibold tracking-wide">学旅</a>
+      <nav class="flex items-stretch gap-1" aria-label="主要页面">
+        {% for endpoint, prefix, label in [('timeline.index', 'timeline.', '四年规划'), ('timetable.show', 'timetable.', '学期课表')] %}
+        {% set on = here.startswith(prefix) %}
+        <a href="{{ url_for(endpoint) }}" class="nav-tab flex items-center px-3 text-sm {{ 'is-current font-medium text-ink' if on else 'text-ink-2 hover:text-ink' }}"{% if on %} aria-current="page"{% endif %}>{{ label }}</a>
+        {% endfor %}
       </nav>
+      <p class="ml-auto hidden items-center text-xs text-ink-2 sm:flex">{{ catalog.program }} · 现在是{{ calendar.current_term|stage }}</p>
     </div>
-    <p class="text-xs text-ink-2">{{ catalog.program }}，第 {{ calendar.current_term }} 学期</p>
   </header>
   <main class="mx-auto max-w-[1440px] px-6 pb-24 lg:px-12">
     {% for category, message in get_flashed_messages(with_categories=true) %}
