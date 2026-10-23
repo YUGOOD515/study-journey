@@ -1,7 +1,7 @@
 // 时间轴交互：拖拽排课（SortableJS）+ 点击课程打开详情选择学期。
 // 页面由服务器渲染；每次改动后服务器返回新的 #workspace 片段，这里直接替换。
 (() => {
-  const { currentTerm, moveUrl } = window.PLAN;
+  const { currentTerm, moveUrl, sectionsUrl } = window.PLAN;
   const dialog = document.getElementById("course-dialog");
   let sortables = [];
 
@@ -44,6 +44,23 @@
     dialog.querySelectorAll(`[data-show="${name}"]`).forEach((el) => (el.hidden = !visible));
   }
 
+  // 开课情况由服务器渲染成片段，打开弹窗时再取，避免首页带上全部教学班
+  let sectionsRequest = 0;
+  async function loadSections(code, term) {
+    const box = field("sections");
+    const id = ++sectionsRequest;
+    box.innerHTML = '<p class="border-t border-line pt-4 text-xs text-ink-2">正在读取开课情况…</p>';
+    try {
+      const url = sectionsUrl.replace("__CODE__", encodeURIComponent(code)) + (term ? `?term=${term}` : "");
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(res.status);
+      const html = await res.text();
+      if (id === sectionsRequest) box.innerHTML = html;
+    } catch {
+      if (id === sectionsRequest) box.innerHTML = '<p class="border-t border-line pt-4 text-xs text-ink-2">开课情况暂时读取不到。</p>';
+    }
+  }
+
   function open(card) {
     const d = card.dataset;
     for (const key of ["name", "credits", "nature", "offered", "status", "score", "warning"]) {
@@ -74,6 +91,7 @@
       });
       terms.append(btn);
     }
+    loadSections(d.code, d.term);
     dialog.showModal();
   }
 

@@ -5,7 +5,8 @@ from flask import Blueprint, current_app, redirect, render_template, request, ur
 from ..models import progress, timeline
 from ..models.catalog import load_catalog
 from ..models.plan import MoveError
-from . import repository
+from ..models.offerings import semester_label
+from . import offering_store, published_offerings, repository
 
 bp = Blueprint("timeline", __name__)
 
@@ -18,9 +19,14 @@ def context() -> dict:
         "catalog": catalog,
         "calendar": repo.calendar,
         "progress": progress.compute(items, catalog),
-        "timeline": timeline.build(items, repo.calendar),
+        "timeline": timeline.build(items, repo.calendar, published_offerings(repo.calendar)),
         "is_demo": current_app.config["MODE"] == "demo",
+        "offering_semesters": offering_semesters(),
     }
+
+
+def offering_semesters() -> list[dict]:
+    return [dict(e, label=semester_label(e["semester"])) for e in offering_store().semesters()]
 
 
 @bp.get("/")

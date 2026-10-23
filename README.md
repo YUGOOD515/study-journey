@@ -17,7 +17,6 @@
 
 ```powershell
 uv sync                                             # 安装依赖（含开发工具）
-$env:PYTHONPATH = "src"
 uv run flask --app study_journey --debug run        # 本地版：http://127.0.0.1:5000
 $env:STUDY_JOURNEY_MODE = "demo"                    # 切到演示数据后再运行上一条
 uv run pytest                                       # 测试
@@ -41,6 +40,36 @@ uv run --group importers python -m study_journey.services.importers.program_xlsx
 
 导入器只导出培养方案本身，不导出表格里的完成学期、成绩、意愿度等个人字段。
 
+## 开课数据
+
+学校每学期在官网公开发布开课 Excel（一学期 2～3 份：本科生选课、补退选、通识/经法管融通/素质教育课程一览表）。
+它和个人数据分开存放：
+
+| | 个人数据 | 开课数据 |
+|---|---|---|
+| 内容 | 培养方案、成绩、自己的规划 | 每学期开哪些课、教学班、时间、教师 |
+| 来源 | 自己用脚本从教务系统获取 | 学校公开发布，维护者每学期统一导入 |
+| 存放 | `instance/`，只在自己电脑上 | 仓库自带 `public/static/data/offerings/`；本机下载或导入的放 `instance/offerings/` |
+
+两处都有同一学期时，取更新日期较新的那份。课程详情里会列出该学期的教学班；某学期的开课表还没发布时，用最近一个同季学期作参考。
+
+**维护者：每学期导入一次并提交**
+
+```powershell
+# 把新学期的 Excel 放进 src_data/，文件名保留学校原来的（要含「2026-2027学年第1学期」这样的学期信息）
+uv run --group importers flask --app study_journey offerings import src_data --out public/static/data/offerings
+git add public/static/data/offerings
+git commit -m "data: 2026-2027-1 开课数据"
+```
+
+每个学期生成一个 JSON，`manifest.json` 记录各学期的版本指纹；内容没变的学期不会重写。「有课表课程」是个人课表导出，导入时会跳过。
+
+**使用者：更新开课数据**（任选一种）
+
+- `git pull`：连同代码一起更新
+- 页面底部「检查开课数据更新」，或 `uv run flask --app study_journey offerings update`：从 jsDelivr / GitHub 下载新数据到 `instance/offerings/`，下载后校验指纹
+- 自己导入学校的 Excel：`uv run --group importers flask --app study_journey offerings import <文件夹>`（默认写到 `instance/offerings/`）
+
 ## Cloudflare 演示部署
 
 ```powershell
@@ -56,13 +85,15 @@ uv run --group worker pywrangler deploy                                         
 ├─ wrangler.jsonc            # Cloudflare 演示版配置
 ├─ assets/app.css            # Tailwind 源文件与设计 tokens
 ├─ public/static/            # 生成的 CSS、JS、第三方库（Cloudflare 直接返回）
+│  └─ data/offerings/        # 各学期开课数据（公开，演示版和下载更新都用这里）
 ├─ src/
 │  ├─ worker.py              # Cloudflare 入口（演示模式）
 │  └─ study_journey/
 │     ├─ models/             # Model：培养方案、计划、学分进度、时间轴、数据仓库
 │     ├─ controllers/        # Controller：Flask 路由
 │     ├─ templates/          # View：Jinja 页面与组件
-│     ├─ services/importers/ # 学校数据导入
+│     ├─ services/importers/ # 学校数据导入（培养方案、开课 Excel）
+│     ├─ services/offerings_sync.py # 本地版下载开课数据
 │     └─ data/               # 培养方案与演示数据（JSON）
 ├─ tests/
 ├─ fetch/、scripts/          # 原有 Python 抓取与导入脚本，后续并入 services/

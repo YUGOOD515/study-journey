@@ -12,5 +12,7 @@ class Config:
     SECRET_KEY = os.environ.get("SECRET_KEY", "dev-only-not-secret")
     DATABASE = Path(os.environ.get("STUDY_JOURNEY_DB", ROOT / "instance" / "study_journey.sqlite3"))
     ENROLLMENT_YEAR = int(os.environ.get("ENROLLMENT_YEAR", "2024"))
+    # 开课数据：先找本机下载/导入的（instance/offerings），再找仓库自带的
+    OFFERINGS_DIRS = [ROOT / "instance" / "offerings", ROOT / "public" / "static" / "data" / "offerings"]
     SESSION_COOKIE_SAMESITE = "Lax"
     SESSION_COOKIE_SECURE = MODE == "demo"

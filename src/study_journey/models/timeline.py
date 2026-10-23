@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .catalog import CATEGORY_ORDER, TERMS
+from .offerings import Semester
 from .plan import Calendar, PlanItem
 
 NATURE_ORDER = {"必修": 0, "选修": 1, "经法管融通": 2, "跨专业": 3}
@@ -39,10 +40,19 @@ def sort_key(item: PlanItem):
     return (CATEGORY_ORDER.index(c.category), NATURE_ORDER.get(c.nature, 9), c.code)
 
 
-def warning_for(item: PlanItem, terms: dict[str, int | None], names: dict[str, str]) -> str | None:
+def warning_for(
+    item: PlanItem,
+    terms: dict[str, int | None],
+    names: dict[str, str],
+    offerings: dict[int, Semester] | None = None,
+) -> str | None:
     if item.locked or item.term is None:
         return None
     notes = []
+    semester = (offerings or {}).get(item.term)
+    # 实践类课程（军训、实习、论文）不在选课表里，不提示
+    if semester and item.course.category != "practice_education" and not semester.offers(item.course.code):
+        notes.append(f"{semester.label}的开课表里没有找到这门课")
     allowed = item.course.allowed_terms
     if item.term not in allowed:
         notes.append(f"培养方案建议在第 {allowed[0]}{'–' + str(allowed[-1]) if len(allowed) > 1 else ''} 学期修读")
@@ -54,12 +64,13 @@ def warning_for(item: PlanItem, terms: dict[str, int | None], names: dict[str, s
     return "；".join(notes) or None
 
 
-def build(items: list[PlanItem], calendar: Calendar) -> Timeline:
+def build(items: list[PlanItem], calendar: Calendar, offerings: dict[int, Semester] | None = None) -> Timeline:
+    """offerings：{学期序号: 该学期开课数据}，只放已经发布了开课表的学期。"""
     terms = {i.course.code: i.term for i in items}
     names = {i.course.code: i.course.name for i in items}
     by_term: dict[int | None, list[Card]] = {}
     for item in sorted(items, key=sort_key):
-        by_term.setdefault(item.term, []).append(Card(item, warning_for(item, terms, names)))
+        by_term.setdefault(item.term, []).append(Card(item, warning_for(item, terms, names, offerings)))
     columns = [
         TermColumn(
             term=t,

@@ -35,6 +35,11 @@ class Calendar:
         start = self.enrollment_year + (term - 1) // 2
         return f"{start} 秋" if term % 2 else f"{start + 1} 春"
 
+    def semester_id(self, term: int) -> str:
+        """第 term 学期对应的学校学期编号，如 2024 级第 5 学期 → '2026-2027-1'。"""
+        start = self.enrollment_year + (term - 1) // 2
+        return f"{start}-{start + 1}-{1 if term % 2 else 2}"
+
     def year_label(self, year_index: int) -> str:
         start = self.enrollment_year + year_index
         return f"{start}–{start + 1}"

@@ -23,6 +23,9 @@
     <p class="text-xs text-ink-2">{{ catalog.program }}，第 {{ calendar.current_term }} 学期</p>
   </header>
   <main class="mx-auto max-w-[1440px] px-6 pb-24 lg:px-12">
+    {% for category, message in get_flashed_messages(with_categories=true) %}
+    <p role="status" class="mt-6 rounded-md border {{ 'border-danger/30 text-danger' if category == 'error' else 'border-line text-ink' }} bg-surface px-4 py-3 text-sm">{{ message }}</p>
+    {% endfor %}
     {% block content %}{% endblock %}
   </main>
   {% block scripts %}{% endblock %}

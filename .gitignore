@@ -50,3 +50,7 @@ python_modules/
 node_modules/
 src/vendor/
 pylock.toml
+
+# 个人数据：培养方案（含成绩）、个人课表导出
+src_data/培养方案*.xlsx
+src_data/*有课表课程*

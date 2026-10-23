@@ -1,0 +1,51 @@
+{# 课程详情弹窗里的「开课情况」。由 /courses/<code>/sections 返回，timeline.js 插入弹窗。 #}
+<section aria-labelledby="sections-title">
+  <div class="flex items-baseline justify-between gap-4 border-t border-line pt-4">
+    <h3 id="sections-title" class="text-sm font-medium">{{ wanted_label }}开课情况</h3>
+    {% if sections %}<span class="num text-xs text-ink-2">{{ sections|length }} 个教学班</span>{% endif %}
+  </div>
+
+  {% if not semester %}
+  <p class="mt-2 text-xs leading-[1.7] text-ink-2">还没有{{ wanted_label }}及往年同季学期的开课数据。</p>
+  {% else %}
+    {% if is_reference %}
+    <p class="mt-2 text-xs leading-[1.7] text-ink-2">{{ wanted_label }}的开课表还没发布，下面是{{ semester.label }}的情况，仅供参考。</p>
+    {% endif %}
+    {% if offered and offered.module(module_version) %}
+    <p class="mt-2 text-xs text-ink-2">所属模块：<span class="text-ink">{{ offered.module(module_version) }}</span></p>
+    {% endif %}
+    {% if not sections %}
+    <p class="mt-2 text-xs leading-[1.7] text-ink-2">{{ semester.label }}的开课表里{% if is_reference %}也{% endif %}没有找到这门课{% if course and course.category == 'practice_education' %}（实践类课程一般不在选课表里）{% endif %}。</p>
+    {% else %}
+    <ol class="mt-3 max-h-[min(320px,40vh)] divide-y divide-line overflow-y-auto overscroll-contain rounded-md border border-line">
+      {% for s in sections %}
+      <li class="px-3 py-2 text-xs {{ 'text-ink-2' if s.closed else '' }}">
+        <div class="flex items-baseline gap-2">
+          <span class="num w-8 flex-none text-ink-2">{{ s.seq }}</span>
+          <span class="min-w-0 flex-1 truncate text-sm {{ 'text-ink-2' if s.closed else 'text-ink' }}">{{ s.teachers|join('、') or (s.platform or '教师待定') }}</span>
+          {% if s.campus %}<span class="flex-none text-ink-2">{{ s.campus|replace('校区', '') }}</span>{% endif %}
+        </div>
+        <div class="ml-10 mt-1 space-y-0.5 text-ink-2">
+          {% for m in s.meetings %}
+          <p class="num">{{ m.label }}{% if m.location %} · {{ m.location }}{% endif %}</p>
+          {% else %}
+          <p>上课时间待定</p>
+          {% endfor %}
+          {% if s.classes %}<p class="truncate" title="{{ s.classes|join('、') }}">{{ s.classes|join('、') }}</p>{% endif %}
+          {% set tags = [] %}
+          {% if s.closed %}{% set _ = tags.append('选课关闭') %}{% endif %}
+          {% if s.source == 'adddrop' %}{% set _ = tags.append('补退选新增') %}{% endif %}
+          {% if s.gender %}{% set _ = tags.append('限' ~ s.gender ~ '生') %}{% endif %}
+          {% if s.group %}{% set _ = tags.append(s.group) %}{% endif %}
+          {% if s.platform and s.teachers %}{% set _ = tags.append(s.platform) %}{% endif %}
+          {% if s.note and s.source != 'adddrop' %}{% set _ = tags.append(s.note) %}{% endif %}
+          {% if tags %}
+          <p class="flex flex-wrap gap-1 pt-0.5">{% for t in tags %}<span class="rounded-sm bg-fill px-1.5 text-ink-2">{{ t }}</span>{% endfor %}</p>
+          {% endif %}
+        </div>
+      </li>
+      {% endfor %}
+    </ol>
+    {% endif %}
+  {% endif %}
+</section>
