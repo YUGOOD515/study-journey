@@ -1,7 +1,7 @@
 [project]
 name = "study-journey"
 version = "0.2.0"
-description = "学旅：中南财经政法大学本科四年选课规划"
+description = "Study Journey: four-year course planner for ZUEL undergraduates"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -13,11 +13,11 @@ dev = [
     "pytest>=8",
     "pytailwindcss>=0.2",
 ]
-# 只在本地导入学校 Excel 时需要
+# Only needed for importing school Excel files locally
 importers = [
     "openpyxl>=3.1",
 ]
-# Cloudflare 演示部署
+# Cloudflare demo deployment
 worker = [
     "workers-py",
     "workers-runtime-sdk",
