@@ -269,10 +269,43 @@ dialog[open]::backdrop { background: rgb(0 0 0 / .32); animation: fade-in 160ms;
   .tt-side-body { overflow-y: auto; overscroll-behavior: contain; padding: 0 16px 24px; }
   .tt-side .tt-course.is-open { background: var(--bg); }
 }
-/* 课程条目：展开时箭头翻转，挑班内容轻轻浮现 */
-.tt-course-caret { transition: transform 200ms; }
-.tt-course.is-open .tt-course-caret { transform: rotate(180deg); }
-.tt-pick { animation: rise-in 180ms cubic-bezier(.2, .8, .2, 1); }
+/* 课程条目：选中时下面露出一行概要 */
+.tt-pick { animation: fade-in 150ms; }
+.tt-ghost.is-active { background: color-mix(in srgb, var(--cat) 22%, var(--surface)); box-shadow: 0 0 0 2px color-mix(in srgb, var(--blue) 35%, transparent); }
+.tt-cell-plain:hover { background: transparent; }
+
+/* 教学班卡片：一张张纵向排开，不套外框；宽屏贴在虚线框旁边，窄屏从底部浮起 */
+.tt-pop {
+  position: absolute; z-index: 30; width: 300px; display: flex; flex-direction: column; gap: 8px;
+  max-height: min(600px, calc(100dvh - 32px)); overflow-y: auto; overscroll-behavior: contain;
+  padding: 8px; margin: -8px; scrollbar-width: thin; animation: rise-in 160ms cubic-bezier(.2, .8, .2, 1);
+}
+.tt-pop[hidden], .tt-pop-backdrop[hidden] { display: none; }
+.tt-pop-head, .tt-opt {
+  flex-shrink: 0; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface);
+  box-shadow: 0 6px 20px rgb(0 0 0 / .08), 0 1px 2px rgb(0 0 0 / .05);
+}
+.tt-opt { transition: border-color 150ms, box-shadow 200ms; }
+.tt-opt:hover { border-color: color-mix(in srgb, var(--ink-2) 60%, transparent); }
+.tt-opt[data-open="true"] { border-color: var(--blue); box-shadow: 0 10px 28px rgb(0 0 0 / .12), 0 1px 2px rgb(0 0 0 / .05); }
+.tt-opt.is-chosen { border-left: 3px solid var(--green); }
+.tt-opt[hidden] { display: none; }
+.tt-opt-head { display: block; width: 100%; padding: 10px 12px; text-align: left; cursor: pointer; border-radius: var(--radius-md); }
+.tt-opt-head:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; }
+.tt-opt-more { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 200ms cubic-bezier(.2, .8, .2, 1); }
+.tt-opt-more > div { min-height: 0; overflow: hidden; }
+.tt-opt[data-open="true"] .tt-opt-more { grid-template-rows: 1fr; }
+.tt-opt-dl { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 12px; }
+.tt-opt-dl dt { color: var(--ink-2); white-space: nowrap; }
+.tt-opt-dl dd { color: var(--ink); overflow-wrap: anywhere; }
+.tt-pop-backdrop { display: none; }
+@media (max-width: 1023px) {
+  .tt-pop {
+    position: fixed; inset: auto 12px calc(12px + env(safe-area-inset-bottom)) 12px; width: auto; margin: 0;
+    max-height: 78dvh; z-index: 60; animation: sheet-in 220ms cubic-bezier(.2, .8, .2, 1);
+  }
+  .tt-pop-backdrop { display: block; position: fixed; inset: 0; z-index: 55; background: rgb(0 0 0 / .28); animation: fade-in 150ms; }
+}
 .tt-check { display: none; }
 label:has(> :checked) > .tt-check { display: block; }
 .is-settled .tt-pick, .is-settled .tt-ghost { animation: none; }

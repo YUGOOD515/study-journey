@@ -1,0 +1,84 @@
+{% from "components/timetable.html" import hidden_fields %}
+{% from "components/ui.html" import icon, button_class, badge %}
+{# 点课表上的虚线框后弹出的教学班卡片：一张张纵向排开，不套外框。点一张卡片就地展开详情，再决定选不选。
+   pick: models.timetable.Pick #}
+{% set c = pick.row.item.course %}
+
+{% macro option_card(o, g, key, show_time) %}
+{% set s = o.section %}
+<article class="tt-opt{{ ' is-chosen' if o.chosen }}" data-option data-open="false" data-teacher="{{ s.teachers|join(' ') }}">
+  <button type="button" class="tt-opt-head" data-opt-toggle aria-expanded="false" aria-controls="{{ key }}">
+    <span class="flex items-center gap-2">
+      <span class="min-w-0 flex-1 truncate text-sm font-medium text-ink">{{ s.teacher_label }}</span>
+      {% if o.chosen %}{{ badge('已选', 'green') }}{% endif %}
+      {% if o.mine %}{{ badge('本班', 'blue') }}{% endif %}
+      {% if o.conflicts %}{{ badge('冲突', 'gold') }}{% endif %}
+      {% if s.closed %}{{ badge('已关闭') }}{% endif %}
+    </span>
+    <span class="num mt-0.5 block truncate text-xs text-ink-2">
+      {%- set bits = [] %}
+      {%- if show_time %}{% set _ = bits.append(g.label) %}{% endif %}
+      {%- if s.meetings and s.meetings[0].location %}{% set _ = bits.append(s.meetings[0].location) %}{% endif %}
+      {%- if s.classes %}{% set _ = bits.append(s.classes[:2]|join('、') ~ (' 等 %d 个班'|format(s.classes|length) if s.classes|length > 2 else '')) %}{% endif %}
+      {%- if s.platform %}{% set _ = bits.append(s.platform) %}{% endif %}
+      {{- bits|join(' · ') or '课序号 ' ~ s.seq -}}
+    </span>
+  </button>
+  <div class="tt-opt-more" id="{{ key }}" inert role="region" aria-label="{{ s.teacher_label }} 的详细信息">
+    <div>
+      <dl class="tt-opt-dl num mx-3 border-t border-line pt-2 text-xs">
+        <dt>上课</dt>
+        <dd>{% for m in s.meetings %}<span class="block">{{ m.label }}{% if m.location %} · {{ m.location }}{% endif %}</span>{% else %}线上课程或时间待定{% endfor %}</dd>
+        <dt>班级</dt><dd>{{ s.classes|join('、') or '不限' }}</dd>
+        <dt>课序号</dt><dd>{{ s.seq }}{% if s.source == 'adddrop' %} · 补退选新增{% endif %}</dd>
+        {% if s.campus %}<dt>校区</dt><dd>{{ s.campus }}</dd>{% endif %}
+        {% if s.platform %}<dt>平台</dt><dd>{{ s.platform }}</dd>{% endif %}
+        {% if s.gender %}<dt>限制</dt><dd>限{{ s.gender }}生</dd>{% endif %}
+        {% if s.group %}<dt>分组</dt><dd>{{ s.group }}</dd>{% endif %}
+        {% for note in [s.note, s.remark] if note %}<dt>备注</dt><dd>{{ note }}</dd>{% endfor %}
+      </dl>
+      {% if o.conflicts %}<p class="mx-3 mt-2 text-xs text-gold">会和「{{ o.conflicts|join('」「') }}」时间冲突</p>{% endif %}
+      {% if s.closed %}<p class="mx-3 mt-2 text-xs text-ink-2">这个班在选课系统里已经关闭。</p>{% endif %}
+      <form method="post" action="{{ url_for('timetable.choose') }}" data-fragment class="mx-3 mb-3 mt-3 flex items-center justify-end gap-2">
+        {{ hidden_fields(table) }}<input type="hidden" name="pick" value="{{ c.code }}"><input type="hidden" name="code" value="{{ c.code }}">
+        {% if o.chosen %}
+        <input type="hidden" name="seq" value="">
+        <span class="mr-auto text-xs text-green">已经选了这个班</span>
+        <button class="{{ button_class('ghost', 'sm') }} -mr-2">取消选择</button>
+        {% else %}
+        <input type="hidden" name="seq" value="{{ s.seq }}">
+        <button class="{{ button_class('primary', 'sm') }}">选这个班</button>
+        {% endif %}
+      </form>
+    </div>
+  </div>
+</article>
+{% endmacro %}
+
+{% macro stack(id, title, groups) %}
+{% set opts = [] %}{% for g in groups %}{% for o in g.options %}{% set _ = opts.append((o, g)) %}{% endfor %}{% endfor %}
+{% set multi = groups|length > 1 %}
+<div id="{{ id }}" class="tt-pop" role="dialog" aria-label="「{{ c.name }}」{{ title }}的教学班" hidden>
+  <div class="tt-pop-head flex items-start gap-2 px-3 py-2">
+    <div class="min-w-0 flex-1">
+      <p class="truncate text-sm font-semibold text-ink">{{ c.name }}</p>
+      <p class="num mt-0.5 text-xs text-ink-2">{{ title }} · {{ opts|length }} 个班{% if multi %} · 周次不同{% endif %}</p>
+    </div>
+    <button type="button" data-pop-close class="-mr-1 inline-flex size-6 shrink-0 items-center justify-center rounded-sm text-ink-2 transition-colors hover:bg-fill hover:text-ink" aria-label="关闭">{{ icon('x', 14) }}</button>
+  </div>
+  {% if opts|length > 6 %}
+  <label class="tt-pop-head relative block"><span class="sr-only">搜老师</span>
+    <span class="pointer-events-none absolute inset-y-0 left-3 flex items-center text-ink-2">{{ icon('search', 14) }}</span>
+    <input type="search" data-opt-search placeholder="搜老师" autocomplete="off" class="h-9 w-full rounded-md bg-transparent pl-9 pr-3 text-sm placeholder:text-ink-2 focus:outline-none"></label>
+  {% endif %}
+  {% for o, g in opts %}{{ option_card(o, g, id ~ '-' ~ loop.index, multi) }}{% endfor %}
+  <p class="tt-pop-head hidden px-3 py-2 text-xs text-ink-2" data-no-option>没有这位老师的班。</p>
+</div>
+{% endmacro %}
+
+<div class="tt-pop-backdrop" data-pop-backdrop hidden></div>
+{% for d in table.days %}{% for b in table.blocks[d] if b.ghost %}
+{{ stack('pop-%d-%d-%d'|format(d, b.start, b.end), b.meeting.short ~ ' 节', b.groups) }}
+{% endfor %}{% endfor %}
+{% set untimed = pick.groups|rejectattr('meetings')|list %}
+{% if untimed %}{{ stack('pop-untimed', '不排时间', untimed) }}{% endif %}
