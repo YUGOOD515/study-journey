@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "semesters": [
+    {
+      "semester": "2024-2025-1",
+      "file": "2024-2025-1.json",
+      "version": "d488f2d71485",
+      "updated": "2026-10-23",
+      "courses": 1279,
+      "sections": 3345
+    },
+    {
+      "semester": "2024-2025-2",
+      "file": "2024-2025-2.json",
+      "version": "b44e09233686",
+      "updated": "2026-10-23",
+      "courses": 1381,
+      "sections": 3297
+    },
+    {
+      "semester": "2025-2026-1",
+      "file": "2025-2026-1.json",
+      "version": "d86a96f52d09",
+      "updated": "2026-10-23",
+      "courses": 1288,
+      "sections": 3412
+    },
+    {
+      "semester": "2025-2026-2",
+      "file": "2025-2026-2.json",
+      "version": "6c04460232bd",
+      "updated": "2026-10-23",
+      "courses": 1810,
+      "sections": 3273
+    },
+    {
+      "semester": "2026-2027-1",
+      "file": "2026-2027-1.json",
+      "version": "659ec8d67201",
+      "updated": "2026-10-23",
+      "courses": 1787,
+      "sections": 3389
+    }
+  ]
+}
