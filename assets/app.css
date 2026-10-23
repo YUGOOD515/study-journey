@@ -81,3 +81,10 @@
 
 dialog::backdrop { background: rgb(0 0 0 / .32); }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+
+/* 学期课表的课块：类别色细边 + 浅底；冲突时金色描边 */
+.tt-block {
+  background: color-mix(in srgb, var(--cat) 12%, var(--surface));
+  box-shadow: inset 3px 0 0 var(--cat);
+}
+.tt-conflict { outline: 1.5px solid var(--gold); outline-offset: -1.5px; }

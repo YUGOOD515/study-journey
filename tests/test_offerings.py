@@ -138,6 +138,8 @@ def test_sync_downloads_and_verifies(tmp_path):
 
 @pytest.mark.skipif(not (ROOT / "src_data").is_dir(), reason="没有样本 Excel")
 def test_import_real_files(tmp_path):
+    pytest.importorskip("xlrd")
+    pytest.importorskip("openpyxl")
     entries = import_directory(ROOT / "src_data", tmp_path)
     assert len(entries) >= 1 and all(e["sections"] > 1000 for e in entries)
     again = import_directory(ROOT / "src_data", tmp_path)

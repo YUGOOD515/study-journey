@@ -9,6 +9,7 @@ from .catalog import DATA_DIR, Catalog, Course
 from .plan import Calendar, PlanItem, check_move
 
 SESSION_KEY = "demo_moves"
+SECTIONS_KEY = "demo_sections"
 
 
 def demo_calendar(today: date | None = None) -> Calendar:
@@ -63,3 +64,29 @@ class DemoRepository:
 
     def reset(self) -> None:
         self.session.pop(SESSION_KEY, None)
+        self.session.pop(SECTIONS_KEY, None)
+
+    def choices(self, term: int) -> dict[str, str] | None:
+        found = self.session.get(SECTIONS_KEY, {}).get(str(term))
+        return dict(found) if found is not None else None
+
+    def choose(self, term: int, picks: dict[str, str | None]) -> None:
+        all_terms = dict(self.session.get(SECTIONS_KEY, {}))
+        current = dict(all_terms.get(str(term), {}))
+        for code, seq in picks.items():
+            if seq is None:
+                current.pop(code, None)
+            else:
+                current[code] = seq
+        all_terms[str(term)] = current
+        self.session[SECTIONS_KEY] = all_terms
+
+    def clear_choices(self, term: int) -> None:
+        all_terms = dict(self.session.get(SECTIONS_KEY, {}))
+        all_terms[str(term)] = {}
+        self.session[SECTIONS_KEY] = all_terms
+
+    @property
+    def my_class(self) -> str:
+        """演示同学是数字金融专业 1 班。"""
+        return f"数金{self.calendar.enrollment_year % 100:02d}01班"

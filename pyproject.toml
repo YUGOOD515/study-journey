@@ -28,6 +28,10 @@ worker = [
 requires = ["uv_build>=0.8,<0.14"]
 build-backend = "uv_build"
 
+[tool.uv]
+# uv sync installs dev tools and Excel importers by default; add --group worker for Cloudflare
+default-groups = ["dev", "importers"]
+
 [tool.uv.build-backend]
 module-name = "study_journey"
 module-root = "src"

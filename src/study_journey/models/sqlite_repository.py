@@ -16,6 +16,17 @@ CREATE TABLE IF NOT EXISTS plan_items (
     score  REAL CHECK (score IS NULL OR score BETWEEN 0 AND 100),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+-- 学期课表：每学期每门课选定的教学班（课序号）
+CREATE TABLE IF NOT EXISTS section_choices (
+    term INTEGER NOT NULL CHECK (term BETWEEN 1 AND 8),
+    code TEXT NOT NULL,
+    seq  TEXT NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (term, code)
+);
+CREATE TABLE IF NOT EXISTS section_terms (
+    term INTEGER PRIMARY KEY  -- 设置过课表的学期（区分「没选」和「选完又清空」）
+);
 """
 
 
@@ -66,3 +77,27 @@ class SqliteRepository:
                     "INSERT INTO plan_items(code, term, status) VALUES (?, ?, ?)",
                     (code, term, "计划修读" if term else "未修读"),
                 )
+
+    def choices(self, term: int) -> dict[str, str] | None:
+        if not self.db.execute("SELECT 1 FROM section_terms WHERE term = ?", (term,)).fetchone():
+            return None
+        rows = self.db.execute("SELECT code, seq FROM section_choices WHERE term = ?", (term,))
+        return {r["code"]: r["seq"] for r in rows}
+
+    def choose(self, term: int, picks: dict[str, str | None]) -> None:
+        with self.db:
+            self.db.execute("INSERT OR IGNORE INTO section_terms(term) VALUES (?)", (term,))
+            for code, seq in picks.items():
+                if seq is None:
+                    self.db.execute("DELETE FROM section_choices WHERE term = ? AND code = ?", (term, code))
+                else:
+                    self.db.execute(
+                        """INSERT INTO section_choices(term, code, seq) VALUES (?, ?, ?)
+                           ON CONFLICT(term, code) DO UPDATE SET seq = excluded.seq, updated_at = datetime('now')""",
+                        (term, code, seq),
+                    )
+
+    def clear_choices(self, term: int) -> None:
+        with self.db:
+            self.db.execute("INSERT OR IGNORE INTO section_terms(term) VALUES (?)", (term,))
+            self.db.execute("DELETE FROM section_choices WHERE term = ?", (term,))

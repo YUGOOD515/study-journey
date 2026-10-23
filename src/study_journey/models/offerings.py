@@ -48,6 +48,15 @@ class Meeting:
             weeks = f"{self.weeks[0]}–{self.weeks[-1]} 周（{'单' if self.weeks[0] % 2 else '双'}周）"
         return f"{weeks}，周{DAY_NAMES[self.day - 1]} 第 {compress(self.periods)} 节"
 
+    @property
+    def short(self) -> str:
+        """'周二 3–5'，用在下拉选项这种放不下长文字的地方。"""
+        return f"周{DAY_NAMES[self.day - 1]} {compress(self.periods)}"
+
+    @property
+    def weeks_label(self) -> str:
+        return self.label.split("，")[0]
+
 
 @dataclass(frozen=True)
 class Section:
@@ -67,6 +76,15 @@ class Section:
     closed: bool = False
     platform: str | None = None
     remark: str | None = None
+
+    @property
+    def teacher_label(self) -> str:
+        return "、".join(self.teachers) or self.platform or "教师待定"
+
+    @property
+    def option_label(self) -> str:
+        times = "、".join(m.short for m in self.meetings) or "线上 / 时间待定"
+        return f"{self.seq} · {self.teacher_label} · {times}"
 
     @classmethod
     def from_json(cls, raw: dict) -> "Section":

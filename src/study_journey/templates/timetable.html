@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% block title %}学旅：{{ table.label }}课表{% endblock %}
+{% block content %}
+{% include "_timetable.html" %}
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/timetable.js') }}" defer></script>
+{% endblock %}

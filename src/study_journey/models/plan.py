@@ -67,6 +67,16 @@ class PlanRepository(Protocol):
 
     def reset(self) -> None: ...
 
+    def choices(self, term: int) -> dict[str, str] | None:
+        """某学期选定的教学班 {课程号: 课序号}；从没设置过返回 None。"""
+        ...
+
+    def choose(self, term: int, picks: dict[str, str | None]) -> None:
+        """设置教学班；课序号为 None 表示取消选择。"""
+        ...
+
+    def clear_choices(self, term: int) -> None: ...
+
 
 def check_move(item: PlanItem | None, term: int | None, calendar: Calendar) -> None:
     """规划规则：只能安排未锁定的课程，且只能排到本学期及以后。"""

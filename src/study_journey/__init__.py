@@ -17,10 +17,11 @@ def create_app(overrides: dict | None = None) -> Flask:
     app.config.from_object(Config)
     app.config.update(overrides or {})
 
-    from .controllers import offerings, timeline
+    from .controllers import offerings, timeline, timetable
 
     app.register_blueprint(timeline.bp)
     app.register_blueprint(offerings.bp)
+    app.register_blueprint(timetable.bp)
     app.jinja_env.filters["credits"] = format_credits
     return app
 

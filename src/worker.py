@@ -4,7 +4,7 @@ Offerings data lives in static assets (public/static/data/offerings). Flask runs
 synchronously, so the files it needs are fetched from the ASSETS binding first
 and kept in memory for the lifetime of the isolate.
 """
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 from workers import WorkerEntrypoint, wsgi
 
@@ -25,7 +25,7 @@ async def read_asset(env, origin: str, name: str) -> str | None:
 
 
 async def preload(env, url: str) -> None:
-    """Load the manifest, plus each semester the demo student may look at (current term to term 8)."""
+    """Load the manifest, the semesters for current term .. term 8, and the term asked for (?term=N)."""
     parsed = urlparse(url)
     origin = f"{parsed.scheme}://{parsed.netloc}"
     if "manifest.json" not in files:
@@ -33,7 +33,11 @@ async def preload(env, url: str) -> None:
         files["manifest.json"] = text or '{"schema_version": 1, "semesters": []}'
         store.reset()
     calendar = demo_calendar()
-    for term in range(calendar.current_term, 9):
+    terms = set(range(calendar.current_term, 9))
+    asked = parse_qs(parsed.query).get("term", [""])[0]
+    if asked.isdigit() and 1 <= int(asked) <= 8:
+        terms.add(int(asked))
+    for term in sorted(terms):
         semester = store.reference_id(calendar.semester_id(term))
         entry = store.entries().get(semester, ({}, None))[0] if semester else {}
         name = entry.get("file")

@@ -462,6 +462,7 @@ wheels = [
 name = "study-journey"
 version = "0.2.0"
 source = { editable = "." }
+default-groups = ["dev", "importers"]
 dependencies = [
     { name = "flask" },
 ]
